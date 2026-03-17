@@ -1,0 +1,19 @@
+name: Dispatch issue fix to bot repo
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'QA-bug' || github.event.label.name == 'QA-feature'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to bot repository
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.DISPATCH_TOKEN }}
+          repository: remiriasukaretto/Automatically-fix-bugs
+          event-type: fix-issue
+          client-payload: >
+            {"repository":"${{ github.repository }}","issue_number":${{ github.event.issue.number }},"base":"${{ github.event.repository.default_branch }}","test_command":"npm test","mode":"${{ github.event.label.name == 'QA-feature' && 'feature' || 'bug' }}","language":"ja","token_secret":"TARGET_REPO_TOKEN_${{ github.repository_owner }}_${{ github.event.repository.name }}"}
