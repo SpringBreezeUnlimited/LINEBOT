@@ -128,9 +128,16 @@
                 </table>
             </div>
         </div>
-        <div class="text-center mt-4">
-            <a href="/admin" class="btn btn-secondary">リストを更新</a>
-        </div>
+    <div class="text-center mt-4">
+        <a href="/admin" class="btn btn-secondary">リストを更新</a>
+    </div>
+    <div
+        class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded shadow-sm small"
+        style="z-index: 1030; opacity: 0.92;"
+    >
+        <div>Version: {{ app_version }}</div>
+        <div>Released: {{ app_released_at }}</div>
+    </div>
     </div>
     <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
 </body>

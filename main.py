@@ -63,6 +63,8 @@ DATABASE_URL = normalize_db_url(raw_db_url)
 DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
+APP_VERSION = "v1.0.0"
+APP_RELEASED_AT = "2026-04-06 00:00 GMT+09:00"
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
     host.strip().lower() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()
@@ -86,6 +88,14 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS),
 )
 app.jinja_env.autoescape = True
+
+
+@app.context_processor
+def inject_template_globals():
+    return {
+        "app_version": APP_VERSION,
+        "app_released_at": APP_RELEASED_AT,
+    }
 
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
