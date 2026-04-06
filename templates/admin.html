@@ -126,7 +126,10 @@
                                     <button type="submit" class="btn btn-sm btn-success">呼出予定に追加</button>
                                 </form>
                                 {% elif row[3] == 'queued_call' %}
-                                <span class="text-muted small">一括送信待ち</span>
+                                <form method="POST" action="/admin/call/cancel/{{ row[0] }}" class="d-inline">
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary">呼出予定を取消</button>
+                                </form>
                                 {% elif row[3] == 'called' %}
                                 <span class="text-muted small">到着待ち</span>
                                 {% else %}

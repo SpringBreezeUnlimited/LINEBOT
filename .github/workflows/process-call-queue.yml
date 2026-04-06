@@ -1,0 +1,29 @@
+name: Process Call Queue
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  process-call-queue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger call queue task
+        env:
+          CALL_QUEUE_TASK_URL: ${{ secrets.CALL_QUEUE_TASK_URL }}
+          BATCH_CALL_RUNNER_TOKEN: ${{ secrets.BATCH_CALL_RUNNER_TOKEN }}
+        run: |
+          if [ -z "$CALL_QUEUE_TASK_URL" ]; then
+            echo "CALL_QUEUE_TASK_URL secret is not set"
+            exit 1
+          fi
+
+          if [ -z "$BATCH_CALL_RUNNER_TOKEN" ]; then
+            echo "BATCH_CALL_RUNNER_TOKEN secret is not set"
+            exit 1
+          fi
+
+          curl --fail --show-error --silent \
+            -X POST "$CALL_QUEUE_TASK_URL" \
+            -H "Authorization: Bearer $BATCH_CALL_RUNNER_TOKEN"

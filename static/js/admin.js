@@ -55,10 +55,17 @@ function buildActionCell(row) {
         form.appendChild(button);
         td.appendChild(form);
     } else if (row.status === 'queued_call') {
-        const span = document.createElement('span');
-        span.className = 'text-muted small';
-        span.textContent = '一括送信待ち';
-        td.appendChild(span);
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/admin/call/cancel/${row.id}`;
+        form.className = 'd-inline';
+        const button = document.createElement('button');
+        button.type = 'submit';
+        button.className = 'btn btn-sm btn-outline-secondary';
+        button.textContent = '呼出予定を取消';
+        form.appendChild(createCsrfInput());
+        form.appendChild(button);
+        td.appendChild(form);
     } else if (row.status === 'called') {
         const span = document.createElement('span');
         span.className = 'text-muted small';

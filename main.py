@@ -64,8 +64,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.6"
-APP_RELEASED_AT = "2026-04-06 18:07 JST"
+APP_VERSION = "v1.0.8"
+APP_RELEASED_AT = "2026-04-06 18:49 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -116,7 +116,7 @@ def get_connection():
 
 def should_run_call_batch(now=None) -> bool:
     current = now or time.localtime()
-    return current.tm_min % 3 == 0
+    return current.tm_min % 5 == 0
 
 
 def process_queued_calls(now=None):
@@ -744,6 +744,24 @@ def admin_finish(res_id):
             cur.execute(
                 "UPDATE reservations SET status = %s WHERE id = %s AND status = %s RETURNING id",
                 (STATUS_DONE, res_id, STATUS_ARRIVED),
+            )
+            if not cur.fetchone():
+                abort(404)
+            conn.commit()
+    return redirect(url_for("admin_page"))
+
+
+@app.route("/admin/call/cancel/<int:res_id>", methods=["POST"])
+def admin_cancel_call(res_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+
+    ensure_database_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE reservations SET status = %s WHERE id = %s AND status = %s RETURNING id",
+                (STATUS_WAITING, res_id, STATUS_QUEUED_CALL),
             )
             if not cur.fetchone():
                 abort(404)
