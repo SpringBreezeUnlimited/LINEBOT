@@ -31,7 +31,12 @@
                 {% if type_success %}
                 <div class="alert alert-success">{{ type_success }}</div>
                 {% endif %}
-                <form method="POST" action="/admin/types" class="row g-2 align-items-center">
+                <form
+                    method="POST"
+                    action="/admin/types"
+                    class="row g-2 align-items-center"
+                    data-confirm="この内容で種類を追加しますか？"
+                >
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                     <div class="col-sm-8">
                         <input type="text" name="name" class="form-control" placeholder="種類名（例：相談 / 受付 / 案内）" required>
@@ -51,17 +56,32 @@
                         <span>{{ t[1] }}</span>
                         <div class="d-flex gap-2">
                             {% if t[2] %}
-                            <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline">
+                            <form
+                                method="POST"
+                                action="/admin/types/toggle/{{ t[0] }}"
+                                class="d-inline"
+                                data-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
+                            >
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-success">受付中</button>
                             </form>
                             {% else %}
-                            <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline">
+                            <form
+                                method="POST"
+                                action="/admin/types/toggle/{{ t[0] }}"
+                                class="d-inline"
+                                data-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
+                            >
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">受付停止</button>
                             </form>
                             {% endif %}
-                            <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="d-inline">
+                            <form
+                                method="POST"
+                                action="/admin/types/delete/{{ t[0] }}"
+                                class="d-inline"
+                                data-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
+                            >
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
                             </form>
@@ -74,5 +94,15 @@
             </div>
         </div>
     </div>
+    <script>
+        document.querySelectorAll('form[data-confirm]').forEach((form) => {
+            form.addEventListener('submit', (event) => {
+                const message = form.dataset.confirm;
+                if (message && !window.confirm(message)) {
+                    event.preventDefault();
+                }
+            });
+        });
+    </script>
 </body>
 </html>
