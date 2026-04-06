@@ -26,6 +26,9 @@ function buildStatusCell(row) {
     if (row.status === 'waiting') {
         badge.className = 'badge bg-warning text-dark';
         badge.textContent = '待機中';
+    } else if (row.status === 'queued_call') {
+        badge.className = 'badge bg-secondary';
+        badge.textContent = '呼出予定';
     } else if (row.status === 'called') {
         badge.className = 'badge bg-info';
         badge.textContent = '呼出中';
@@ -47,10 +50,15 @@ function buildActionCell(row) {
         const button = document.createElement('button');
         button.type = 'submit';
         button.className = 'btn btn-sm btn-success';
-        button.textContent = '呼出';
+        button.textContent = '呼出予定に追加';
         form.appendChild(createCsrfInput());
         form.appendChild(button);
         td.appendChild(form);
+    } else if (row.status === 'queued_call') {
+        const span = document.createElement('span');
+        span.className = 'text-muted small';
+        span.textContent = '一括送信待ち';
+        td.appendChild(span);
     } else if (row.status === 'called') {
         const span = document.createElement('span');
         span.className = 'text-muted small';

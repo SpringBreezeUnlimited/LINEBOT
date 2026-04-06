@@ -111,6 +111,8 @@
                             <td>
                                 {% if row[3] == 'waiting' %}
                                 <span class="badge bg-warning text-dark">待機中</span>
+                                {% elif row[3] == 'queued_call' %}
+                                <span class="badge bg-secondary">呼出予定</span>
                                 {% elif row[3] == 'called' %}
                                 <span class="badge bg-info">呼出中</span>
                                 {% else %}
@@ -121,8 +123,10 @@
                                 {% if row[3] == 'waiting' %}
                                 <form method="POST" action="/admin/call/{{ row[0] }}" class="d-inline">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-success">呼出</button>
+                                    <button type="submit" class="btn btn-sm btn-success">呼出予定に追加</button>
                                 </form>
+                                {% elif row[3] == 'queued_call' %}
+                                <span class="text-muted small">一括送信待ち</span>
                                 {% elif row[3] == 'called' %}
                                 <span class="text-muted small">到着待ち</span>
                                 {% else %}
