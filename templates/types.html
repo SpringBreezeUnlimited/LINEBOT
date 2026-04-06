@@ -35,7 +35,7 @@
                     method="POST"
                     action="/admin/types"
                     class="row g-2 align-items-center"
-                    data-confirm="この内容で種類を追加しますか？"
+                    data-inline-confirm="この内容で種類を追加しますか？"
                 >
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                     <div class="col-sm-8">
@@ -52,7 +52,8 @@
                 <h5 class="card-title">登録済みの種類</h5>
                 <ul class="list-group">
                     {% for t in types %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <li class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
                         <span>{{ t[1] }}</span>
                         <div class="d-flex gap-2">
                             {% if t[2] %}
@@ -60,7 +61,7 @@
                                 method="POST"
                                 action="/admin/types/toggle/{{ t[0] }}"
                                 class="d-inline"
-                                data-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
+                                data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
                             >
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-success">受付中</button>
@@ -70,7 +71,7 @@
                                 method="POST"
                                 action="/admin/types/toggle/{{ t[0] }}"
                                 class="d-inline"
-                                data-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
+                                data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
                             >
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">受付停止</button>
@@ -80,11 +81,12 @@
                                 method="POST"
                                 action="/admin/types/delete/{{ t[0] }}"
                                 class="d-inline"
-                                data-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
+                                data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
                             >
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
                             </form>
+                        </div>
                         </div>
                     </li>
                     {% else %}
@@ -95,12 +97,52 @@
         </div>
     </div>
     <script>
-        document.querySelectorAll('form[data-confirm]').forEach((form) => {
+        let activeConfirmation = null;
+
+        function closeInlineConfirmation() {
+            if (activeConfirmation) {
+                activeConfirmation.remove();
+                activeConfirmation = null;
+            }
+        }
+
+        document.querySelectorAll('form[data-inline-confirm]').forEach((form) => {
+            form.dataset.confirmed = 'false';
             form.addEventListener('submit', (event) => {
-                const message = form.dataset.confirm;
-                if (message && !window.confirm(message)) {
-                    event.preventDefault();
+                if (form.dataset.confirmed === 'true') {
+                    form.dataset.confirmed = 'false';
+                    closeInlineConfirmation();
+                    return;
                 }
+
+                event.preventDefault();
+                closeInlineConfirmation();
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'alert alert-warning mt-3 mb-0 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2';
+                wrapper.innerHTML = `
+                    <div>${form.dataset.inlineConfirm}</div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-primary">実行する</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary">キャンセル</button>
+                    </div>
+                `;
+
+                const confirmButton = wrapper.querySelector('.btn-primary');
+                const cancelButton = wrapper.querySelector('.btn-outline-secondary');
+
+                confirmButton.addEventListener('click', () => {
+                    form.dataset.confirmed = 'true';
+                    form.requestSubmit();
+                });
+                cancelButton.addEventListener('click', () => {
+                    form.dataset.confirmed = 'false';
+                    closeInlineConfirmation();
+                });
+
+                const parent = form.closest('.list-group-item, .card-body') || form.parentElement;
+                parent.appendChild(wrapper);
+                activeConfirmation = wrapper;
             });
         });
     </script>

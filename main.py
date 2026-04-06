@@ -63,8 +63,8 @@ DATABASE_URL = normalize_db_url(raw_db_url)
 DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
-APP_VERSION = "v1.0.0"
-APP_RELEASED_AT = "2026-04-06 00:00 GMT+09:00"
+APP_VERSION = "v1.0.1"
+APP_RELEASED_AT = "2026-04-06 17:01 JST"
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
     host.strip().lower() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()
