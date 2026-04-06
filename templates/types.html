@@ -25,6 +25,14 @@
         <div class="card shadow-sm mb-4">
             <div class="card-body">
                 <h5 class="card-title">種類を追加</h5>
+                <div class="mb-3">
+                    <span class="me-2">全体の新規受付</span>
+                    {% if accepting_new %}
+                    <span class="badge bg-success">受付中</span>
+                    {% else %}
+                    <span class="badge bg-danger">停止中</span>
+                    {% endif %}
+                </div>
                 {% if type_error %}
                 <div class="alert alert-danger">{{ type_error }}</div>
                 {% endif %}

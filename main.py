@@ -64,8 +64,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.3"
-APP_RELEASED_AT = "2026-04-06 17:09 JST"
+APP_VERSION = "v1.0.4"
+APP_RELEASED_AT = "2026-04-06 17:14 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -522,6 +522,7 @@ def admin_types_page():
         return redirect(url_for("login"))
 
     ensure_database_schema()
+    accepting_new = is_accepting_new()
     type_error = request.args.get("type_error")
     type_success = request.args.get("type_success")
     if request.method == "POST":
@@ -549,6 +550,7 @@ def admin_types_page():
     return render_template(
         "types.html",
         types=types,
+        accepting_new=accepting_new,
         type_error=type_error,
         type_success=type_success,
         csrf_token=get_csrf_token()
