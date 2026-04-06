@@ -93,6 +93,55 @@ handler = WebhookHandler(CHANNEL_SECRET)
 def get_connection():
     return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
 
+
+def ensure_reservations_table():
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS reservations (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'waiting',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS user_id TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS message TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS status TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ALTER COLUMN status SET DEFAULT 'waiting'
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_status_id
+                ON reservations (status, id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_user_id_id
+                ON reservations (user_id, id DESC)
+            """)
+            conn.commit()
+
+
+def ensure_database_schema():
+    ensure_reservations_table()
+    ensure_types_table()
+    ensure_settings_table()
+
 def verify_admin_password(candidate: str) -> bool:
     if not candidate:
         return False
@@ -303,7 +352,7 @@ def ensure_settings_table():
             conn.commit()
 
 def is_accepting_new():
-    ensure_settings_table()
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT value FROM app_settings WHERE key = 'accepting_new'")
@@ -311,7 +360,7 @@ def is_accepting_new():
             return (row and row[0] == 'true')
 
 def set_accepting_new(flag: bool):
-    ensure_settings_table()
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -330,7 +379,7 @@ def admin_page():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_types_table()
+    ensure_database_schema()
     type_error = request.args.get("type_error")
     type_id = request.args.get("type_id", "").strip()
     current_type_id = int(type_id) if type_id.isdigit() else None
@@ -393,6 +442,7 @@ def admin_data():
     if not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
 
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             type_id = request.args.get("type_id", "").strip()
@@ -435,6 +485,7 @@ def admin_type_counts():
     if not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
 
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -458,7 +509,7 @@ def admin_types_page():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_types_table()
+    ensure_database_schema()
     type_error = request.args.get("type_error")
     type_success = request.args.get("type_success")
     if request.method == "POST":
@@ -496,7 +547,7 @@ def admin_types_delete(type_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_types_table()
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM reservation_types WHERE id = %s", (type_id,))
@@ -508,7 +559,7 @@ def admin_types_toggle(type_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_types_table()
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE reservation_types SET accepting = NOT accepting WHERE id = %s", (type_id,))
@@ -520,7 +571,7 @@ def admin_history():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_types_table()
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             type_id = request.args.get("type_id", "").strip()
@@ -568,6 +619,7 @@ def admin_call(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -594,6 +646,7 @@ def admin_finish(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -649,6 +702,7 @@ def process_reservation(event, user_id, user_message):
         )
         return
 
+    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             if normalized.startswith('予約'):
