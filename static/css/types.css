@@ -175,6 +175,16 @@ input {
     background: #ffe9ed;
 }
 
+.btn-outline-secondary {
+    border-color: rgba(109, 119, 138, 0.3);
+    background: #f5f7fb;
+    color: var(--secondary-dark);
+}
+
+.btn-outline-secondary:hover {
+    background: #e9edf5;
+}
+
 .alert {
     padding: 0.9rem 1rem;
     border-radius: 12px;
@@ -191,6 +201,12 @@ input {
     background: #eefaf3;
     border-color: #bfdfcb;
     color: #1d7048;
+}
+
+.alert-warning {
+    background: #fff9e6;
+    border-color: #f0de98;
+    color: #70590b;
 }
 
 .badge {
@@ -239,6 +255,10 @@ input {
 
 .flex-wrap {
     flex-wrap: wrap;
+}
+
+.flex-column {
+    flex-direction: column;
 }
 
 .gap-2 {
@@ -328,6 +348,14 @@ input {
 
     .col-sm-8 {
         width: calc(66.666% - 0.25rem);
+    }
+
+    .flex-sm-row {
+        flex-direction: row;
+    }
+
+    .align-items-sm-center {
+        align-items: center;
     }
 }
 

@@ -197,6 +197,18 @@ select {
     font-weight: 700;
 }
 
+.alert {
+    padding: 0.9rem 1rem;
+    border-radius: 12px;
+    border: 1px solid transparent;
+}
+
+.alert-warning {
+    background: #fff9e6;
+    border-color: #f0de98;
+    color: #70590b;
+}
+
 .bg-warning {
     background: var(--warning);
     color: var(--warning-dark);
@@ -248,6 +260,10 @@ select {
 
 .flex-wrap {
     flex-wrap: wrap;
+}
+
+.flex-column {
+    flex-direction: column;
 }
 
 .gap-2 {
@@ -349,6 +365,14 @@ select {
 @media (min-width: 640px) {
     .col-sm-6 {
         width: calc(50% - 0.375rem);
+    }
+
+    .flex-sm-row {
+        flex-direction: row;
+    }
+
+    .align-items-sm-center {
+        align-items: center;
     }
 }
 
