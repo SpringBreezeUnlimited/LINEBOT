@@ -64,8 +64,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.11"
-APP_RELEASED_AT = "2026-04-07 21:38 JST"
+APP_VERSION = "v1.0.13"
+APP_RELEASED_AT = "2026-04-07 21:51 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -543,38 +543,20 @@ def admin_data():
     ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            type_id = request.args.get("type_id", "").strip()
-            current_type_id = int(type_id) if type_id.isdigit() else None
-            sort_by = request.args.get("sort_by", "id").strip()
-            sort_order = request.args.get("sort_order", "asc").strip().lower()
-            if sort_by not in ("id", "status", "type", "message"):
-                sort_by = "id"
-            if sort_order not in ("asc", "desc"):
-                sort_order = "asc"
-            params = []
-            where = "WHERE r.status IN (%s, %s, %s, %s)"
-            params.extend([STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED])
-            if current_type_id is not None:
-                where += " AND r.type_id = %s"
-                params.append(current_type_id)
-            order_map = {
-                "id": "r.id",
-                "status": "r.status",
-                "type": "t.name",
-                "message": "r.message"
-            }
-            order_by = order_map[sort_by]
-            cur.execute(f"""
-                SELECT r.id, r.message, r.status, t.name
-                FROM reservations r
-                LEFT JOIN reservation_types t ON r.type_id = t.id
-                {where}
-                ORDER BY {order_by} {sort_order.upper()}, r.id ASC
-            """, params)
+            cur.execute(
+                """
+                    SELECT r.id, r.message, r.status, t.id, t.name
+                    FROM reservations r
+                    LEFT JOIN reservation_types t ON r.type_id = t.id
+                    WHERE r.status IN (%s, %s, %s, %s)
+                    ORDER BY r.id ASC
+                """,
+                (STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED),
+            )
             rows = cur.fetchall()
     return jsonify({
         "rows": [
-            {"id": row[0], "message": row[1], "status": row[2], "type": row[3]}
+            {"id": row[0], "message": row[1], "status": row[2], "type_id": row[3], "type": row[4]}
             for row in rows
         ]
     })
@@ -673,8 +655,12 @@ def admin_history():
         return redirect(url_for("login"))
 
     ensure_database_schema()
+    history_page_size = 200
     with get_connection() as conn:
         with conn.cursor() as cur:
+            page_raw = request.args.get("page", "1").strip()
+            page = int(page_raw) if page_raw.isdigit() and int(page_raw) > 0 else 1
+            offset = (page - 1) * history_page_size
             type_id = request.args.get("type_id", "").strip()
             current_type_id = int(type_id) if type_id.isdigit() else None
             sort_by = request.args.get("sort_by", "id").strip()
@@ -697,19 +683,25 @@ def admin_history():
             }
             order_by = order_map[sort_by]
             cur.execute(f"""
-                SELECT r.id, r.user_id, r.message, r.status, t.name
+                SELECT r.id, r.user_id, r.message, r.status, t.name, t.id
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
-                ORDER BY {order_by} {sort_order.upper()}, r.id DESC LIMIT 200
-            """, params)
+                ORDER BY {order_by} {sort_order.upper()}, r.id DESC
+                LIMIT %s OFFSET %s
+            """, params + [history_page_size + 1, offset])
             rows = cur.fetchall()
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
             types = cur.fetchall()
+    has_next = len(rows) > history_page_size
+    rows = rows[:history_page_size]
     return render_template(
         "history.html",
         rows=rows,
         types=types,
+        page=page,
+        has_prev=page > 1,
+        has_next=has_next,
         current_type_id=current_type_id,
         sort_by=sort_by,
         sort_order=sort_order,

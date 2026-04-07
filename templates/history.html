@@ -61,9 +61,15 @@
                             <th>状態</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="history-rows">
                         {% for row in rows %}
-                        <tr>
+                        <tr
+                            data-id="{{ row[0] }}"
+                            data-type-id="{{ row[5] or '' }}"
+                            data-type="{{ row[4] or '' }}"
+                            data-message="{{ row[2] or '' }}"
+                            data-status="{{ row[3] }}"
+                        >
                             <td>{{ row[0] }}</td>
                             <td>{{ row[4] or '-' }}</td>
                             <td>{{ row[2] or '-' }}</td>
@@ -82,8 +88,27 @@
                 </table>
             </div>
         </div>
-        <div class="text-center mt-4">
+        <div class="d-flex gap-2 justify-content-between align-items-center mt-4 history-pagination">
             <a href="/admin/history" class="btn btn-secondary">リストを更新</a>
+            <div class="d-flex gap-2 align-items-center">
+                {% if has_prev %}
+                <a
+                    href="{{ url_for('admin_history', page=page - 1, type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}"
+                    class="btn btn-secondary"
+                >
+                    前へ
+                </a>
+                {% endif %}
+                <span class="history-page-indicator">ページ {{ page }}</span>
+                {% if has_next %}
+                <a
+                    href="{{ url_for('admin_history', page=page + 1, type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}"
+                    class="btn btn-secondary"
+                >
+                    次へ
+                </a>
+                {% endif %}
+            </div>
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/history.js') }}" defer></script>

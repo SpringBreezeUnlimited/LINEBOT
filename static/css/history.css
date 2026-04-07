@@ -79,6 +79,10 @@ select {
     gap: 0.75rem;
 }
 
+.justify-content-between {
+    justify-content: space-between;
+}
+
 .gap-2 {
     gap: 0.75rem;
 }
@@ -199,6 +203,11 @@ select {
 
 .text-center {
     text-align: center;
+}
+
+.history-page-indicator {
+    font-size: 0.95rem;
+    font-weight: 600;
 }
 
 .p-0 {
