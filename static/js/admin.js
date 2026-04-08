@@ -1,6 +1,25 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 let activeRowsCache = [];
 
+function formatUpdatedAt(date) {
+    return new Intl.DateTimeFormat('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(date);
+}
+
+function updateLastUpdated(date = new Date()) {
+    const target = document.getElementById('list-last-updated');
+    if (!target) return;
+    target.textContent = formatUpdatedAt(date);
+}
+
 function getQueryParams() {
     const params = new URLSearchParams();
     const select = document.getElementById('type-filter');
@@ -144,6 +163,7 @@ async function refreshActiveRows() {
         const data = await res.json();
         activeRowsCache = data.rows || [];
         renderActiveRows();
+        updateLastUpdated();
     } catch (e) {
         // no-op
     }
