@@ -65,9 +65,6 @@ function buildStatusCell(row) {
     if (row.status === 'waiting') {
         badge.className = 'badge bg-warning text-dark';
         badge.textContent = '待機中';
-    } else if (row.status === 'queued_call') {
-        badge.className = 'badge bg-secondary';
-        badge.textContent = '呼出予定';
     } else if (row.status === 'called') {
         badge.className = 'badge bg-info';
         badge.textContent = '呼出中';
@@ -89,19 +86,7 @@ function buildActionCell(row) {
         const button = document.createElement('button');
         button.type = 'submit';
         button.className = 'btn btn-sm btn-success';
-        button.textContent = '呼出予定に追加';
-        form.appendChild(createCsrfInput());
-        form.appendChild(button);
-        td.appendChild(form);
-    } else if (row.status === 'queued_call') {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/admin/call/cancel/${row.id}`;
-        form.className = 'd-inline';
-        const button = document.createElement('button');
-        button.type = 'submit';
-        button.className = 'btn btn-sm btn-outline-secondary';
-        button.textContent = '呼出予定を取消';
+        button.textContent = '呼出';
         form.appendChild(createCsrfInput());
         form.appendChild(button);
         td.appendChild(form);

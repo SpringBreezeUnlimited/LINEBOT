@@ -64,8 +64,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.15"
-APP_RELEASED_AT = "2026-04-08 17:34 JST"
+APP_VERSION = "v1.0.16"
+APP_RELEASED_AT = "2026-04-08 17:54 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -104,7 +104,6 @@ line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
 STATUS_WAITING = "waiting"
-STATUS_QUEUED_CALL = "queued_call"
 STATUS_CALLED = "called"
 STATUS_ARRIVED = "arrived"
 STATUS_DONE = "done"
@@ -135,16 +134,6 @@ def process_queued_calls(now=None):
     auto_call_count = get_auto_call_count()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                    SELECT r.id, r.user_id
-                    FROM reservations r
-                    WHERE r.status = %s
-                    ORDER BY r.id ASC
-                """,
-                (STATUS_QUEUED_CALL,),
-            )
-            queued_rows = cur.fetchall()
             auto_rows = []
             if auto_call_count > 0:
                 cur.execute(
@@ -161,7 +150,7 @@ def process_queued_calls(now=None):
 
     sent_ids = []
     failed_ids = []
-    for res_id, user_id in queued_rows + auto_rows:
+    for res_id, user_id in auto_rows:
         try:
             line_bot_api.push_message(
                 user_id,
@@ -170,14 +159,14 @@ def process_queued_calls(now=None):
             sent_ids.append(res_id)
         except Exception:
             failed_ids.append(res_id)
-            app.logger.exception("Failed to send LINE push message for queued reservation %s", res_id)
+            app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
 
     if sent_ids:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE reservations SET status = %s WHERE id = ANY(%s) AND status IN (%s, %s)",
-                    (STATUS_CALLED, sent_ids, STATUS_QUEUED_CALL, STATUS_WAITING),
+                    "UPDATE reservations SET status = %s WHERE id = ANY(%s) AND status = %s",
+                    (STATUS_CALLED, sent_ids, STATUS_WAITING),
                 )
                 conn.commit()
 
@@ -186,7 +175,6 @@ def process_queued_calls(now=None):
         "reason": "ok",
         "minute": minute_label,
         "auto_call_count": auto_call_count,
-        "queued_count": len(queued_rows),
         "auto_selected_count": len(auto_rows),
         "sent_count": len(sent_ids),
         "failed_count": len(failed_ids),
@@ -241,6 +229,17 @@ def ensure_database_schema():
     ensure_reservations_table()
     ensure_types_table()
     ensure_settings_table()
+    migrate_legacy_queued_calls()
+
+
+def migrate_legacy_queued_calls():
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE reservations SET status = %s WHERE status = %s",
+                (STATUS_WAITING, "queued_call"),
+            )
+            conn.commit()
 
 def verify_admin_password(candidate: str) -> bool:
     if not candidate:
@@ -534,8 +533,8 @@ def admin_page():
     with get_connection() as conn:
         with conn.cursor() as cur:
             params = []
-            where = "WHERE r.status IN (%s, %s, %s, %s)"
-            params.extend([STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED])
+            where = "WHERE r.status IN (%s, %s, %s)"
+            params.extend([STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED])
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
@@ -563,7 +562,7 @@ def admin_page():
                 WHERE r.status IN (%s, %s, %s, %s)
                 GROUP BY COALESCE(t.name, '未設定')
                 ORDER BY COUNT(*) DESC
-            """, (STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED))
+            """, (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED))
             type_counts = cur.fetchall()
     return render_template(
         "admin.html",
@@ -592,10 +591,10 @@ def admin_data():
                     SELECT r.id, r.message, r.status, t.id, t.name
                     FROM reservations r
                     LEFT JOIN reservation_types t ON r.type_id = t.id
-                    WHERE r.status IN (%s, %s, %s, %s)
+                    WHERE r.status IN (%s, %s, %s)
                     ORDER BY r.id ASC
                 """,
-                (STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED),
+                (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
             )
             rows = cur.fetchall()
     return jsonify({
@@ -617,10 +616,10 @@ def admin_type_counts():
                 SELECT COALESCE(t.name, '未設定') AS name, COUNT(*)
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
-                WHERE r.status IN (%s, %s, %s, %s)
+                WHERE r.status IN (%s, %s, %s)
                 GROUP BY COALESCE(t.name, '未設定')
                 ORDER BY COUNT(*) DESC
-            """, (STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED))
+            """, (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED))
             counts = cur.fetchall()
     return jsonify({
         "counts": [
@@ -761,8 +760,28 @@ def admin_call(res_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
+                "SELECT user_id FROM reservations WHERE id = %s AND status = %s",
+                (res_id, STATUS_WAITING),
+            )
+            row = cur.fetchone()
+            if not row:
+                abort(404)
+            user_id = row[0]
+
+    try:
+        line_bot_api.push_message(
+            user_id,
+            TextSendMessage(text=f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！"),
+        )
+    except Exception:
+        app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
+        abort(502)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
                 "UPDATE reservations SET status = %s WHERE id = %s AND status = %s RETURNING id",
-                (STATUS_QUEUED_CALL, res_id, STATUS_WAITING),
+                (STATUS_CALLED, res_id, STATUS_WAITING),
             )
             if not cur.fetchone():
                 abort(404)
@@ -786,23 +805,6 @@ def admin_finish(res_id):
             conn.commit()
     return redirect(url_for("admin_page"))
 
-
-@app.route("/admin/call/cancel/<int:res_id>", methods=["POST"])
-def admin_cancel_call(res_id):
-    if not is_admin_authenticated():
-        return redirect(url_for("login"))
-
-    ensure_database_schema()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE reservations SET status = %s WHERE id = %s AND status = %s RETURNING id",
-                (STATUS_WAITING, res_id, STATUS_QUEUED_CALL),
-            )
-            if not cur.fetchone():
-                abort(404)
-            conn.commit()
-    return redirect(url_for("admin_page"))
 
 @app.route("/admin/toggle-accepting", methods=["POST"])
 def admin_toggle_accepting():
@@ -928,10 +930,10 @@ def process_reservation(event, user_id, user_message):
                         SELECT r.id, r.status, t.name
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
-                        WHERE r.user_id = %s AND r.status IN (%s, %s, %s, %s)
+                        WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
                         ORDER BY r.id DESC LIMIT 1
                     """,
-                    (user_id, STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED, STATUS_ARRIVED)
+                    (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED)
                 )
                 existing = cur.fetchone()
                 if existing:
@@ -943,11 +945,6 @@ def process_reservation(event, user_id, user_message):
                         else:
                             cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, res_id))
                             reply = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
-                    elif status == STATUS_QUEUED_CALL:
-                        if existing_type_name:
-                            reply = f"【呼出予定】番号: {res_id} / 種類: {existing_type_name} / 次の一括呼出をお待ちください。"
-                        else:
-                            reply = f"【呼出予定】番号: {res_id} / 次の一括呼出をお待ちください。"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
                             reply = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
@@ -979,7 +976,7 @@ def process_reservation(event, user_id, user_message):
                         )
                         RETURNING id
                     """,
-                    (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED)
+                    (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED)
                 )
                 cancelled = cur.fetchone()
                 if cancelled:
@@ -993,14 +990,14 @@ def process_reservation(event, user_id, user_message):
                         WHERE user_id = %s AND status IN (%s, %s, %s)
                         ORDER BY id DESC LIMIT 1
                     """,
-                    (user_id, STATUS_WAITING, STATUS_QUEUED_CALL, STATUS_CALLED)
+                    (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED)
                 )
                 existing = cur.fetchone()
                 if not existing:
                     reply = "到着の対象となる予約がありません。"
                 else:
                     res_id, status = existing
-                    if status in (STATUS_WAITING, STATUS_QUEUED_CALL):
+                    if status == STATUS_WAITING:
                         reply = "まだ呼出されていません。呼出後に「到着」と送信してください。"
                     else:
                         cur.execute("UPDATE reservations SET status = %s WHERE id = %s", (STATUS_ARRIVED, res_id))

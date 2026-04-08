@@ -101,7 +101,7 @@
                             >
                             <button type="submit" class="btn btn-primary">保存</button>
                         </form>
-                        <p class="helper-text">`0` にすると自動呼出は停止します。手動の「呼出予定に追加」はそのまま使えます。</p>
+                        <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
                     </div>
                 </div>
             </div>
@@ -127,8 +127,6 @@
                             <td>
                                 {% if row[3] == 'waiting' %}
                                 <span class="badge bg-warning text-dark">待機中</span>
-                                {% elif row[3] == 'queued_call' %}
-                                <span class="badge bg-secondary">呼出予定</span>
                                 {% elif row[3] == 'called' %}
                                 <span class="badge bg-info">呼出中</span>
                                 {% else %}
@@ -139,12 +137,7 @@
                                 {% if row[3] == 'waiting' %}
                                 <form method="POST" action="/admin/call/{{ row[0] }}" class="d-inline">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-success">呼出予定に追加</button>
-                                </form>
-                                {% elif row[3] == 'queued_call' %}
-                                <form method="POST" action="/admin/call/cancel/{{ row[0] }}" class="d-inline">
-                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-secondary">呼出予定を取消</button>
+                                    <button type="submit" class="btn btn-sm btn-success">呼出</button>
                                 </form>
                                 {% elif row[3] == 'called' %}
                                 <span class="text-muted small">到着待ち</span>
