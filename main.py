@@ -64,8 +64,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.14"
-APP_RELEASED_AT = "2026-04-07 22:05 JST"
+APP_VERSION = "v1.0.15"
+APP_RELEASED_AT = "2026-04-08 17:34 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -132,6 +132,7 @@ def process_queued_calls(now=None):
         }
 
     ensure_database_schema()
+    auto_call_count = get_auto_call_count()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -144,10 +145,23 @@ def process_queued_calls(now=None):
                 (STATUS_QUEUED_CALL,),
             )
             queued_rows = cur.fetchall()
+            auto_rows = []
+            if auto_call_count > 0:
+                cur.execute(
+                    """
+                        SELECT r.id, r.user_id
+                        FROM reservations r
+                        WHERE r.status = %s
+                        ORDER BY r.id ASC
+                        LIMIT %s
+                    """,
+                    (STATUS_WAITING, auto_call_count),
+                )
+                auto_rows = cur.fetchall()
 
     sent_ids = []
     failed_ids = []
-    for res_id, user_id in queued_rows:
+    for res_id, user_id in queued_rows + auto_rows:
         try:
             line_bot_api.push_message(
                 user_id,
@@ -162,8 +176,8 @@ def process_queued_calls(now=None):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE reservations SET status = %s WHERE id = ANY(%s)",
-                    (STATUS_CALLED, sent_ids),
+                    "UPDATE reservations SET status = %s WHERE id = ANY(%s) AND status IN (%s, %s)",
+                    (STATUS_CALLED, sent_ids, STATUS_QUEUED_CALL, STATUS_WAITING),
                 )
                 conn.commit()
 
@@ -171,7 +185,9 @@ def process_queued_calls(now=None):
         "processed": True,
         "reason": "ok",
         "minute": minute_label,
+        "auto_call_count": auto_call_count,
         "queued_count": len(queued_rows),
+        "auto_selected_count": len(auto_rows),
         "sent_count": len(sent_ids),
         "failed_count": len(failed_ids),
         "failed_ids": failed_ids,
@@ -446,25 +462,51 @@ def ensure_settings_table():
                 VALUES ('accepting_new', 'true')
                 ON CONFLICT (key) DO NOTHING
             """)
+            cur.execute("""
+                INSERT INTO app_settings (key, value)
+                VALUES ('auto_call_count', '0')
+                ON CONFLICT (key) DO NOTHING
+            """)
             conn.commit()
 
-def is_accepting_new():
+
+def get_setting(key: str, default: str) -> str:
     ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT value FROM app_settings WHERE key = 'accepting_new'")
+            cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
             row = cur.fetchone()
-            return (row and row[0] == 'true')
+            return row[0] if row else default
 
-def set_accepting_new(flag: bool):
+
+def set_setting(key: str, value: str):
     ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE app_settings SET value = %s WHERE key = 'accepting_new'",
-                ('true' if flag else 'false',)
+                """
+                    INSERT INTO app_settings (key, value)
+                    VALUES (%s, %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """,
+                (key, value),
             )
             conn.commit()
+
+def is_accepting_new():
+    return get_setting("accepting_new", "true") == "true"
+
+def set_accepting_new(flag: bool):
+    set_setting("accepting_new", 'true' if flag else 'false')
+
+
+def get_auto_call_count() -> int:
+    raw = get_setting("auto_call_count", "0").strip()
+    return int(raw) if raw.isdigit() else 0
+
+
+def set_auto_call_count(count: int):
+    set_setting("auto_call_count", str(max(0, count)))
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -487,6 +529,7 @@ def admin_page():
     if sort_order not in ("asc", "desc"):
         sort_order = "asc"
     accepting_new = is_accepting_new()
+    auto_call_count = get_auto_call_count()
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -532,6 +575,7 @@ def admin_page():
         sort_by=sort_by,
         sort_order=sort_order,
         accepting_new=accepting_new,
+        auto_call_count=auto_call_count,
         csrf_token=get_csrf_token()
     )
 
@@ -765,6 +809,20 @@ def admin_toggle_accepting():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
     set_accepting_new(not is_accepting_new())
+    return redirect(url_for("admin_page"))
+
+
+@app.route("/admin/auto-call-count", methods=["POST"])
+def admin_auto_call_count():
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+
+    raw_value = (request.form.get("auto_call_count") or "").strip()
+    if raw_value.isdigit():
+        count = min(int(raw_value), 50)
+    else:
+        count = 0
+    set_auto_call_count(count)
     return redirect(url_for("admin_page"))
 
 

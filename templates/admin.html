@@ -86,6 +86,23 @@
                             <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>降順</option>
                         </select>
                     </div>
+                    <div class="col-sm-6">
+                        <label class="form-label">5分ごとの自動呼出人数</label>
+                        <form method="POST" action="/admin/auto-call-count" class="auto-call-form">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <input
+                                type="number"
+                                name="auto_call_count"
+                                min="0"
+                                max="50"
+                                step="1"
+                                value="{{ auto_call_count }}"
+                                class="form-control"
+                            >
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </form>
+                        <p class="helper-text">`0` にすると自動呼出は停止します。手動の「呼出予定に追加」はそのまま使えます。</p>
+                    </div>
                 </div>
             </div>
         </div>
