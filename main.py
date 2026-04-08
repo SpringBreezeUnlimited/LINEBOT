@@ -64,8 +64,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.18"
-APP_RELEASED_AT = "2026-04-08 21:58 JST"
+APP_VERSION = "v1.0.19"
+APP_RELEASED_AT = "2026-04-08 22:29 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -559,7 +559,7 @@ def admin_page():
                 SELECT COALESCE(t.name, '未設定') AS name, COUNT(*)
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
-                WHERE r.status IN (%s, %s, %s, %s)
+                WHERE r.status IN (%s, %s, %s)
                 GROUP BY COALESCE(t.name, '未設定')
                 ORDER BY COUNT(*) DESC
             """, (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED))
