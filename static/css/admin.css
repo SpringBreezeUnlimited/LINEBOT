@@ -446,6 +446,14 @@ select {
     z-index: 1030;
 }
 
+.version-toggle {
+    position: fixed;
+    right: var(--space-4);
+    bottom: 88px;
+    z-index: 1030;
+    background: #fff;
+}
+
 .auto-call-form {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -509,5 +517,10 @@ select {
         justify-content: flex-start;
         padding-right: var(--space-4);
         padding-left: var(--space-4);
+    }
+
+    .version-toggle {
+        position: static;
+        margin: 0 var(--space-4) var(--space-4);
     }
 }
