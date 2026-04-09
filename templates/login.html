@@ -14,6 +14,9 @@
                 {% if error %}
                 <div class="alert alert-danger">{{ error }}</div>
                 {% endif %}
+                {% if audit_admin_enabled %}
+                <div class="alert alert-info">監査管理者パスワードでログインすると、ログイン履歴のみ確認できます。</div>
+                {% endif %}
                 <form method="POST">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">

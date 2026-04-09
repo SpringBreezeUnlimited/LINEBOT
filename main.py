@@ -52,6 +52,7 @@ if not ADMIN_PASSWORD_HASH:
     raise RuntimeError("ADMIN_PASSWORD_HASH is required")
 if os.getenv("ADMIN_PASSWORD"):
     app.logger.warning("ADMIN_PASSWORD is deprecated and ignored. Use ADMIN_PASSWORD_HASH only.")
+AUDIT_ADMIN_PASSWORD_HASH = (os.getenv("AUDIT_ADMIN_PASSWORD_HASH") or "").strip()
 
 CHANNEL_ACCESS_TOKEN = (os.getenv('CHANNEL_ACCESS_TOKEN') or "").strip()
 CHANNEL_SECRET = (os.getenv('CHANNEL_SECRET') or "").strip()
@@ -66,8 +67,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.24"
-APP_RELEASED_AT = "2026-04-09 22:06 JST"
+APP_VERSION = "v1.0.26"
+APP_RELEASED_AT = "2026-04-09 22:25 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -118,6 +119,8 @@ AUTO_CALL_SETTING_KEYS = (
     "last_auto_call_failed_count",
     "last_auto_call_selected_count",
 )
+ROLE_ADMIN = "admin"
+ROLE_AUDIT_ADMIN = "audit_admin"
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
@@ -277,6 +280,7 @@ def ensure_database_schema():
     ensure_reservations_table()
     ensure_types_table()
     ensure_settings_table()
+    ensure_admin_login_logs_table()
     migrate_legacy_queued_calls()
 
 
@@ -289,10 +293,54 @@ def migrate_legacy_queued_calls():
             )
             conn.commit()
 
+
+def ensure_admin_login_logs_table():
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS admin_login_logs (
+                    id SERIAL PRIMARY KEY,
+                    login_result TEXT NOT NULL DEFAULT 'success',
+                    admin_role TEXT NOT NULL,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    logged_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                ALTER TABLE admin_login_logs
+                ADD COLUMN IF NOT EXISTS login_result TEXT NOT NULL DEFAULT 'success'
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_admin_login_logs_logged_in_at
+                ON admin_login_logs (logged_in_at DESC)
+            """)
+            conn.commit()
+
+
+def record_admin_login(role: str, ip_address: str, user_agent: str, login_result: str = "success"):
+    ensure_database_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    INSERT INTO admin_login_logs (login_result, admin_role, ip_address, user_agent)
+                    VALUES (%s, %s, %s, %s)
+                """,
+                (login_result, role, ip_address, (user_agent or "")[:300]),
+            )
+            conn.commit()
+
 def verify_admin_password(candidate: str) -> bool:
     if not candidate:
         return False
     return check_password_hash(ADMIN_PASSWORD_HASH, candidate)
+
+
+def verify_audit_admin_password(candidate: str) -> bool:
+    if not candidate or not AUDIT_ADMIN_PASSWORD_HASH:
+        return False
+    return check_password_hash(AUDIT_ADMIN_PASSWORD_HASH, candidate)
 
 
 def is_local_host(host: str) -> bool:
@@ -322,18 +370,21 @@ def enforce_https():
     return redirect(secure_url, code=301)
 
 
-def start_admin_session():
+def start_admin_session(role: str):
     now = time.time()
     session.clear()
     session["logged_in"] = True
+    session["admin_role"] = role
     session["issued_at"] = now
     session["last_activity"] = now
     session["_csrf_token"] = secrets.token_urlsafe(32)
     session.permanent = True
 
 
-def is_admin_authenticated(update_activity: bool = True) -> bool:
+def is_authenticated_as(role: str, update_activity: bool = True) -> bool:
     if not session.get("logged_in"):
+        return False
+    if session.get("admin_role") != role:
         return False
     last_activity = session.get("last_activity")
     if not isinstance(last_activity, (int, float)):
@@ -347,6 +398,14 @@ def is_admin_authenticated(update_activity: bool = True) -> bool:
         session["last_activity"] = now
         session.modified = True
     return True
+
+
+def is_admin_authenticated(update_activity: bool = True) -> bool:
+    return is_authenticated_as(ROLE_ADMIN, update_activity)
+
+
+def is_audit_admin_authenticated(update_activity: bool = True) -> bool:
+    return is_authenticated_as(ROLE_AUDIT_ADMIN, update_activity)
 
 
 def normalize_type_name(value: str) -> str:
@@ -464,14 +523,27 @@ def login():
     if request.method == "POST":
         if is_login_rate_limited(ip):
             abort(429)
-        if verify_admin_password(request.form.get("password")):
-            start_admin_session()
+        password = request.form.get("password")
+        if verify_admin_password(password):
+            start_admin_session(ROLE_ADMIN)
+            record_admin_login(ROLE_ADMIN, ip, request.headers.get("User-Agent"))
             LOGIN_ATTEMPTS.pop(ip, None)
             return redirect(url_for("admin_page"))
+        if verify_audit_admin_password(password):
+            start_admin_session(ROLE_AUDIT_ADMIN)
+            record_admin_login(ROLE_AUDIT_ADMIN, ip, request.headers.get("User-Agent"))
+            LOGIN_ATTEMPTS.pop(ip, None)
+            return redirect(url_for("admin_login_logs_page"))
         else:
+            record_admin_login("unknown", ip, request.headers.get("User-Agent"), login_result="failure")
             record_login_failure(ip)
             error = "パスワードが正しくありません"
-    return render_template("login.html", error=error, csrf_token=get_csrf_token())
+    return render_template(
+        "login.html",
+        error=error,
+        csrf_token=get_csrf_token(),
+        audit_admin_enabled=bool(AUDIT_ADMIN_PASSWORD_HASH),
+    )
 
 def ensure_types_table():
     with get_connection() as conn:
@@ -620,6 +692,32 @@ def get_last_auto_call_summary():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/admin/login-logs")
+def admin_login_logs_page():
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+    if not AUDIT_ADMIN_PASSWORD_HASH:
+        abort(404)
+
+    ensure_database_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at
+                    FROM admin_login_logs
+                    ORDER BY logged_in_at DESC, id DESC
+                    LIMIT 500
+                """
+            )
+            rows = cur.fetchall()
+    return render_template(
+        "login_logs.html",
+        rows=rows,
+        csrf_token=get_csrf_token(),
+    )
 
 @app.route("/admin")
 def admin_page():

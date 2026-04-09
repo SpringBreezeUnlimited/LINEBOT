@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UKind ログイン履歴</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark bg-dark mb-4">
+        <div class="container">
+            <span class="navbar-brand">UKind ログイン履歴</span>
+            <div class="d-flex gap-2">
+                <form method="POST" action="/logout" class="mb-0">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <table class="table table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>結果</th>
+                            <th>権限</th>
+                            <th>IPアドレス</th>
+                            <th>ユーザーエージェント</th>
+                            <th>ログイン時刻</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td>{{ row[0] }}</td>
+                            <td>
+                                {% if row[1] == 'failure' %}
+                                <span class="badge bg-danger">失敗</span>
+                                {% else %}
+                                <span class="badge bg-success">成功</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row[2] == 'audit_admin' %}
+                                <span class="badge bg-primary">監査管理者</span>
+                                {% elif row[2] == 'admin' %}
+                                <span class="badge bg-secondary">通常管理者</span>
+                                {% else %}
+                                <span class="badge bg-secondary">不明</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row[3] or '-' }}</td>
+                            <td>{{ row[4] or '-' }}</td>
+                            <td>{{ row[5].strftime('%Y-%m-%d %H:%M:%S') if row[5] else '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">ログイン履歴はまだありません。</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

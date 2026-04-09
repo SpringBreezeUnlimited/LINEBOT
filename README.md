@@ -3,7 +3,8 @@
 ## Setup
 1. Copy `.env.example` values into your deployment environment.
 2. Generate `ADMIN_PASSWORD_HASH` with Werkzeug `generate_password_hash`.
-3. Run app with `gunicorn main:app` (see `Procfile`).
+3. If you want a separate audit-only administrator, also set `AUDIT_ADMIN_PASSWORD_HASH`.
+4. Run app with `gunicorn main:app` (see `Procfile`).
 
 ## Batch Call Queue
 1. Set `BATCH_CALL_RUNNER_TOKEN` in your app environment.
