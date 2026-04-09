@@ -110,9 +110,14 @@
                         <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
                     </div>
                 </div>
+                <div class="auto-call-summary mt-3">
+                    <div class="auto-call-summary-label">前回の自動呼出</div>
+                    <div id="last-auto-call-message" class="auto-call-summary-value">{{ last_auto_call.message }}</div>
+                </div>
             </div>
         </div>
         <div class="card shadow-sm">
+            <div id="call-notification" class="call-notification" hidden></div>
             <div class="list-meta">
                 <span class="list-meta-label">リスト最終更新</span>
                 <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
@@ -122,6 +127,7 @@
                     <thead class="table-dark">
                         <tr>
                             <th>番号</th>
+                            <th>受付時刻</th>
                             <th>種類</th>
                             <th>メッセージ</th>
                             <th>状態</th>
@@ -132,6 +138,7 @@
                         {% for row in rows %}
                         <tr>
                             <td>{{ row[0] }}</td>
+                            <td>{{ row[5].strftime('%Y-%m-%d %H:%M:%S') if row[5] else '-' }}</td>
                             <td>{{ row[4] or '-' }}</td>
                             <td>{{ row[2] or '-' }}</td>
                             <td>

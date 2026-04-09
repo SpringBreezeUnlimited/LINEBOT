@@ -1,5 +1,6 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 let activeRowsCache = [];
+const autoCallNotificationStorageKey = 'ukind-last-auto-call-run-at';
 
 function formatUpdatedAt(date) {
     return new Intl.DateTimeFormat('ja-JP', {
@@ -134,16 +135,44 @@ function buildRow(row) {
     const tr = document.createElement('tr');
     const tdId = document.createElement('td');
     tdId.textContent = row.id ?? '';
+    const tdCreatedAt = document.createElement('td');
+    tdCreatedAt.textContent = row.created_at || '-';
     const tdType = document.createElement('td');
     tdType.textContent = row.type || '-';
     const tdMessage = document.createElement('td');
     tdMessage.textContent = row.message || '-';
     tr.appendChild(tdId);
+    tr.appendChild(tdCreatedAt);
     tr.appendChild(tdType);
     tr.appendChild(tdMessage);
     tr.appendChild(buildStatusCell(row));
     tr.appendChild(buildActionCell(row));
     return tr;
+}
+
+function updateAutoCallSummary(summary) {
+    const target = document.getElementById('last-auto-call-message');
+    if (!target || !summary) return;
+    target.textContent = summary.message || 'まだ自動呼出は実行されていません。';
+}
+
+function showAutoCallNotification(summary) {
+    const target = document.getElementById('call-notification');
+    if (!target || !summary || !summary.run_at) return;
+    let lastSeen = '';
+    try {
+        lastSeen = localStorage.getItem(autoCallNotificationStorageKey) || '';
+    } catch (e) {
+        lastSeen = '';
+    }
+    if (lastSeen === summary.run_at) return;
+    target.hidden = false;
+    target.textContent = `自動呼出を実行しました: ${summary.run_at} / ${summary.sent_count || 0}人を呼出`;
+    try {
+        localStorage.setItem(autoCallNotificationStorageKey, summary.run_at);
+    } catch (e) {
+        // no-op
+    }
 }
 
 function renderActiveRows() {
@@ -163,6 +192,8 @@ async function refreshActiveRows() {
         const data = await res.json();
         activeRowsCache = data.rows || [];
         renderActiveRows();
+        updateAutoCallSummary(data.meta?.last_auto_call);
+        showAutoCallNotification(data.meta?.last_auto_call);
         updateLastUpdated();
     } catch (e) {
         // no-op

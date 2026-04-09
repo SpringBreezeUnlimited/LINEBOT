@@ -43,9 +43,11 @@
                         <div class="d-flex gap-2">
                             <select id="history-sort-by" class="form-select">
                                 <option value="id" {% if sort_by == 'id' %}selected{% endif %}>番号</option>
+                                <option value="created_at" {% if sort_by == 'created_at' %}selected{% endif %}>受付時刻</option>
                                 <option value="status" {% if sort_by == 'status' %}selected{% endif %}>状態</option>
                                 <option value="type" {% if sort_by == 'type' %}selected{% endif %}>種類</option>
                                 <option value="message" {% if sort_by == 'message' %}selected{% endif %}>メッセージ</option>
+                                <option value="service_duration" {% if sort_by == 'service_duration' %}selected{% endif %}>到着から完了</option>
                             </select>
                             <select id="history-sort-order" class="form-select">
                                 <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>昇順</option>
@@ -62,9 +64,11 @@
                     <thead class="table-dark">
                         <tr>
                             <th>番号</th>
+                            <th>受付時刻</th>
                             <th>種類</th>
                             <th>メッセージ</th>
                             <th>状態</th>
+                            <th>到着から完了</th>
                         </tr>
                     </thead>
                     <tbody id="history-rows">
@@ -75,8 +79,12 @@
                             data-type="{{ row[4] or '' }}"
                             data-message="{{ row[2] or '' }}"
                             data-status="{{ row[3] }}"
+                            data-created-at="{{ row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else '' }}"
+                            data-service-duration="{{ row[9] if row[9] is not none else '' }}"
+                            data-service-duration-label="{{ format_duration(row[9]) if row[9] is not none else '-' }}"
                         >
                             <td>{{ row[0] }}</td>
+                            <td>{{ row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else '-' }}</td>
                             <td>{{ row[4] or '-' }}</td>
                             <td>{{ row[2] or '-' }}</td>
                             <td>
@@ -88,6 +96,7 @@
                                 <span class="badge bg-success">到着済み</span>
                                 {% endif %}
                             </td>
+                            <td>{{ format_duration(row[9]) if row[9] is not none else '-' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -95,7 +104,15 @@
             </div>
         </div>
         <div class="d-flex gap-2 justify-content-between align-items-center mt-4 history-pagination">
-            <a href="/admin/history" class="btn btn-secondary">リストを更新</a>
+            <div class="d-flex gap-2 align-items-center history-actions">
+                <a href="/admin/history" class="btn btn-secondary">リストを更新</a>
+                <a
+                    href="{{ url_for('admin_history_export', type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}"
+                    class="btn btn-secondary"
+                >
+                    CSV出力
+                </a>
+            </div>
             <div class="d-flex gap-2 align-items-center">
                 {% if has_prev %}
                 <a

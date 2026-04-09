@@ -1,3 +1,5 @@
+import csv
+import io
 import os
 import re
 import secrets
@@ -6,7 +8,7 @@ from datetime import timedelta
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import psycopg2
-from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify
+from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
@@ -64,8 +66,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.22"
-APP_RELEASED_AT = "2026-04-09 18:01 JST"
+APP_VERSION = "v1.0.23"
+APP_RELEASED_AT = "2026-04-09 21:46 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -98,6 +100,7 @@ def inject_template_globals():
     return {
         "app_version": APP_VERSION,
         "app_released_at": APP_RELEASED_AT,
+        "format_duration": format_duration_from_seconds,
     }
 
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
@@ -109,8 +112,34 @@ STATUS_ARRIVED = "arrived"
 STATUS_DONE = "done"
 STATUS_CANCELLED = "cancelled"
 
+AUTO_CALL_SETTING_KEYS = (
+    "last_auto_call_run_at",
+    "last_auto_call_sent_count",
+    "last_auto_call_failed_count",
+    "last_auto_call_selected_count",
+)
+
 def get_connection():
     return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+
+
+def format_dt(value):
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_duration_from_seconds(total_seconds):
+    if total_seconds is None:
+        return ""
+    seconds = max(0, int(total_seconds))
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}時間{minutes}分"
+    if minutes:
+        return f"{minutes}分{secs}秒"
+    return f"{secs}秒"
 
 
 def should_run_call_batch(now=None) -> bool:
@@ -165,10 +194,17 @@ def process_queued_calls(now=None):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE reservations SET status = %s WHERE id = ANY(%s) AND status = %s",
+                    "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = ANY(%s) AND status = %s",
                     (STATUS_CALLED, sent_ids, STATUS_WAITING),
                 )
                 conn.commit()
+
+    set_settings({
+        "last_auto_call_run_at": minute_label,
+        "last_auto_call_sent_count": str(len(sent_ids)),
+        "last_auto_call_failed_count": str(len(failed_ids)),
+        "last_auto_call_selected_count": str(len(auto_rows)),
+    })
 
     return {
         "processed": True,
@@ -209,6 +245,18 @@ def ensure_reservations_table():
             cur.execute("""
                 ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS called_at TIMESTAMP
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS arrived_at TIMESTAMP
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP
             """)
             cur.execute("""
                 ALTER TABLE reservations
@@ -466,6 +514,20 @@ def ensure_settings_table():
                 VALUES ('auto_call_count', '0')
                 ON CONFLICT (key) DO NOTHING
             """)
+            for key, value in (
+                ("last_auto_call_run_at", ""),
+                ("last_auto_call_sent_count", "0"),
+                ("last_auto_call_failed_count", "0"),
+                ("last_auto_call_selected_count", "0"),
+            ):
+                cur.execute(
+                    """
+                        INSERT INTO app_settings (key, value)
+                        VALUES (%s, %s)
+                        ON CONFLICT (key) DO NOTHING
+                    """,
+                    (key, value),
+                )
             conn.commit()
 
 
@@ -492,6 +554,30 @@ def set_setting(key: str, value: str):
             )
             conn.commit()
 
+
+def get_settings(keys):
+    ensure_database_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT key, value FROM app_settings WHERE key = ANY(%s)", (list(keys),))
+            return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def set_settings(settings):
+    ensure_database_schema()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            for key, value in settings.items():
+                cur.execute(
+                    """
+                        INSERT INTO app_settings (key, value)
+                        VALUES (%s, %s)
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                    """,
+                    (key, value),
+                )
+            conn.commit()
+
 def is_accepting_new():
     return get_setting("accepting_new", "true") == "true"
 
@@ -506,6 +592,29 @@ def get_auto_call_count() -> int:
 
 def set_auto_call_count(count: int):
     set_setting("auto_call_count", str(max(0, count)))
+
+
+def get_last_auto_call_summary():
+    values = get_settings(AUTO_CALL_SETTING_KEYS)
+    run_at = (values.get("last_auto_call_run_at") or "").strip()
+    sent_count = int((values.get("last_auto_call_sent_count") or "0").strip() or "0")
+    failed_count = int((values.get("last_auto_call_failed_count") or "0").strip() or "0")
+    selected_count = int((values.get("last_auto_call_selected_count") or "0").strip() or "0")
+    if not run_at:
+        return {
+            "run_at": "",
+            "sent_count": 0,
+            "failed_count": 0,
+            "selected_count": 0,
+            "message": "まだ自動呼出は実行されていません。",
+        }
+    return {
+        "run_at": run_at,
+        "sent_count": sent_count,
+        "failed_count": failed_count,
+        "selected_count": selected_count,
+        "message": f"前回: {run_at} / 選択 {selected_count}人 / 呼出 {sent_count}人 / 失敗 {failed_count}人",
+    }
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -529,6 +638,7 @@ def admin_page():
         sort_order = "asc"
     accepting_new = is_accepting_new()
     auto_call_count = get_auto_call_count()
+    last_auto_call = get_last_auto_call_summary()
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -546,7 +656,7 @@ def admin_page():
             }
             order_by = order_map[sort_by]
             cur.execute(f"""
-                SELECT r.id, r.user_id, r.message, r.status, t.name
+                SELECT r.id, r.user_id, r.message, r.status, t.name, r.created_at
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
@@ -575,6 +685,7 @@ def admin_page():
         sort_order=sort_order,
         accepting_new=accepting_new,
         auto_call_count=auto_call_count,
+        last_auto_call=last_auto_call,
         csrf_token=get_csrf_token()
     )
 
@@ -588,7 +699,7 @@ def admin_data():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT r.id, r.message, r.status, t.id, t.name
+                    SELECT r.id, r.message, r.status, t.id, t.name, r.created_at
                     FROM reservations r
                     LEFT JOIN reservation_types t ON r.type_id = t.id
                     WHERE r.status IN (%s, %s, %s)
@@ -597,11 +708,22 @@ def admin_data():
                 (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
             )
             rows = cur.fetchall()
+    last_auto_call = get_last_auto_call_summary()
     return jsonify({
         "rows": [
-            {"id": row[0], "message": row[1], "status": row[2], "type_id": row[3], "type": row[4]}
+            {
+                "id": row[0],
+                "message": row[1],
+                "status": row[2],
+                "type_id": row[3],
+                "type": row[4],
+                "created_at": format_dt(row[5]),
+            }
             for row in rows
-        ]
+        ],
+        "meta": {
+            "last_auto_call": last_auto_call,
+        },
     })
 
 @app.route("/admin/type_counts")
@@ -708,7 +830,7 @@ def admin_history():
             current_type_id = int(type_id) if type_id.isdigit() else None
             sort_by = request.args.get("sort_by", "id").strip()
             sort_order = request.args.get("sort_order", "desc").strip().lower()
-            if sort_by not in ("id", "status", "type", "message"):
+            if sort_by not in ("id", "status", "type", "message", "created_at", "service_duration"):
                 sort_by = "id"
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
@@ -722,11 +844,23 @@ def admin_history():
                 "id": "r.id",
                 "status": "r.status",
                 "type": "t.name",
-                "message": "r.message"
+                "message": "r.message",
+                "created_at": "r.created_at",
+                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
             }
             order_by = order_map[sort_by]
             cur.execute(f"""
-                SELECT r.id, r.user_id, r.message, r.status, t.name, t.id
+                SELECT
+                    r.id,
+                    r.user_id,
+                    r.message,
+                    r.status,
+                    t.name,
+                    t.id,
+                    r.created_at,
+                    r.arrived_at,
+                    r.completed_at,
+                    EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
@@ -749,6 +883,75 @@ def admin_history():
         sort_by=sort_by,
         sort_order=sort_order,
         csrf_token=get_csrf_token()
+    )
+
+
+@app.route("/admin/history/export.csv")
+def admin_history_export():
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+
+    ensure_database_schema()
+    type_id = request.args.get("type_id", "").strip()
+    current_type_id = int(type_id) if type_id.isdigit() else None
+    sort_by = request.args.get("sort_by", "id").strip()
+    sort_order = request.args.get("sort_order", "desc").strip().lower()
+    if sort_by not in ("id", "status", "type", "message", "created_at", "service_duration"):
+        sort_by = "id"
+    if sort_order not in ("asc", "desc"):
+        sort_order = "desc"
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            params = [STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED]
+            where = "WHERE r.status IN (%s, %s, %s)"
+            if current_type_id is not None:
+                where += " AND r.type_id = %s"
+                params.append(current_type_id)
+            order_map = {
+                "id": "r.id",
+                "status": "r.status",
+                "type": "t.name",
+                "message": "r.message",
+                "created_at": "r.created_at",
+                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
+            }
+            cur.execute(f"""
+                SELECT
+                    r.id,
+                    COALESCE(t.name, ''),
+                    COALESCE(r.message, ''),
+                    r.status,
+                    r.created_at,
+                    r.arrived_at,
+                    r.completed_at,
+                    EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
+                FROM reservations r
+                LEFT JOIN reservation_types t ON r.type_id = t.id
+                {where}
+                ORDER BY {order_map[sort_by]} {sort_order.upper()}, r.id DESC
+            """, params)
+            rows = cur.fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["番号", "種類", "メッセージ", "状態", "受付時刻", "到着時刻", "完了時刻", "到着から完了"])
+    for row in rows:
+        writer.writerow([
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            format_dt(row[4]),
+            format_dt(row[5]),
+            format_dt(row[6]),
+            format_duration_from_seconds(row[7]) or "-",
+        ])
+    filename = f"ukind-history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 @app.route("/admin/call/<int:res_id>", methods=["POST"])
@@ -780,7 +983,7 @@ def admin_call(res_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE reservations SET status = %s WHERE id = %s AND status = %s RETURNING id",
+                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING id",
                 (STATUS_CALLED, res_id, STATUS_WAITING),
             )
             if not cur.fetchone():
@@ -797,7 +1000,7 @@ def admin_finish(res_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE reservations SET status = %s WHERE id = %s AND status = %s RETURNING id",
+                "UPDATE reservations SET status = %s, completed_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING id",
                 (STATUS_DONE, res_id, STATUS_ARRIVED),
             )
             if not cur.fetchone():
@@ -1000,7 +1203,10 @@ def process_reservation(event, user_id, user_message):
                     if status == STATUS_WAITING:
                         reply = "まだ呼出されていません。呼出後に「到着」と送信してください。"
                     else:
-                        cur.execute("UPDATE reservations SET status = %s WHERE id = %s", (STATUS_ARRIVED, res_id))
+                        cur.execute(
+                            "UPDATE reservations SET status = %s, arrived_at = CURRENT_TIMESTAMP WHERE id = %s",
+                            (STATUS_ARRIVED, res_id),
+                        )
                         conn.commit()
                         reply = f"到着を受け付けました。番号: {res_id} / スタッフが確認します。"
             else:

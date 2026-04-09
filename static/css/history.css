@@ -214,6 +214,10 @@ select {
     background: var(--color-success);
 }
 
+.history-actions {
+    flex-wrap: wrap;
+}
+
 .mb-0 {
     margin-bottom: 0;
 }

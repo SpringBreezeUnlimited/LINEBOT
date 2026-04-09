@@ -4,6 +4,9 @@ const historyRowsCache = Array.from(document.querySelectorAll('#history-rows tr'
     type: row.dataset.type || '',
     message: row.dataset.message || '',
     status: row.dataset.status || '',
+    created_at: row.dataset.createdAt || '',
+    service_duration: Number(row.dataset.serviceDuration || '0'),
+    service_duration_label: row.dataset.serviceDurationLabel || '-',
 }));
 
 function getHistoryFilters() {
@@ -55,11 +58,17 @@ function applyHistoryFilters(rows) {
         if (sortBy === 'status') {
             return compareHistoryValues(left.status || '', right.status || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
         }
+        if (sortBy === 'created_at') {
+            return compareHistoryValues(left.created_at || '', right.created_at || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
+        }
         if (sortBy === 'type') {
             return compareHistoryValues(left.type || '', right.type || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
         }
         if (sortBy === 'message') {
             return compareHistoryValues(left.message || '', right.message || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
+        }
+        if (sortBy === 'service_duration') {
+            return compareHistoryValues(left.service_duration || 0, right.service_duration || 0, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
         }
         return compareHistoryValues(left.id, right.id, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
     });
@@ -76,9 +85,11 @@ function renderHistoryRows() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${row.id || ''}</td>
+            <td>${row.created_at || '-'}</td>
             <td>${row.type || '-'}</td>
             <td>${row.message || '-'}</td>
             <td>${getHistoryStatusMarkup(row.status)}</td>
+            <td>${row.service_duration_label || '-'}</td>
         `;
         tbody.appendChild(tr);
     });

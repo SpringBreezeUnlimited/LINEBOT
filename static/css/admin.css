@@ -364,6 +364,25 @@ select {
     font-size: 0.875rem;
 }
 
+.auto-call-summary {
+    padding: var(--space-4);
+    background: var(--color-surface-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.auto-call-summary-label {
+    margin-bottom: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+.auto-call-summary-value {
+    font-size: 0.9375rem;
+    font-weight: 700;
+}
+
 .text-center {
     text-align: center;
 }
@@ -444,6 +463,16 @@ select {
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: var(--shadow-1);
     z-index: 1030;
+}
+
+.call-notification {
+    margin: var(--space-4) var(--space-5) 0;
+    padding: var(--space-3) var(--space-4);
+    color: #1d5d34;
+    background: #eef8f0;
+    border: 1px solid #b9dfc0;
+    border-radius: var(--radius-md);
+    font-weight: 700;
 }
 
 .version-toggle {
