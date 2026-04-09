@@ -382,6 +382,16 @@ input {
     bottom: 88px;
     z-index: 1030;
     background: #fff;
+    transition: opacity 0.18s ease, bottom 0.18s ease, transform 0.18s ease;
+}
+
+.version-toggle-hidden {
+    bottom: var(--space-4);
+    opacity: 0.56;
+}
+
+.version-toggle-hidden:hover {
+    opacity: 0.88;
 }
 
 @media (min-width: 760px) {
@@ -418,7 +428,7 @@ input {
     }
 
     .version-toggle {
-        position: static;
+        bottom: 0;
         margin: 0 var(--space-4) var(--space-4);
     }
 }

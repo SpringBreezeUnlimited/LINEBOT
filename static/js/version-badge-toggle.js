@@ -6,7 +6,8 @@ function setVersionBadgeVisibility(isVisible) {
     if (!versionBadge || !versionToggle) return;
     versionBadge.hidden = !isVisible;
     versionToggle.setAttribute('aria-expanded', String(isVisible));
-    versionToggle.textContent = isVisible ? 'バージョン表示を隠す' : 'バージョン表示を表示';
+    versionToggle.textContent = isVisible ? 'バージョン非表示' : 'バージョン表示';
+    versionToggle.classList.toggle('version-toggle-hidden', !isVisible);
 }
 
 function loadVersionBadgePreference() {

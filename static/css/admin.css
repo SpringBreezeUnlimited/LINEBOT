@@ -452,6 +452,16 @@ select {
     bottom: 88px;
     z-index: 1030;
     background: #fff;
+    transition: opacity 0.18s ease, bottom 0.18s ease, transform 0.18s ease;
+}
+
+.version-toggle-hidden {
+    bottom: var(--space-4);
+    opacity: 0.56;
+}
+
+.version-toggle-hidden:hover {
+    opacity: 0.88;
 }
 
 .auto-call-form {
@@ -511,6 +521,11 @@ select {
     .position-fixed.version-badge {
         position: static;
         margin: var(--space-4);
+    }
+
+    .version-toggle {
+        bottom: 0;
+        margin: 0 var(--space-4) var(--space-4);
     }
 
     .list-meta {
