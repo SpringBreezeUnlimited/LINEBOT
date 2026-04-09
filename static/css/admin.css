@@ -114,6 +114,11 @@ select {
     font-variant-numeric: tabular-nums;
 }
 
+.list-meta-value-stale {
+    color: var(--color-danger);
+    font-weight: 700;
+}
+
 .shadow-sm {
     box-shadow: var(--shadow-2);
 }

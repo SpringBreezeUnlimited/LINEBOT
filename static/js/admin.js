@@ -1,6 +1,7 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 let activeRowsCache = [];
 const autoCallNotificationStorageKey = 'ukind-last-auto-call-run-at';
+let lastUpdatedAt = null;
 
 function formatUpdatedAt(date) {
     return new Intl.DateTimeFormat('ja-JP', {
@@ -18,7 +19,16 @@ function formatUpdatedAt(date) {
 function updateLastUpdated(date = new Date()) {
     const target = document.getElementById('list-last-updated');
     if (!target) return;
+    lastUpdatedAt = date;
     target.textContent = formatUpdatedAt(date);
+    updateLastUpdatedWarningState();
+}
+
+function updateLastUpdatedWarningState(now = new Date()) {
+    const target = document.getElementById('list-last-updated');
+    if (!target) return;
+    const shouldWarn = Boolean(lastUpdatedAt) && (now.getTime() - lastUpdatedAt.getTime() >= 30000);
+    target.classList.toggle('list-meta-value-stale', shouldWarn);
 }
 
 function getQueryParams() {
@@ -236,6 +246,9 @@ document.getElementById('sort-by')?.addEventListener('change', applyAdminFilters
 document.getElementById('sort-order')?.addEventListener('change', applyAdminFilters);
 
 refreshActiveRows();
+setInterval(() => {
+    updateLastUpdatedWarningState();
+}, 1000);
 setInterval(() => {
     refreshActiveRows();
     refreshTypeCounts();
