@@ -7,13 +7,13 @@ import time
 from datetime import timedelta
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-import psycopg2
-from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from werkzeug.middleware.proxy_fix import ProxyFix
-from werkzeug.security import check_password_hash
+import psycopg2 # type: ignore
+from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response # type: ignore
+from linebot import LineBotApi, WebhookHandler # type: ignore
+from linebot.exceptions import InvalidSignatureError # type: ignore
+from linebot.models import MessageEvent, TextMessage, TextSendMessage # type: ignore
+from werkzeug.middleware.proxy_fix import ProxyFix # type: ignore
+from werkzeug.security import check_password_hash # type: ignore
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
