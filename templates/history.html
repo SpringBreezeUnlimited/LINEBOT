@@ -79,12 +79,12 @@
                             data-type="{{ row[4] or '' }}"
                             data-message="{{ row[2] or '' }}"
                             data-status="{{ row[3] }}"
-                            data-created-at="{{ row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else '' }}"
+                            data-created-at="{{ row[6] if row[6] else '' }}"
                             data-service-duration="{{ row[9] if row[9] is not none else '' }}"
                             data-service-duration-label="{{ format_duration(row[9]) if row[9] is not none else '-' }}"
                         >
                             <td>{{ row[0] }}</td>
-                            <td>{{ row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else '-' }}</td>
+                            <td>{{ row[6] if row[6] else '-' }}</td>
                             <td>{{ row[4] or '-' }}</td>
                             <td>{{ row[2] or '-' }}</td>
                             <td>

@@ -54,7 +54,7 @@
                             </td>
                             <td>{{ row[3] or '-' }}</td>
                             <td>{{ row[4] or '-' }}</td>
-                            <td>{{ row[5].strftime('%Y-%m-%d %H:%M:%S') if row[5] else '-' }}</td>
+                            <td>{{ row[5] if row[5] else '-' }}</td>
                         </tr>
                         {% else %}
                         <tr>

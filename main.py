@@ -4,8 +4,9 @@ import os
 import re
 import secrets
 import time
-from datetime import timedelta
+from datetime import timedelta, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+import pytz
 
 import psycopg2 # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response # type: ignore
@@ -129,6 +130,17 @@ def get_connection():
 def format_dt(value):
     if not value:
         return ""
+    # UTCまたはnaive datetimeの場合、JSTに変換
+    if value.tzinfo is None:
+        # naiveな場合、UTCとして扱う
+        value = pytz.utc.localize(value)
+    elif value.tzinfo != pytz.timezone('Asia/Tokyo'):
+        # UTCまたは他のタイムゾーンの場合、JSTに変換
+        value = value.astimezone(pytz.timezone('Asia/Tokyo'))
+    else:
+        # 既にJSTの場合
+        if value.tzinfo != pytz.timezone('Asia/Tokyo'):
+            value = value.astimezone(pytz.timezone('Asia/Tokyo'))
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -151,8 +163,11 @@ def should_run_call_batch(now=None) -> bool:
 
 
 def process_queued_calls(now=None):
-    current = now or time.localtime()
-    minute_label = time.strftime("%Y-%m-%d %H:%M", current)
+    # 日本時間で現在時刻を取得
+    jst = pytz.timezone('Asia/Tokyo')
+    current_dt = datetime.now(jst) if now is None else now
+    current = current_dt.timetuple()
+    minute_label = current_dt.strftime("%Y-%m-%d %H:%M")
     if not should_run_call_batch(current):
         return {
             "processed": False,
@@ -706,13 +721,18 @@ def admin_login_logs_page():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at
+                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at AT TIME ZONE 'Asia/Tokyo'
                     FROM admin_login_logs
                     ORDER BY logged_in_at DESC, id DESC
                     LIMIT 500
                 """
             )
             rows = cur.fetchall()
+            # 時刻をフォーマット済み文字列に変換（日本時間対応）
+            rows = [
+                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
+                for row in rows
+            ]
     return render_template(
         "login_logs.html",
         rows=rows,
@@ -754,13 +774,18 @@ def admin_page():
             }
             order_by = order_map[sort_by]
             cur.execute(f"""
-                SELECT r.id, r.user_id, r.message, r.status, t.name, r.created_at
+                SELECT r.id, r.user_id, r.message, r.status, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
                 ORDER BY {order_by} {sort_order.upper()}, r.id ASC
             """, params)
             rows = cur.fetchall()
+            # 時刻をフォーマット済み文字列に変換（日本時間対応）
+            rows = [
+                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
+                for row in rows
+            ]
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
             types = cur.fetchall()
             cur.execute("""
@@ -797,7 +822,7 @@ def admin_data():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT r.id, r.message, r.status, t.id, t.name, r.created_at
+                    SELECT r.id, r.message, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
                     FROM reservations r
                     LEFT JOIN reservation_types t ON r.type_id = t.id
                     WHERE r.status IN (%s, %s, %s)
@@ -955,9 +980,9 @@ def admin_history():
                     r.status,
                     t.name,
                     t.id,
-                    r.created_at,
-                    r.arrived_at,
-                    r.completed_at,
+                    r.created_at AT TIME ZONE 'Asia/Tokyo',
+                    r.arrived_at AT TIME ZONE 'Asia/Tokyo',
+                    r.completed_at AT TIME ZONE 'Asia/Tokyo',
                     EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
@@ -966,6 +991,11 @@ def admin_history():
                 LIMIT %s OFFSET %s
             """, params + [history_page_size + 1, offset])
             rows = cur.fetchall()
+            # 時刻をフォーマット済み文字列に変換（日本時間対応）
+            rows = [
+                (row[0], row[1], row[2], row[3], row[4], row[5], format_dt(row[6]), format_dt(row[7]), format_dt(row[8]), row[9])
+                for row in rows
+            ]
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
             types = cur.fetchall()
     has_next = len(rows) > history_page_size
@@ -1020,9 +1050,9 @@ def admin_history_export():
                     COALESCE(t.name, ''),
                     COALESCE(r.message, ''),
                     r.status,
-                    r.created_at,
-                    r.arrived_at,
-                    r.completed_at,
+                    r.created_at AT TIME ZONE 'Asia/Tokyo',
+                    r.arrived_at AT TIME ZONE 'Asia/Tokyo',
+                    r.completed_at AT TIME ZONE 'Asia/Tokyo',
                     EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
