@@ -6,7 +6,7 @@ import secrets
 import time
 from datetime import timedelta, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-import pytz
+import pytz # type: ignore
 
 import psycopg2 # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response # type: ignore
