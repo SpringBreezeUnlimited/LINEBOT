@@ -68,7 +68,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.29"
+APP_VERSION = "v1.0.30"
 APP_RELEASED_AT = "2026-04-14 00:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -1100,7 +1100,7 @@ def admin_history_export():
             format_dt(row[5]),
             format_duration_from_seconds(row[6]) or "-",
         ])
-    filename = f"ukind-history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"espresso-history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
         output.getvalue(),
         mimetype="text/csv; charset=utf-8",

@@ -1,5 +1,5 @@
 {
-  "name": "ukind-system",
+  "name": "espresso-system",
   "version": "1.0.0",
   "description": "LINEを用いた文化祭予約システム",
   "main": "app.js",

@@ -1,6 +1,6 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 let activeRowsCache = [];
-const autoCallNotificationStorageKey = 'ukind-last-auto-call-run-at';
+const autoCallNotificationStorageKey = 'espresso-last-auto-call-run-at';
 let lastUpdatedAt = null;
 
 function formatUpdatedAt(date) {

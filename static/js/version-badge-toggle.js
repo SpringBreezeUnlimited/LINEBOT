@@ -1,6 +1,6 @@
 const versionBadge = document.getElementById('version-badge');
 const versionToggle = document.querySelector('[data-version-toggle]');
-const versionStorageKey = 'ukind-version-badge-visible';
+const versionStorageKey = 'espresso-version-badge-visible';
 
 function setVersionBadgeVisibility(isVisible) {
     if (!versionBadge || !versionToggle) return;

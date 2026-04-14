@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UKind ログイン履歴</title>
+    <title>Espresso ログイン履歴</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}">
 </head>
 <body class="bg-light">
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
-            <span class="navbar-brand">UKind ログイン履歴</span>
+            <span class="navbar-brand">Espresso ログイン履歴</span>
             <div class="d-flex gap-2">
                 <form method="POST" action="/logout" class="mb-0">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
