@@ -203,7 +203,7 @@ async function refreshActiveRows() {
         activeRowsCache = data.rows || [];
         renderActiveRows();
         updateAutoCallSummary(data.meta?.last_auto_call);
-        showAutoCallNotification(data.meta?.last_auto_call);
+        showAutoCallNotification(data.meta?.latest_auto_call);
         updateLastUpdated();
     } catch (e) {
         // no-op

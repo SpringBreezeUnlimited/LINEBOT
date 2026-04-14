@@ -6,7 +6,7 @@ import secrets
 import time
 from datetime import timedelta, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-import pytz
+import pytz # type: ignore
 
 import psycopg2 # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response # type: ignore
@@ -68,8 +68,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.26"
-APP_RELEASED_AT = "2026-04-09 22:25 JST"
+APP_VERSION = "v1.0.27"
+APP_RELEASED_AT = "2026-04-14 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -119,6 +119,10 @@ AUTO_CALL_SETTING_KEYS = (
     "last_auto_call_sent_count",
     "last_auto_call_failed_count",
     "last_auto_call_selected_count",
+    "previous_auto_call_run_at",
+    "previous_auto_call_sent_count",
+    "previous_auto_call_failed_count",
+    "previous_auto_call_selected_count",
 )
 ROLE_ADMIN = "admin"
 ROLE_AUDIT_ADMIN = "audit_admin"
@@ -217,12 +221,21 @@ def process_queued_calls(now=None):
                 )
                 conn.commit()
 
-    set_settings({
+    previous_summary = get_auto_call_summary("last")
+    settings_to_save = {
         "last_auto_call_run_at": minute_label,
         "last_auto_call_sent_count": str(len(sent_ids)),
         "last_auto_call_failed_count": str(len(failed_ids)),
         "last_auto_call_selected_count": str(len(auto_rows)),
-    })
+    }
+    if previous_summary["run_at"]:
+        settings_to_save.update({
+            "previous_auto_call_run_at": previous_summary["run_at"],
+            "previous_auto_call_sent_count": str(previous_summary["sent_count"]),
+            "previous_auto_call_failed_count": str(previous_summary["failed_count"]),
+            "previous_auto_call_selected_count": str(previous_summary["selected_count"]),
+        })
+    set_settings(settings_to_save)
 
     return {
         "processed": True,
@@ -606,6 +619,10 @@ def ensure_settings_table():
                 ("last_auto_call_sent_count", "0"),
                 ("last_auto_call_failed_count", "0"),
                 ("last_auto_call_selected_count", "0"),
+                ("previous_auto_call_run_at", ""),
+                ("previous_auto_call_sent_count", "0"),
+                ("previous_auto_call_failed_count", "0"),
+                ("previous_auto_call_selected_count", "0"),
             ):
                 cur.execute(
                     """
@@ -681,12 +698,12 @@ def set_auto_call_count(count: int):
     set_setting("auto_call_count", str(max(0, count)))
 
 
-def get_last_auto_call_summary():
+def get_auto_call_summary(prefix: str):
     values = get_settings(AUTO_CALL_SETTING_KEYS)
-    run_at = (values.get("last_auto_call_run_at") or "").strip()
-    sent_count = int((values.get("last_auto_call_sent_count") or "0").strip() or "0")
-    failed_count = int((values.get("last_auto_call_failed_count") or "0").strip() or "0")
-    selected_count = int((values.get("last_auto_call_selected_count") or "0").strip() or "0")
+    run_at = (values.get(f"{prefix}_auto_call_run_at") or "").strip()
+    sent_count = int((values.get(f"{prefix}_auto_call_sent_count") or "0").strip() or "0")
+    failed_count = int((values.get(f"{prefix}_auto_call_failed_count") or "0").strip() or "0")
+    selected_count = int((values.get(f"{prefix}_auto_call_selected_count") or "0").strip() or "0")
     if not run_at:
         return {
             "run_at": "",
@@ -702,6 +719,13 @@ def get_last_auto_call_summary():
         "selected_count": selected_count,
         "message": f"前回: {run_at} / 選択 {selected_count}人 / 呼出 {sent_count}人 / 失敗 {failed_count}人",
     }
+
+
+def get_last_auto_call_summary():
+    previous_summary = get_auto_call_summary("previous")
+    if previous_summary["run_at"]:
+        return previous_summary
+    return get_auto_call_summary("last")
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -757,6 +781,7 @@ def admin_page():
     accepting_new = is_accepting_new()
     auto_call_count = get_auto_call_count()
     last_auto_call = get_last_auto_call_summary()
+    latest_auto_call = get_auto_call_summary("last")
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -809,6 +834,7 @@ def admin_page():
         accepting_new=accepting_new,
         auto_call_count=auto_call_count,
         last_auto_call=last_auto_call,
+        latest_auto_call=latest_auto_call,
         csrf_token=get_csrf_token()
     )
 
@@ -832,6 +858,7 @@ def admin_data():
             )
             rows = cur.fetchall()
     last_auto_call = get_last_auto_call_summary()
+    latest_auto_call = get_auto_call_summary("last")
     return jsonify({
         "rows": [
             {
@@ -846,6 +873,7 @@ def admin_data():
         ],
         "meta": {
             "last_auto_call": last_auto_call,
+            "latest_auto_call": latest_auto_call,
         },
     })
 
