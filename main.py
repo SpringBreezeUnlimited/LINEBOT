@@ -68,7 +68,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.28"
+APP_VERSION = "v1.0.29"
 APP_RELEASED_AT = "2026-04-14 00:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -145,7 +145,7 @@ def format_dt(value):
         # 既にJSTの場合
         if value.tzinfo != pytz.timezone('Asia/Tokyo'):
             value = value.astimezone(pytz.timezone('Asia/Tokyo'))
-    return value.strftime("%Y-%m-%d %H:%M:%S")
+    return value.strftime("%m-%d %H:%M")
 
 
 def format_duration_from_seconds(total_seconds):
@@ -171,7 +171,7 @@ def process_queued_calls(now=None):
     jst = pytz.timezone('Asia/Tokyo')
     current_dt = datetime.now(jst) if now is None else now
     current = current_dt.timetuple()
-    minute_label = current_dt.strftime("%Y-%m-%d %H:%M")
+    minute_label = current_dt.strftime("%m-%d %H:%M")
     if not should_run_call_batch(current):
         return {
             "processed": False,
