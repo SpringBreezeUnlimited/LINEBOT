@@ -68,8 +68,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.27"
-APP_RELEASED_AT = "2026-04-14 00:00 JST"
+APP_VERSION = "v1.0.28"
+APP_RELEASED_AT = "2026-04-14 00:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -256,7 +256,7 @@ def ensure_reservations_table():
                 CREATE TABLE IF NOT EXISTS reservations (
                     id SERIAL PRIMARY KEY,
                     user_id TEXT NOT NULL,
-                    message TEXT NOT NULL,
+                    message TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'waiting',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -268,6 +268,10 @@ def ensure_reservations_table():
             cur.execute("""
                 ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS message TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ALTER COLUMN message SET DEFAULT ''
             """)
             cur.execute("""
                 ALTER TABLE reservations
@@ -774,7 +778,7 @@ def admin_page():
     current_type_id = int(type_id) if type_id.isdigit() else None
     sort_by = request.args.get("sort_by", "id").strip()
     sort_order = request.args.get("sort_order", "asc").strip().lower()
-    if sort_by not in ("id", "status", "type", "message"):
+    if sort_by not in ("id", "status", "type"):
         sort_by = "id"
     if sort_order not in ("asc", "desc"):
         sort_order = "asc"
@@ -795,11 +799,10 @@ def admin_page():
                 "id": "r.id",
                 "status": "r.status",
                 "type": "t.name",
-                "message": "r.message"
             }
             order_by = order_map[sort_by]
             cur.execute(f"""
-                SELECT r.id, r.user_id, r.message, r.status, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
+                SELECT r.id, r.user_id, r.status, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
@@ -808,7 +811,7 @@ def admin_page():
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
-                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
+                (row[0], row[1], row[2], row[3], format_dt(row[4]))
                 for row in rows
             ]
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
@@ -848,7 +851,7 @@ def admin_data():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT r.id, r.message, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
+                    SELECT r.id, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
                     FROM reservations r
                     LEFT JOIN reservation_types t ON r.type_id = t.id
                     WHERE r.status IN (%s, %s, %s)
@@ -863,11 +866,10 @@ def admin_data():
         "rows": [
             {
                 "id": row[0],
-                "message": row[1],
-                "status": row[2],
-                "type_id": row[3],
-                "type": row[4],
-                "created_at": format_dt(row[5]),
+                "status": row[1],
+                "type_id": row[2],
+                "type": row[3],
+                "created_at": format_dt(row[4]),
             }
             for row in rows
         ],
@@ -981,7 +983,7 @@ def admin_history():
             current_type_id = int(type_id) if type_id.isdigit() else None
             sort_by = request.args.get("sort_by", "id").strip()
             sort_order = request.args.get("sort_order", "desc").strip().lower()
-            if sort_by not in ("id", "status", "type", "message", "created_at", "service_duration"):
+            if sort_by not in ("id", "status", "type", "created_at", "service_duration"):
                 sort_by = "id"
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
@@ -995,7 +997,6 @@ def admin_history():
                 "id": "r.id",
                 "status": "r.status",
                 "type": "t.name",
-                "message": "r.message",
                 "created_at": "r.created_at",
                 "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
             }
@@ -1004,7 +1005,6 @@ def admin_history():
                 SELECT
                     r.id,
                     r.user_id,
-                    r.message,
                     r.status,
                     t.name,
                     t.id,
@@ -1021,7 +1021,7 @@ def admin_history():
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
-                (row[0], row[1], row[2], row[3], row[4], row[5], format_dt(row[6]), format_dt(row[7]), format_dt(row[8]), row[9])
+                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]), format_dt(row[6]), format_dt(row[7]), row[8])
                 for row in rows
             ]
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
@@ -1052,7 +1052,7 @@ def admin_history_export():
     current_type_id = int(type_id) if type_id.isdigit() else None
     sort_by = request.args.get("sort_by", "id").strip()
     sort_order = request.args.get("sort_order", "desc").strip().lower()
-    if sort_by not in ("id", "status", "type", "message", "created_at", "service_duration"):
+    if sort_by not in ("id", "status", "type", "created_at", "service_duration"):
         sort_by = "id"
     if sort_order not in ("asc", "desc"):
         sort_order = "desc"
@@ -1068,7 +1068,6 @@ def admin_history_export():
                 "id": "r.id",
                 "status": "r.status",
                 "type": "t.name",
-                "message": "r.message",
                 "created_at": "r.created_at",
                 "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
             }
@@ -1076,7 +1075,6 @@ def admin_history_export():
                 SELECT
                     r.id,
                     COALESCE(t.name, ''),
-                    COALESCE(r.message, ''),
                     r.status,
                     r.created_at AT TIME ZONE 'Asia/Tokyo',
                     r.arrived_at AT TIME ZONE 'Asia/Tokyo',
@@ -1091,17 +1089,16 @@ def admin_history_export():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["番号", "種類", "メッセージ", "状態", "受付時刻", "到着時刻", "完了時刻", "到着から完了"])
+    writer.writerow(["番号", "種類", "状態", "受付時刻", "到着時刻", "完了時刻", "到着から完了"])
     for row in rows:
         writer.writerow([
             row[0],
             row[1],
             row[2],
-            row[3],
+            format_dt(row[3]),
             format_dt(row[4]),
             format_dt(row[5]),
-            format_dt(row[6]),
-            format_duration_from_seconds(row[7]) or "-",
+            format_duration_from_seconds(row[6]) or "-",
         ])
     filename = f"ukind-history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
@@ -1315,7 +1312,7 @@ def process_reservation(event, user_id, user_message):
                         else:
                             reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
                 else:
-                    cur.execute("INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id", (user_id, user_message, type_id))
+                    cur.execute("INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id", (user_id, "", type_id))
                     new_id = cur.fetchone()[0]
                     conn.commit()
                     if type_id:

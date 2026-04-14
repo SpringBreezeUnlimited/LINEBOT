@@ -72,9 +72,6 @@ function applyClientFilters(rows) {
         if (sortBy === 'type') {
             return compareValues(left.type || '', right.type || '', sortOrder) || compareValues(left.id, right.id, 'asc');
         }
-        if (sortBy === 'message') {
-            return compareValues(left.message || '', right.message || '', sortOrder) || compareValues(left.id, right.id, 'asc');
-        }
         return compareValues(left.id, right.id, sortOrder) || compareValues(left.id, right.id, 'asc');
     });
 
@@ -149,12 +146,9 @@ function buildRow(row) {
     tdCreatedAt.textContent = row.created_at || '-';
     const tdType = document.createElement('td');
     tdType.textContent = row.type || '-';
-    const tdMessage = document.createElement('td');
-    tdMessage.textContent = row.message || '-';
     tr.appendChild(tdId);
     tr.appendChild(tdCreatedAt);
     tr.appendChild(tdType);
-    tr.appendChild(tdMessage);
     tr.appendChild(buildStatusCell(row));
     tr.appendChild(buildActionCell(row));
     return tr;
