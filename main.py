@@ -69,8 +69,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.31"
-APP_RELEASED_AT = "2026-04-15 00:00 JST"
+APP_VERSION = "v1.0.32"
+APP_RELEASED_AT = "2026-04-15 22:18 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -85,7 +85,6 @@ TYPE_NAME_PATTERN = re.compile(
 
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
-WEBHOOK_REQUESTS = {}
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
 app.config.update(
@@ -362,6 +361,7 @@ def ensure_database_schema():
         ensure_types_table()
         ensure_settings_table()
         ensure_admin_login_logs_table()
+        ensure_rate_limit_tables()
         migrate_legacy_queued_calls()
         SCHEMA_READY = True
 
@@ -396,6 +396,34 @@ def ensure_admin_login_logs_table():
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_admin_login_logs_logged_in_at
                 ON admin_login_logs (logged_in_at DESC)
+            """)
+            conn.commit()
+
+
+def ensure_rate_limit_tables():
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS login_attempt_records (
+                    id SERIAL PRIMARY KEY,
+                    ip_address TEXT NOT NULL,
+                    attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_login_attempt_records_ip_attempted_at
+                ON login_attempt_records (ip_address, attempted_at DESC)
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS webhook_request_records (
+                    id SERIAL PRIMARY KEY,
+                    ip_address TEXT NOT NULL,
+                    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_webhook_request_records_ip_requested_at
+                ON webhook_request_records (ip_address, requested_at DESC)
             """)
             conn.commit()
 
@@ -581,30 +609,57 @@ def apply_security_headers(response):
         response.headers["Pragma"] = "no-cache"
     return response
 
-LOGIN_ATTEMPTS = {}
 LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "10"))
 LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "300"))
 
 def is_login_rate_limited(ip: str) -> bool:
-    now = time.time()
-    window_start = now - LOGIN_WINDOW_SECONDS
-    attempts = [t for t in LOGIN_ATTEMPTS.get(ip, []) if t > window_start]
-    LOGIN_ATTEMPTS[ip] = attempts
-    return len(attempts) >= LOGIN_MAX_ATTEMPTS
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                window_start = datetime.utcnow() - timedelta(seconds=LOGIN_WINDOW_SECONDS)
+                cur.execute(
+                    "SELECT COUNT(*) FROM login_attempt_records WHERE ip_address = %s AND attempted_at > %s",
+                    (ip, window_start),
+                )
+                return cur.fetchone()[0] >= LOGIN_MAX_ATTEMPTS
+    except Exception:
+        app.logger.exception("Failed to check login rate limit for %s", ip)
+        return False
 
 def record_login_failure(ip: str):
-    LOGIN_ATTEMPTS.setdefault(ip, []).append(time.time())
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO login_attempt_records (ip_address) VALUES (%s)",
+                    (ip,),
+                )
+                conn.commit()
+    except Exception:
+        app.logger.exception("Failed to record login failure for %s", ip)
 
 
 def is_webhook_rate_limited(ip: str) -> bool:
-    now = time.time()
-    window_start = now - WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
-    attempts = [t for t in WEBHOOK_REQUESTS.get(ip, []) if t > window_start]
-    WEBHOOK_REQUESTS[ip] = attempts
-    if len(attempts) >= WEBHOOK_RATE_LIMIT_COUNT:
-        return True
-    WEBHOOK_REQUESTS[ip].append(now)
-    return False
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                window_start = datetime.utcnow() - timedelta(seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)
+                cur.execute(
+                    "SELECT COUNT(*) FROM webhook_request_records WHERE ip_address = %s AND requested_at > %s",
+                    (ip, window_start),
+                )
+                count = cur.fetchone()[0]
+                if count >= WEBHOOK_RATE_LIMIT_COUNT:
+                    return True
+                cur.execute(
+                    "INSERT INTO webhook_request_records (ip_address) VALUES (%s)",
+                    (ip,),
+                )
+                conn.commit()
+                return False
+    except Exception:
+        app.logger.exception("Failed to check webhook rate limit for %s", ip)
+        return False
 
 # --- ルーティング ---
 
@@ -623,12 +678,10 @@ def login():
         if verify_admin_password(password):
             start_admin_session(ROLE_ADMIN)
             record_admin_login(ROLE_ADMIN, ip, request.headers.get("User-Agent"))
-            LOGIN_ATTEMPTS.pop(ip, None)
             return redirect(url_for("admin_page"))
         if verify_audit_admin_password(password):
             start_admin_session(ROLE_AUDIT_ADMIN)
             record_admin_login(ROLE_AUDIT_ADMIN, ip, request.headers.get("User-Agent"))
-            LOGIN_ATTEMPTS.pop(ip, None)
             return redirect(url_for("admin_login_logs_page"))
         else:
             record_admin_login("unknown", ip, request.headers.get("User-Agent"), login_result="failure")
