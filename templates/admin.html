@@ -44,7 +44,7 @@
                         <label class="form-label">待機数（種類別）</label>
                         <div id="type-counts" class="d-flex flex-wrap gap-2">
                             {% for c in type_counts %}
-                            <span class="badge bg-secondary">{{ c[0] }}: {{ c[1] }}</span>
+                            <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
                             {% endfor %}
                         </div>
                     </div>
@@ -135,28 +135,28 @@
                     <tbody id="active-rows">
                         {% for row in rows %}
                         <tr>
-                            <td>{{ row[0] }}</td>
-                            <td>{{ row[4] if row[4] else '-' }}</td>
-                            <td>{{ row[3] or '-' }}</td>
+                            <td>{{ row.id }}</td>
+                            <td>{{ row.created_at if row.created_at else '-' }}</td>
+                            <td>{{ row.type or '-' }}</td>
                             <td>
-                                {% if row[2] == 'waiting' %}
+                                {% if row.status == 'waiting' %}
                                 <span class="badge bg-warning text-dark">待機中</span>
-                                {% elif row[2] == 'called' %}
+                                {% elif row.status == 'called' %}
                                 <span class="badge bg-info">呼出中</span>
                                 {% else %}
                                 <span class="badge bg-success">到着済み</span>
                                 {% endif %}
                             </td>
                             <td>
-                                {% if row[2] == 'waiting' %}
-                                <form method="POST" action="/admin/call/{{ row[0] }}" class="d-inline">
+                                {% if row.status == 'waiting' %}
+                                <form method="POST" action="/admin/call/{{ row.id }}" class="d-inline">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-success">呼出</button>
                                 </form>
-                                {% elif row[2] == 'called' %}
+                                {% elif row.status == 'called' %}
                                 <span class="text-muted small">到着待ち</span>
                                 {% else %}
-                                <form method="POST" action="/admin/finish/{{ row[0] }}" class="d-inline">
+                                <form method="POST" action="/admin/finish/{{ row.id }}" class="d-inline">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-primary">確認完了</button>
                                 </form>
@@ -185,6 +185,7 @@
         <div>Released: {{ app_released_at }}</div>
     </div>
     </div>
+    <script id="admin-initial-data" type="application/json">{{ admin_initial_data | tojson }}</script>
     <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>

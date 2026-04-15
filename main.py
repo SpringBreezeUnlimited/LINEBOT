@@ -5,11 +5,12 @@ import re
 import secrets
 import time
 from datetime import timedelta, datetime
+from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import pytz # type: ignore
 
 import psycopg2 # type: ignore
-from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response # type: ignore
+from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context # type: ignore
 from linebot import LineBotApi, WebhookHandler # type: ignore
 from linebot.exceptions import InvalidSignatureError # type: ignore
 from linebot.models import MessageEvent, TextMessage, TextSendMessage # type: ignore
@@ -68,8 +69,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.30"
-APP_RELEASED_AT = "2026-04-14 00:10 JST"
+APP_VERSION = "v1.0.31"
+APP_RELEASED_AT = "2026-04-15 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -126,9 +127,42 @@ AUTO_CALL_SETTING_KEYS = (
 )
 ROLE_ADMIN = "admin"
 ROLE_AUDIT_ADMIN = "audit_admin"
+SCHEMA_LOCK = Lock()
+SCHEMA_READY = False
+RUNTIME_SETTING_KEYS = ("accepting_new", "auto_call_count") + AUTO_CALL_SETTING_KEYS
+
+class ManagedConnection:
+    def __init__(self, connection, close_on_exit: bool):
+        self._connection = connection
+        self._close_on_exit = close_on_exit
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+    def __enter__(self):
+        self._connection.__enter__()
+        return self._connection
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return self._connection.__exit__(exc_type, exc, tb)
+        finally:
+            if self._close_on_exit and not self._connection.closed:
+                self._connection.close()
+
+
+def create_connection():
+    return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+    if has_request_context():
+        connection = getattr(g, "_db_connection", None)
+        if connection is None or connection.closed:
+            connection = create_connection()
+            g._db_connection = connection
+        return ManagedConnection(connection, close_on_exit=False)
+    return ManagedConnection(create_connection(), close_on_exit=True)
 
 
 def format_dt(value):
@@ -182,7 +216,8 @@ def process_queued_calls(now=None):
         }
 
     ensure_database_schema()
-    auto_call_count = get_auto_call_count()
+    runtime_settings = get_runtime_settings()
+    auto_call_count = runtime_settings["auto_call_count"]
     with get_connection() as conn:
         with conn.cursor() as cur:
             auto_rows = []
@@ -221,7 +256,7 @@ def process_queued_calls(now=None):
                 )
                 conn.commit()
 
-    previous_summary = get_auto_call_summary("last")
+    previous_summary = runtime_settings["latest_auto_call"]
     settings_to_save = {
         "last_auto_call_run_at": minute_label,
         "last_auto_call_sent_count": str(len(sent_ids)),
@@ -305,15 +340,30 @@ def ensure_reservations_table():
                 CREATE INDEX IF NOT EXISTS idx_reservations_user_id_id
                 ON reservations (user_id, id DESC)
             """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_status_type_id_id
+                ON reservations (status, type_id, id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_status_created_at_id
+                ON reservations (status, created_at DESC, id DESC)
+            """)
             conn.commit()
 
 
 def ensure_database_schema():
-    ensure_reservations_table()
-    ensure_types_table()
-    ensure_settings_table()
-    ensure_admin_login_logs_table()
-    migrate_legacy_queued_calls()
+    global SCHEMA_READY
+    if SCHEMA_READY:
+        return
+    with SCHEMA_LOCK:
+        if SCHEMA_READY:
+            return
+        ensure_reservations_table()
+        ensure_types_table()
+        ensure_settings_table()
+        ensure_admin_login_logs_table()
+        migrate_legacy_queued_calls()
+        SCHEMA_READY = True
 
 
 def migrate_legacy_queued_calls():
@@ -351,7 +401,6 @@ def ensure_admin_login_logs_table():
 
 
 def record_admin_login(role: str, ip_address: str, user_agent: str, login_result: str = "success"):
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -476,12 +525,27 @@ def validate_batch_runner_token() -> bool:
     return False
 
 
+@app.teardown_appcontext
+def close_request_connection(_exception=None):
+    connection = getattr(g, "_db_connection", None)
+    if connection is not None and not connection.closed:
+        connection.close()
+    g.pop("_db_connection", None)
+
+
 @app.before_request
 def security_preflight():
     enforce_host_allowlist()
     secure_redirect = enforce_https()
     if secure_redirect:
         return secure_redirect
+
+
+@app.before_request
+def initialize_database_once():
+    if request.endpoint == "static":
+        return
+    ensure_database_schema()
 
 
 @app.before_request
@@ -640,7 +704,6 @@ def ensure_settings_table():
 
 
 def get_setting(key: str, default: str) -> str:
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
@@ -649,7 +712,6 @@ def get_setting(key: str, default: str) -> str:
 
 
 def set_setting(key: str, value: str):
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -664,7 +726,6 @@ def set_setting(key: str, value: str):
 
 
 def get_settings(keys):
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT key, value FROM app_settings WHERE key = ANY(%s)", (list(keys),))
@@ -672,7 +733,6 @@ def get_settings(keys):
 
 
 def set_settings(settings):
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             for key, value in settings.items():
@@ -702,8 +762,7 @@ def set_auto_call_count(count: int):
     set_setting("auto_call_count", str(max(0, count)))
 
 
-def get_auto_call_summary(prefix: str):
-    values = get_settings(AUTO_CALL_SETTING_KEYS)
+def build_auto_call_summary(values, prefix: str):
     run_at = (values.get(f"{prefix}_auto_call_run_at") or "").strip()
     sent_count = int((values.get(f"{prefix}_auto_call_sent_count") or "0").strip() or "0")
     failed_count = int((values.get(f"{prefix}_auto_call_failed_count") or "0").strip() or "0")
@@ -725,11 +784,91 @@ def get_auto_call_summary(prefix: str):
     }
 
 
-def get_last_auto_call_summary():
-    previous_summary = get_auto_call_summary("previous")
+def get_auto_call_summary(prefix: str, values=None):
+    values = values or get_settings(AUTO_CALL_SETTING_KEYS)
+    return build_auto_call_summary(values, prefix)
+
+
+def get_last_auto_call_summary(values=None):
+    values = values or get_settings(AUTO_CALL_SETTING_KEYS)
+    previous_summary = build_auto_call_summary(values, "previous")
     if previous_summary["run_at"]:
         return previous_summary
-    return get_auto_call_summary("last")
+    return build_auto_call_summary(values, "last")
+
+
+def get_runtime_settings():
+    values = get_settings(RUNTIME_SETTING_KEYS)
+    raw_auto_call_count = (values.get("auto_call_count") or "0").strip()
+    auto_call_count = int(raw_auto_call_count) if raw_auto_call_count.isdigit() else 0
+    return {
+        "accepting_new": (values.get("accepting_new") or "true") == "true",
+        "auto_call_count": auto_call_count,
+        "last_auto_call": get_last_auto_call_summary(values),
+        "latest_auto_call": get_auto_call_summary("last", values),
+    }
+
+
+def serialize_active_rows(rows):
+    return [
+        {
+            "id": row[0],
+            "status": row[1],
+            "type_id": row[2],
+            "type": row[3],
+            "created_at": format_dt(row[4]),
+        }
+        for row in rows
+    ]
+
+
+def fetch_type_counts(cur):
+    cur.execute(
+        """
+            SELECT COALESCE(t.name, '未設定') AS name, COUNT(*)
+            FROM reservations r
+            LEFT JOIN reservation_types t ON r.type_id = t.id
+            WHERE r.status IN (%s, %s, %s)
+            GROUP BY COALESCE(t.name, '未設定')
+            ORDER BY COUNT(*) DESC, name ASC
+        """,
+        (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
+    )
+    return cur.fetchall()
+
+
+def serialize_type_counts(rows):
+    return [{"name": row[0], "count": row[1]} for row in rows]
+
+
+def get_active_rows(cur, current_type_id=None, sort_by="id", sort_order="asc"):
+    params = [STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED]
+    where = "WHERE r.status IN (%s, %s, %s)"
+    if current_type_id is not None:
+        where += " AND r.type_id = %s"
+        params.append(current_type_id)
+    order_map = {
+        "id": "r.id",
+        "status": "r.status",
+        "type": "t.name",
+    }
+    order_by = order_map[sort_by]
+    cur.execute(
+        f"""
+            SELECT r.id, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
+            FROM reservations r
+            LEFT JOIN reservation_types t ON r.type_id = t.id
+            {where}
+            ORDER BY {order_by} {sort_order.upper()}, r.id ASC
+        """,
+        params,
+    )
+    return cur.fetchall()
+
+
+def get_accepting_type_names(cur):
+    cur.execute("SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC")
+    return [row[0] for row in cur.fetchall()]
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -744,7 +883,6 @@ def admin_login_logs_page():
     if not AUDIT_ADMIN_PASSWORD_HASH:
         abort(404)
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -772,7 +910,6 @@ def admin_page():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     type_error = request.args.get("type_error")
     type_id = request.args.get("type_id", "").strip()
     current_type_id = int(type_id) if type_id.isdigit() else None
@@ -782,62 +919,36 @@ def admin_page():
         sort_by = "id"
     if sort_order not in ("asc", "desc"):
         sort_order = "asc"
-    accepting_new = is_accepting_new()
-    auto_call_count = get_auto_call_count()
-    last_auto_call = get_last_auto_call_summary()
-    latest_auto_call = get_auto_call_summary("last")
+    runtime_settings = get_runtime_settings()
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            params = []
-            where = "WHERE r.status IN (%s, %s, %s)"
-            params.extend([STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED])
-            if current_type_id is not None:
-                where += " AND r.type_id = %s"
-                params.append(current_type_id)
-            order_map = {
-                "id": "r.id",
-                "status": "r.status",
-                "type": "t.name",
-            }
-            order_by = order_map[sort_by]
-            cur.execute(f"""
-                SELECT r.id, r.user_id, r.status, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
-                FROM reservations r
-                LEFT JOIN reservation_types t ON r.type_id = t.id
-                {where}
-                ORDER BY {order_by} {sort_order.upper()}, r.id ASC
-            """, params)
-            rows = cur.fetchall()
-            # 時刻をフォーマット済み文字列に変換（日本時間対応）
-            rows = [
-                (row[0], row[1], row[2], row[3], format_dt(row[4]))
-                for row in rows
-            ]
+            rows = get_active_rows(cur, current_type_id=current_type_id, sort_by=sort_by, sort_order=sort_order)
+            active_rows = serialize_active_rows(rows)
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
             types = cur.fetchall()
-            cur.execute("""
-                SELECT COALESCE(t.name, '未設定') AS name, COUNT(*)
-                FROM reservations r
-                LEFT JOIN reservation_types t ON r.type_id = t.id
-                WHERE r.status IN (%s, %s, %s)
-                GROUP BY COALESCE(t.name, '未設定')
-                ORDER BY COUNT(*) DESC
-            """, (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED))
-            type_counts = cur.fetchall()
+            type_counts = serialize_type_counts(fetch_type_counts(cur))
     return render_template(
         "admin.html",
-        rows=rows,
+        rows=active_rows,
         types=types,
         type_error=type_error,
         current_type_id=current_type_id,
         type_counts=type_counts,
         sort_by=sort_by,
         sort_order=sort_order,
-        accepting_new=accepting_new,
-        auto_call_count=auto_call_count,
-        last_auto_call=last_auto_call,
-        latest_auto_call=latest_auto_call,
+        accepting_new=runtime_settings["accepting_new"],
+        auto_call_count=runtime_settings["auto_call_count"],
+        last_auto_call=runtime_settings["last_auto_call"],
+        latest_auto_call=runtime_settings["latest_auto_call"],
+        admin_initial_data={
+            "rows": active_rows,
+            "meta": {
+                "last_auto_call": runtime_settings["last_auto_call"],
+                "latest_auto_call": runtime_settings["latest_auto_call"],
+                "type_counts": type_counts,
+            },
+        },
         csrf_token=get_csrf_token()
     )
 
@@ -846,36 +957,17 @@ def admin_data():
     if not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                    SELECT r.id, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
-                    FROM reservations r
-                    LEFT JOIN reservation_types t ON r.type_id = t.id
-                    WHERE r.status IN (%s, %s, %s)
-                    ORDER BY r.id ASC
-                """,
-                (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
-            )
-            rows = cur.fetchall()
-    last_auto_call = get_last_auto_call_summary()
-    latest_auto_call = get_auto_call_summary("last")
+            rows = get_active_rows(cur)
+            type_counts = serialize_type_counts(fetch_type_counts(cur))
+    runtime_settings = get_runtime_settings()
     return jsonify({
-        "rows": [
-            {
-                "id": row[0],
-                "status": row[1],
-                "type_id": row[2],
-                "type": row[3],
-                "created_at": format_dt(row[4]),
-            }
-            for row in rows
-        ],
+        "rows": serialize_active_rows(rows),
         "meta": {
-            "last_auto_call": last_auto_call,
-            "latest_auto_call": latest_auto_call,
+            "last_auto_call": runtime_settings["last_auto_call"],
+            "latest_auto_call": runtime_settings["latest_auto_call"],
+            "type_counts": type_counts,
         },
     })
 
@@ -884,23 +976,11 @@ def admin_type_counts():
     if not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT COALESCE(t.name, '未設定') AS name, COUNT(*)
-                FROM reservations r
-                LEFT JOIN reservation_types t ON r.type_id = t.id
-                WHERE r.status IN (%s, %s, %s)
-                GROUP BY COALESCE(t.name, '未設定')
-                ORDER BY COUNT(*) DESC
-            """, (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED))
-            counts = cur.fetchall()
+            counts = fetch_type_counts(cur)
     return jsonify({
-        "counts": [
-            {"name": row[0], "count": row[1]}
-            for row in counts
-        ]
+        "counts": serialize_type_counts(counts)
     })
 
 @app.route("/admin/types", methods=["GET", "POST"])
@@ -908,7 +988,6 @@ def admin_types_page():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     accepting_new = is_accepting_new()
     type_error = request.args.get("type_error")
     type_success = request.args.get("type_success")
@@ -948,7 +1027,6 @@ def admin_types_delete(type_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM reservation_types WHERE id = %s", (type_id,))
@@ -960,7 +1038,6 @@ def admin_types_toggle(type_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE reservation_types SET accepting = NOT accepting WHERE id = %s", (type_id,))
@@ -972,7 +1049,6 @@ def admin_history():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     history_page_size = 200
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1004,7 +1080,6 @@ def admin_history():
             cur.execute(f"""
                 SELECT
                     r.id,
-                    r.user_id,
                     r.status,
                     t.name,
                     t.id,
@@ -1021,7 +1096,7 @@ def admin_history():
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
-                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]), format_dt(row[6]), format_dt(row[7]), row[8])
+                (row[0], row[1], row[2], row[3], format_dt(row[4]), format_dt(row[5]), format_dt(row[6]), row[7])
                 for row in rows
             ]
             cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
@@ -1047,7 +1122,6 @@ def admin_history_export():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     type_id = request.args.get("type_id", "").strip()
     current_type_id = int(type_id) if type_id.isdigit() else None
     sort_by = request.args.get("sort_by", "id").strip()
@@ -1057,52 +1131,68 @@ def admin_history_export():
     if sort_order not in ("asc", "desc"):
         sort_order = "desc"
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            params = [STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED]
-            where = "WHERE r.status IN (%s, %s, %s)"
-            if current_type_id is not None:
-                where += " AND r.type_id = %s"
-                params.append(current_type_id)
-            order_map = {
-                "id": "r.id",
-                "status": "r.status",
-                "type": "t.name",
-                "created_at": "r.created_at",
-                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
-            }
-            cur.execute(f"""
-                SELECT
-                    r.id,
-                    COALESCE(t.name, ''),
-                    r.status,
-                    r.created_at AT TIME ZONE 'Asia/Tokyo',
-                    r.arrived_at AT TIME ZONE 'Asia/Tokyo',
-                    r.completed_at AT TIME ZONE 'Asia/Tokyo',
-                    EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
-                FROM reservations r
-                LEFT JOIN reservation_types t ON r.type_id = t.id
-                {where}
-                ORDER BY {order_map[sort_by]} {sort_order.upper()}, r.id DESC
-            """, params)
-            rows = cur.fetchall()
+    params = [STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED]
+    where = "WHERE r.status IN (%s, %s, %s)"
+    if current_type_id is not None:
+        where += " AND r.type_id = %s"
+        params.append(current_type_id)
+    order_map = {
+        "id": "r.id",
+        "status": "r.status",
+        "type": "t.name",
+        "created_at": "r.created_at",
+        "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
+    }
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["番号", "種類", "状態", "受付時刻", "到着時刻", "完了時刻", "到着から完了"])
-    for row in rows:
-        writer.writerow([
-            row[0],
-            row[1],
-            row[2],
-            format_dt(row[3]),
-            format_dt(row[4]),
-            format_dt(row[5]),
-            format_duration_from_seconds(row[6]) or "-",
-        ])
+    def generate_csv():
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["番号", "種類", "状態", "受付時刻", "到着時刻", "完了時刻", "到着から完了"])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        connection = create_connection()
+        try:
+            cursor_name = f"history_export_{int(time.time() * 1000)}"
+            with connection.cursor(name=cursor_name) as cur:
+                cur.itersize = 500
+                cur.execute(
+                    f"""
+                        SELECT
+                            r.id,
+                            COALESCE(t.name, ''),
+                            r.status,
+                            r.created_at AT TIME ZONE 'Asia/Tokyo',
+                            r.arrived_at AT TIME ZONE 'Asia/Tokyo',
+                            r.completed_at AT TIME ZONE 'Asia/Tokyo',
+                            EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
+                        FROM reservations r
+                        LEFT JOIN reservation_types t ON r.type_id = t.id
+                        {where}
+                        ORDER BY {order_map[sort_by]} {sort_order.upper()}, r.id DESC
+                    """,
+                    params,
+                )
+                for row in cur:
+                    writer.writerow([
+                        row[0],
+                        row[1],
+                        row[2],
+                        format_dt(row[3]),
+                        format_dt(row[4]),
+                        format_dt(row[5]),
+                        format_duration_from_seconds(row[6]) or "-",
+                    ])
+                    yield output.getvalue()
+                    output.seek(0)
+                    output.truncate(0)
+        finally:
+            connection.close()
+
     filename = f"espresso-history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
-        output.getvalue(),
+        stream_with_context(generate_csv()),
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -1112,7 +1202,6 @@ def admin_call(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1149,7 +1238,6 @@ def admin_finish(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
-    ensure_database_schema()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1230,15 +1318,14 @@ def process_reservation(event, user_id, user_message):
         )
         return
 
-    ensure_database_schema()
+    accepting_new = is_accepting_new()
     with get_connection() as conn:
         with conn.cursor() as cur:
             if normalized.startswith('予約'):
-                if not is_accepting_new():
+                if not accepting_new:
                     reply = "現在、新規の予約受付は停止中です。"
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
                     return
-                ensure_types_table()
                 requested_type_name = normalize_type_name(normalized[2:])
                 type_id = None
                 type_name = None
@@ -1253,8 +1340,7 @@ def process_reservation(event, user_id, user_message):
                     cur.execute("SELECT id, name, accepting FROM reservation_types WHERE name = %s", (requested_type_name,))
                     type_row = cur.fetchone()
                     if not type_row:
-                        cur.execute("SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC")
-                        names = [r[0] for r in cur.fetchall()]
+                        names = get_accepting_type_names(cur)
                         if names:
                             reply = f"指定した種類「{requested_type_name}」は存在しません。\n利用可能: " + " / ".join(names)
                         else:
@@ -1263,8 +1349,7 @@ def process_reservation(event, user_id, user_message):
                         return
                     type_id, type_name, type_accepting = type_row
                     if not type_accepting:
-                        cur.execute("SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC")
-                        names = [r[0] for r in cur.fetchall()]
+                        names = get_accepting_type_names(cur)
                         if names:
                             reply = f"「{type_name}」の新規受付は停止中です。\n利用可能: " + " / ".join(names)
                         else:
@@ -1272,8 +1357,7 @@ def process_reservation(event, user_id, user_message):
                         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
                         return
                 else:
-                    cur.execute("SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC")
-                    names = [r[0] for r in cur.fetchall()]
+                    names = get_accepting_type_names(cur)
                     if names:
                         reply = "予約の種類を指定してください。\n利用可能: " + " / ".join(names) + "\n例: 予約 相談"
                     else:
@@ -1283,7 +1367,7 @@ def process_reservation(event, user_id, user_message):
 
                 cur.execute(
                     """
-                        SELECT r.id, r.status, t.name
+                        SELECT r.id, r.status, r.type_id, t.name
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
@@ -1293,10 +1377,13 @@ def process_reservation(event, user_id, user_message):
                 )
                 existing = cur.fetchone()
                 if existing:
-                    res_id, status, existing_type_name = existing
+                    res_id, status, existing_type_id, existing_type_name = existing
                     if status == STATUS_WAITING:
-                        if existing_type_name:
-                            cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = (SELECT type_id FROM reservations WHERE id = %s)", (STATUS_WAITING, res_id, res_id))
+                        if existing_type_id is not None:
+                            cur.execute(
+                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = %s",
+                                (STATUS_WAITING, res_id, existing_type_id),
+                            )
                             reply = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {cur.fetchone()[0]}人"
                         else:
                             cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, res_id))

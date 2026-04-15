@@ -1,6 +1,13 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-let activeRowsCache = [];
+const initialDataElement = document.getElementById('admin-initial-data');
+const initialData = initialDataElement ? JSON.parse(initialDataElement.textContent) : { rows: [], meta: {} };
 const autoCallNotificationStorageKey = 'espresso-last-auto-call-run-at';
+const adminRefreshIntervalMs = 15000;
+
+let activeRowsCache = initialData.rows || [];
+let typeCountsCache = initialData.meta?.type_counts || [];
+let activeRowsSignature = JSON.stringify(activeRowsCache);
+let typeCountsSignature = JSON.stringify(typeCountsCache);
 let lastUpdatedAt = null;
 
 function formatUpdatedAt(date) {
@@ -152,6 +159,26 @@ function buildRow(row) {
     return tr;
 }
 
+function renderTypeCounts(counts = typeCountsCache) {
+    const container = document.getElementById('type-counts');
+    if (!container) return;
+    container.textContent = '';
+    if (!counts || counts.length === 0) {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-secondary';
+        badge.textContent = '未設定: 0';
+        container.appendChild(badge);
+        return;
+    }
+    counts.forEach((count) => {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-secondary';
+        const name = count.name || '未設定';
+        badge.textContent = `${name}: ${count.count}`;
+        container.appendChild(badge);
+    });
+}
+
 function updateAutoCallSummary(summary) {
     const target = document.getElementById('last-auto-call-message');
     if (!target || !summary) return;
@@ -187,43 +214,31 @@ function renderActiveRows() {
     window.history.replaceState({}, '', '/admin' + getQueryParams());
 }
 
-async function refreshActiveRows() {
+async function refreshAdminData() {
+    if (document.hidden) return;
     try {
         const res = await fetch('/admin/data', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
-        activeRowsCache = data.rows || [];
-        renderActiveRows();
+        const nextRows = data.rows || [];
+        const nextRowsSignature = JSON.stringify(nextRows);
+        if (nextRowsSignature !== activeRowsSignature) {
+            activeRowsCache = nextRows;
+            activeRowsSignature = nextRowsSignature;
+            renderActiveRows();
+        }
+
+        const nextTypeCounts = data.meta?.type_counts || [];
+        const nextTypeCountsSignature = JSON.stringify(nextTypeCounts);
+        if (nextTypeCountsSignature !== typeCountsSignature) {
+            typeCountsCache = nextTypeCounts;
+            typeCountsSignature = nextTypeCountsSignature;
+            renderTypeCounts(nextTypeCounts);
+        }
+
         updateAutoCallSummary(data.meta?.last_auto_call);
         showAutoCallNotification(data.meta?.latest_auto_call);
         updateLastUpdated();
-    } catch (e) {
-        // no-op
-    }
-}
-
-async function refreshTypeCounts() {
-    try {
-        const res = await fetch('/admin/type_counts', { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        const container = document.getElementById('type-counts');
-        if (!container) return;
-        container.textContent = '';
-        if (!data.counts || data.counts.length === 0) {
-            const badge = document.createElement('span');
-            badge.className = 'badge bg-secondary';
-            badge.textContent = '未設定: 0';
-            container.appendChild(badge);
-            return;
-        }
-        data.counts.forEach((c) => {
-            const badge = document.createElement('span');
-            badge.className = 'badge bg-secondary';
-            const name = c.name || '未設定';
-            badge.textContent = `${name}: ${c.count}`;
-            container.appendChild(badge);
-        });
     } catch (e) {
         // no-op
     }
@@ -236,12 +251,18 @@ function applyAdminFilters() {
 document.getElementById('type-filter')?.addEventListener('change', applyAdminFilters);
 document.getElementById('sort-by')?.addEventListener('change', applyAdminFilters);
 document.getElementById('sort-order')?.addEventListener('change', applyAdminFilters);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        refreshAdminData();
+    }
+});
 
-refreshActiveRows();
+updateAutoCallSummary(initialData.meta?.last_auto_call);
+showAutoCallNotification(initialData.meta?.latest_auto_call);
+updateLastUpdated();
 setInterval(() => {
     updateLastUpdatedWarningState();
 }, 1000);
 setInterval(() => {
-    refreshActiveRows();
-    refreshTypeCounts();
-}, 5000);
+    refreshAdminData();
+}, adminRefreshIntervalMs);
