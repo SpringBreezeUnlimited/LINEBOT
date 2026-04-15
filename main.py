@@ -10,7 +10,6 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import pytz # type: ignore
 
 import psycopg2 # type: ignore
-from psycopg2 import sql as psql # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context # type: ignore
 from linebot import LineBotApi, WebhookHandler # type: ignore
 from linebot.exceptions import InvalidSignatureError # type: ignore
@@ -70,8 +69,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.33"
-APP_RELEASED_AT = "2026-04-15 22:45 JST"
+APP_VERSION = "v1.0.32"
+APP_RELEASED_AT = "2026-04-15 22:18 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -902,24 +901,21 @@ def get_active_rows(cur, current_type_id=None, sort_by="id", sort_order="asc"):
         where += " AND r.type_id = %s"
         params.append(current_type_id)
     order_map = {
-        "id": psql.SQL("r.id"),
-        "status": psql.SQL("r.status"),
-        "type": psql.SQL("t.name"),
+        "id": "r.id",
+        "status": "r.status",
+        "type": "t.name",
     }
-    order_by = order_map.get(sort_by, order_map["id"])
-    order_direction = psql.SQL("DESC") if sort_order == "desc" else psql.SQL("ASC")
-    query = psql.SQL("""
+    order_by = order_map[sort_by]
+    cur.execute(
+        f"""
             SELECT r.id, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
             FROM reservations r
             LEFT JOIN reservation_types t ON r.type_id = t.id
             {where}
-            ORDER BY {order_by} {order_direction}, r.id ASC
-        """).format(
-        where=psql.SQL(where),
-        order_by=order_by,
-        order_direction=order_direction,
+            ORDER BY {order_by} {sort_order.upper()}, r.id ASC
+        """,
+        params,
     )
-    cur.execute(query, params)
     return cur.fetchall()
 
 
@@ -1127,15 +1123,14 @@ def admin_history():
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
             order_map = {
-                "id": psql.SQL("r.id"),
-                "status": psql.SQL("r.status"),
-                "type": psql.SQL("t.name"),
-                "created_at": psql.SQL("r.created_at"),
-                "service_duration": psql.SQL("(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"),
+                "id": "r.id",
+                "status": "r.status",
+                "type": "t.name",
+                "created_at": "r.created_at",
+                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
             }
-            order_by = order_map.get(sort_by, order_map["id"])
-            order_direction = psql.SQL("DESC") if sort_order == "desc" else psql.SQL("ASC")
-            query = psql.SQL("""
+            order_by = order_map[sort_by]
+            cur.execute(f"""
                 SELECT
                     r.id,
                     r.status,
@@ -1148,14 +1143,9 @@ def admin_history():
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
-                ORDER BY {order_by} {order_direction}, r.id DESC
+                ORDER BY {order_by} {sort_order.upper()}, r.id DESC
                 LIMIT %s OFFSET %s
-            """).format(
-                where=psql.SQL(where),
-                order_by=order_by,
-                order_direction=order_direction,
-            )
-            cur.execute(query, params + [history_page_size + 1, offset])
+            """, params + [history_page_size + 1, offset])
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
@@ -1200,11 +1190,11 @@ def admin_history_export():
         where += " AND r.type_id = %s"
         params.append(current_type_id)
     order_map = {
-        "id": psql.SQL("r.id"),
-        "status": psql.SQL("r.status"),
-        "type": psql.SQL("t.name"),
-        "created_at": psql.SQL("r.created_at"),
-        "service_duration": psql.SQL("(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"),
+        "id": "r.id",
+        "status": "r.status",
+        "type": "t.name",
+        "created_at": "r.created_at",
+        "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
     }
 
     def generate_csv():
@@ -1220,9 +1210,8 @@ def admin_history_export():
             cursor_name = f"history_export_{int(time.time() * 1000)}"
             with connection.cursor(name=cursor_name) as cur:
                 cur.itersize = 500
-                order_by = order_map.get(sort_by, order_map["id"])
-                order_direction = psql.SQL("DESC") if sort_order == "desc" else psql.SQL("ASC")
-                query = psql.SQL("""
+                cur.execute(
+                    f"""
                         SELECT
                             r.id,
                             COALESCE(t.name, ''),
@@ -1234,13 +1223,10 @@ def admin_history_export():
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         {where}
-                        ORDER BY {order_by} {order_direction}, r.id DESC
-                    """).format(
-                    where=psql.SQL(where),
-                    order_by=order_by,
-                    order_direction=order_direction,
+                        ORDER BY {order_map[sort_by]} {sort_order.upper()}, r.id DESC
+                    """,
+                    params,
                 )
-                cur.execute(query, params)
                 for row in cur:
                     writer.writerow([
                         row[0],
@@ -1272,14 +1258,13 @@ def admin_call(res_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING user_id",
-                (STATUS_CALLED, res_id, STATUS_WAITING),
+                "SELECT user_id FROM reservations WHERE id = %s AND status = %s",
+                (res_id, STATUS_WAITING),
             )
             row = cur.fetchone()
             if not row:
                 abort(404)
             user_id = row[0]
-            conn.commit()
 
     try:
         line_bot_api.push_message(
@@ -1288,14 +1273,17 @@ def admin_call(res_id):
         )
     except Exception:
         app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
-        with get_connection() as rollback_conn:
-            with rollback_conn.cursor() as rollback_cur:
-                rollback_cur.execute(
-                    "UPDATE reservations SET status = %s, called_at = NULL WHERE id = %s AND status = %s",
-                    (STATUS_WAITING, res_id, STATUS_CALLED),
-                )
-                rollback_conn.commit()
         abort(502)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING id",
+                (STATUS_CALLED, res_id, STATUS_WAITING),
+            )
+            if not cur.fetchone():
+                abort(404)
+            conn.commit()
     return redirect(url_for("admin_page"))
 
 @app.route("/admin/finish/<int:res_id>", methods=["POST"])
@@ -1360,30 +1348,13 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-    except Exception:
-        app.logger.exception("Unhandled error while processing webhook")
-        abort(500)
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_message_raw = getattr(event.message, "text", None)
-    user_id = getattr(event.source, "user_id", None)
-    if not isinstance(user_message_raw, str) or not isinstance(user_id, str):
-        app.logger.warning("Received malformed LINE message payload")
-        return
-    user_message = user_message_raw.strip()
-    try:
-        process_reservation(event, user_id, user_message)
-    except Exception:
-        app.logger.exception("Unhandled error while processing user message")
-        try:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="処理中にエラーが発生しました。時間をおいて再度お試しください。"),
-            )
-        except Exception:
-            app.logger.exception("Failed to reply error message")
+    user_message = event.message.text.strip()
+    user_id = event.source.user_id
+    process_reservation(event, user_id, user_message)
 
 def process_reservation(event, user_id, user_message):
     normalized = user_message.strip()
