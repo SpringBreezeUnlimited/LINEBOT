@@ -69,8 +69,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.36"
-APP_RELEASED_AT = "2026-04-16 01:20 JST"
+APP_VERSION = "v1.0.37"
+APP_RELEASED_AT = "2026-04-16 01:40 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1244,13 +1244,14 @@ def admin_call(res_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT user_id FROM reservations WHERE id = %s AND status = %s",
-                (res_id, STATUS_WAITING),
+                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING user_id",
+                (STATUS_CALLED, res_id, STATUS_WAITING),
             )
             row = cur.fetchone()
             if not row:
                 abort(404)
             user_id = row[0]
+            conn.commit()
 
     try:
         line_bot_api.push_message(
@@ -1259,17 +1260,14 @@ def admin_call(res_id):
         )
     except Exception:
         app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
+        with get_connection() as rollback_conn:
+            with rollback_conn.cursor() as rollback_cur:
+                rollback_cur.execute(
+                    "UPDATE reservations SET status = %s, called_at = NULL WHERE id = %s AND status = %s",
+                    (STATUS_WAITING, res_id, STATUS_CALLED),
+                )
+                rollback_conn.commit()
         abort(502)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING id",
-                (STATUS_CALLED, res_id, STATUS_WAITING),
-            )
-            if not cur.fetchone():
-                abort(404)
-            conn.commit()
     return redirect(url_for("admin_page"))
 
 @app.route("/admin/finish/<int:res_id>", methods=["POST"])
