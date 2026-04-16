@@ -69,8 +69,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.35"
-APP_RELEASED_AT = "2026-04-16 01:10 JST"
+APP_VERSION = "v1.0.36"
+APP_RELEASED_AT = "2026-04-16 01:20 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -168,16 +168,10 @@ def format_dt(value):
     if not value:
         return ""
     # UTCまたはnaive datetimeの場合、JSTに変換
+    jst = pytz.timezone('Asia/Tokyo')
     if value.tzinfo is None:
-        # naiveな場合、UTCとして扱う
         value = pytz.utc.localize(value)
-    elif value.tzinfo != pytz.timezone('Asia/Tokyo'):
-        # UTCまたは他のタイムゾーンの場合、JSTに変換
-        value = value.astimezone(pytz.timezone('Asia/Tokyo'))
-    else:
-        # 既にJSTの場合
-        if value.tzinfo != pytz.timezone('Asia/Tokyo'):
-            value = value.astimezone(pytz.timezone('Asia/Tokyo'))
+    value = value.astimezone(jst)
     return value.strftime("%m-%d %H:%M")
 
 
