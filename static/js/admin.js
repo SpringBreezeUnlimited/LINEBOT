@@ -1,13 +1,29 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-const initialDataElement = document.getElementById('admin-initial-data');
-const initialData = initialDataElement ? JSON.parse(initialDataElement.textContent) : { rows: [], meta: {} };
 const autoCallNotificationStorageKey = 'espresso-last-auto-call-run-at';
 const adminRefreshIntervalMs = 15000;
 
-let activeRowsCache = initialData.rows || [];
-let typeCountsCache = initialData.meta?.type_counts || [];
-let activeRowsSignature = JSON.stringify(activeRowsCache);
-let typeCountsSignature = JSON.stringify(typeCountsCache);
+function parseInitialRowsFromDom() {
+    return Array.from(document.querySelectorAll('#active-rows tr')).map((row) => ({
+        id: Number(row.dataset.id || '0'),
+        created_at: row.dataset.createdAt || '',
+        type: row.dataset.type || '',
+        type_id: row.dataset.typeId || '',
+        status: row.dataset.status || '',
+    }));
+}
+
+function buildRowsSignature(rows) {
+    return rows.map((row) => `${row.id}:${row.status}:${row.type_id || ''}:${row.created_at || ''}`).join('|');
+}
+
+function buildTypeCountsSignature(typeCounts) {
+    return typeCounts.map((count) => `${count.name || ''}:${count.count || 0}`).join('|');
+}
+
+let activeRowsCache = parseInitialRowsFromDom();
+let typeCountsCache = [];
+let activeRowsSignature = buildRowsSignature(activeRowsCache);
+let typeCountsSignature = buildTypeCountsSignature(typeCountsCache);
 let lastUpdatedAt = null;
 
 function formatUpdatedAt(date) {
@@ -221,7 +237,7 @@ async function refreshAdminData() {
         if (!res.ok) return;
         const data = await res.json();
         const nextRows = data.rows || [];
-        const nextRowsSignature = JSON.stringify(nextRows);
+        const nextRowsSignature = buildRowsSignature(nextRows);
         if (nextRowsSignature !== activeRowsSignature) {
             activeRowsCache = nextRows;
             activeRowsSignature = nextRowsSignature;
@@ -229,7 +245,7 @@ async function refreshAdminData() {
         }
 
         const nextTypeCounts = data.meta?.type_counts || [];
-        const nextTypeCountsSignature = JSON.stringify(nextTypeCounts);
+        const nextTypeCountsSignature = buildTypeCountsSignature(nextTypeCounts);
         if (nextTypeCountsSignature !== typeCountsSignature) {
             typeCountsCache = nextTypeCounts;
             typeCountsSignature = nextTypeCountsSignature;
@@ -257,8 +273,6 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
-updateAutoCallSummary(initialData.meta?.last_auto_call);
-showAutoCallNotification(initialData.meta?.latest_auto_call);
 updateLastUpdated();
 setInterval(() => {
     updateLastUpdatedWarningState();
@@ -266,3 +280,13 @@ setInterval(() => {
 setInterval(() => {
     refreshAdminData();
 }, adminRefreshIntervalMs);
+
+if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(() => {
+        refreshAdminData();
+    }, { timeout: 1000 });
+} else {
+    setTimeout(() => {
+        refreshAdminData();
+    }, 0);
+}

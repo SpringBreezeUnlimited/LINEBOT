@@ -134,7 +134,13 @@
                     </thead>
                     <tbody id="active-rows">
                         {% for row in rows %}
-                        <tr>
+                        <tr
+                            data-id="{{ row.id }}"
+                            data-created-at="{{ row.created_at if row.created_at else '' }}"
+                            data-type="{{ row.type or '' }}"
+                            data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
+                            data-status="{{ row.status }}"
+                        >
                             <td>{{ row.id }}</td>
                             <td>{{ row.created_at if row.created_at else '-' }}</td>
                             <td>{{ row.type or '-' }}</td>
@@ -185,7 +191,6 @@
         <div>Released: {{ app_released_at }}</div>
     </div>
     </div>
-    <script id="admin-initial-data" type="application/json">{{ admin_initial_data | tojson }}</script>
     <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>

@@ -69,8 +69,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.32"
-APP_RELEASED_AT = "2026-04-15 22:18 JST"
+APP_VERSION = "v1.0.33"
+APP_RELEASED_AT = "2026-04-16 00:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -994,14 +994,6 @@ def admin_page():
         auto_call_count=runtime_settings["auto_call_count"],
         last_auto_call=runtime_settings["last_auto_call"],
         latest_auto_call=runtime_settings["latest_auto_call"],
-        admin_initial_data={
-            "rows": active_rows,
-            "meta": {
-                "last_auto_call": runtime_settings["last_auto_call"],
-                "latest_auto_call": runtime_settings["latest_auto_call"],
-                "type_counts": type_counts,
-            },
-        },
         csrf_token=get_csrf_token()
     )
 
