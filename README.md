@@ -11,7 +11,7 @@
 2. In GitHub repository secrets, add:
    - `BATCH_CALL_RUNNER_TOKEN`: same value as the app env var
    - `CALL_QUEUE_TASK_URL`: `https://your-app.example.com/tasks/process-call-queue`
-3. The workflow `.github/workflows/process-call-queue.yml` runs every 5 minutes and can also be triggered manually from GitHub Actions.
+3. The workflow `.github/workflows/process-call-queue.yml` runs every 1 minute and can also be triggered manually from GitHub Actions.
 
 ## Security
 - Security hardening summary and operational checklist: `SECURITY_HARDENING.md`

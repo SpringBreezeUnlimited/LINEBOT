@@ -2,7 +2,7 @@ name: Process Call Queue
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "* * * * *"
   workflow_dispatch:
     inputs:
       reason:

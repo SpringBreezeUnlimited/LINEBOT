@@ -80,8 +80,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.47"
-APP_RELEASED_AT = "2026-04-17 03:10 JST"
+APP_VERSION = "v1.0.48"
+APP_RELEASED_AT = "2026-04-17 03:35 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -97,6 +97,7 @@ TYPE_NAME_PATTERN = re.compile(
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
 ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
+WAIT_TIME_FALLBACK_PER_PERSON_SECONDS = parse_int_env("WAIT_TIME_FALLBACK_PER_PERSON_SECONDS", 180, 30, 1800)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
 app.config.update(
@@ -136,11 +137,17 @@ AUTO_CALL_SETTING_KEYS = (
     "previous_auto_call_failed_count",
     "previous_auto_call_selected_count",
 )
+WAIT_TIME_SETTING_KEYS = (
+    "last_wait_time_run_at",
+    "last_wait_time_estimated_seconds",
+    "last_wait_time_waiting_count",
+    "last_wait_time_avg_service_seconds",
+)
 ROLE_ADMIN = "admin"
 ROLE_AUDIT_ADMIN = "audit_admin"
 SCHEMA_LOCK = Lock()
 SCHEMA_READY = False
-RUNTIME_SETTING_KEYS = ("accepting_new", "auto_call_count") + AUTO_CALL_SETTING_KEYS
+RUNTIME_SETTING_KEYS = ("accepting_new", "auto_call_count") + AUTO_CALL_SETTING_KEYS + WAIT_TIME_SETTING_KEYS
 
 class ManagedConnection:
     def __init__(self, connection, close_on_exit: bool):
@@ -211,6 +218,7 @@ def process_queued_calls(now=None):
     current_dt = datetime.now(jst) if now is None else now
     current = current_dt.timetuple()
     minute_label = current_dt.strftime("%m-%d %H:%M")
+    latest_wait_time = refresh_wait_time_estimate(current_dt)
     if not should_run_call_batch(current):
         return {
             "processed": False,
@@ -218,6 +226,7 @@ def process_queued_calls(now=None):
             "minute": minute_label,
             "sent_count": 0,
             "failed_count": 0,
+            "wait_time": latest_wait_time,
         }
 
     ensure_database_schema()
@@ -276,6 +285,7 @@ def process_queued_calls(now=None):
             "previous_auto_call_selected_count": str(previous_summary["selected_count"]),
         })
     set_settings(settings_to_save)
+    latest_wait_time = refresh_wait_time_estimate(current_dt)
 
     return {
         "processed": True,
@@ -286,6 +296,86 @@ def process_queued_calls(now=None):
         "sent_count": len(sent_ids),
         "failed_count": len(failed_ids),
         "failed_ids": failed_ids,
+        "wait_time": latest_wait_time,
+    }
+
+
+def refresh_wait_time_estimate(now=None):
+    # 直近の完了実績から1人あたりの平均対応時間を算出し、待機人数と掛け合わせて目安待ち時間を保存する。
+    jst = pytz.timezone('Asia/Tokyo')
+    current_dt = datetime.now(jst) if now is None else now
+    minute_label = current_dt.strftime("%m-%d %H:%M")
+    default_result = {
+        "run_at": minute_label,
+        "waiting_count": 0,
+        "avg_service_seconds": 0,
+        "estimated_seconds": 0,
+        "message": "現在の目安待ち時間: 0秒",
+    }
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s", (STATUS_WAITING,))
+                waiting_count = int(cur.fetchone()[0] or 0)
+                cur.execute(
+                    """
+                        SELECT AVG(EXTRACT(EPOCH FROM (completed_at - arrived_at)))
+                        FROM reservations
+                        WHERE status = %s
+                        AND arrived_at IS NOT NULL
+                        AND completed_at IS NOT NULL
+                        AND completed_at >= (CURRENT_TIMESTAMP - INTERVAL '7 days')
+                    """,
+                    (STATUS_DONE,),
+                )
+                avg_row = cur.fetchone()
+                avg_service_seconds = int(max(0, round(avg_row[0]))) if avg_row and avg_row[0] is not None else 0
+
+        per_person_seconds = avg_service_seconds if avg_service_seconds > 0 else WAIT_TIME_FALLBACK_PER_PERSON_SECONDS
+        estimated_seconds = waiting_count * per_person_seconds
+        set_settings(
+            {
+                "last_wait_time_run_at": minute_label,
+                "last_wait_time_estimated_seconds": str(estimated_seconds),
+                "last_wait_time_waiting_count": str(waiting_count),
+                "last_wait_time_avg_service_seconds": str(avg_service_seconds),
+            }
+        )
+        return {
+            "run_at": minute_label,
+            "waiting_count": waiting_count,
+            "avg_service_seconds": avg_service_seconds,
+            "estimated_seconds": estimated_seconds,
+            "message": f"現在の目安待ち時間: {format_duration_from_seconds(estimated_seconds)}",
+        }
+    except Exception:
+        app.logger.exception("Failed to refresh wait time estimate")
+        return default_result
+
+
+def get_latest_wait_time_summary(values=None):
+    values = get_settings(WAIT_TIME_SETTING_KEYS) if values is None else values
+    run_at = (values.get("last_wait_time_run_at") or "").strip()
+    if not run_at:
+        return {
+            "run_at": "",
+            "estimated_seconds": 0,
+            "waiting_count": 0,
+            "avg_service_seconds": 0,
+            "message": "現在の目安待ち時間: 算出中",
+        }
+    estimated_seconds_raw = (values.get("last_wait_time_estimated_seconds") or "0").strip()
+    waiting_count_raw = (values.get("last_wait_time_waiting_count") or "0").strip()
+    avg_service_seconds_raw = (values.get("last_wait_time_avg_service_seconds") or "0").strip()
+    estimated_seconds = int(estimated_seconds_raw) if estimated_seconds_raw.isdigit() else 0
+    waiting_count = int(waiting_count_raw) if waiting_count_raw.isdigit() else 0
+    avg_service_seconds = int(avg_service_seconds_raw) if avg_service_seconds_raw.isdigit() else 0
+    return {
+        "run_at": run_at,
+        "estimated_seconds": estimated_seconds,
+        "waiting_count": waiting_count,
+        "avg_service_seconds": avg_service_seconds,
+        "message": f"現在の目安待ち時間: {format_duration_from_seconds(estimated_seconds)}",
     }
 
 
@@ -750,6 +840,10 @@ def ensure_settings_table():
                 ("previous_auto_call_sent_count", "0"),
                 ("previous_auto_call_failed_count", "0"),
                 ("previous_auto_call_selected_count", "0"),
+                ("last_wait_time_run_at", ""),
+                ("last_wait_time_estimated_seconds", "0"),
+                ("last_wait_time_waiting_count", "0"),
+                ("last_wait_time_avg_service_seconds", "0"),
             ):
                 cur.execute(
                     """
@@ -865,6 +959,7 @@ def get_runtime_settings():
         "auto_call_count": auto_call_count,
         "last_auto_call": get_last_auto_call_summary(values),
         "latest_auto_call": get_auto_call_summary("last", values),
+        "latest_wait_time": get_latest_wait_time_summary(values),
     }
 
 
@@ -1458,6 +1553,8 @@ def process_reservation(event, user_id, user_message):
                     else:
                         cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, new_id))
                         reply = f"【受付完了】番号: {new_id} / 待ち: {cur.fetchone()[0]}人"
+                    latest_wait_time = refresh_wait_time_estimate()
+                    reply += f"\n{latest_wait_time['message']}"
             elif normalized == 'キャンセル':
                 cur.execute(
                     """

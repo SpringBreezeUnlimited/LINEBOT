@@ -108,6 +108,27 @@ def test_build_auto_call_summary_with_values(app_module):
     assert summary["selected_count"] == 3
 
 
+def test_get_latest_wait_time_summary_empty(app_module):
+    summary = app_module.get_latest_wait_time_summary({})
+    assert summary["run_at"] == ""
+    assert "算出中" in summary["message"]
+
+
+def test_get_latest_wait_time_summary_with_values(app_module):
+    values = {
+        "last_wait_time_run_at": "04-17 10:00",
+        "last_wait_time_estimated_seconds": "420",
+        "last_wait_time_waiting_count": "3",
+        "last_wait_time_avg_service_seconds": "140",
+    }
+    summary = app_module.get_latest_wait_time_summary(values)
+    assert summary["run_at"] == "04-17 10:00"
+    assert summary["estimated_seconds"] == 420
+    assert summary["waiting_count"] == 3
+    assert summary["avg_service_seconds"] == 140
+    assert "7分0秒" in summary["message"]
+
+
 def test_validate_batch_runner_token_authorization_header(app_module):
     app_module.BATCH_CALL_RUNNER_TOKEN = "token123"
     with app_module.app.test_request_context(
@@ -341,7 +362,80 @@ def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypa
 
 def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: False)
+    monkeypatch.setattr(
+        app_module,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {"message": "現在の目安待ち時間: 6分0秒", "estimated_seconds": 360},
+    )
     now = pytz.timezone("Asia/Tokyo").localize(datetime(2026, 4, 16, 10, 1))
     result = app_module.process_queued_calls(now=now)
     assert result["processed"] is False
     assert result["reason"] == "not_due"
+    assert result["wait_time"]["estimated_seconds"] == 360
+
+
+def test_process_reservation_new_booking_replies_with_latest_wait_time(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+            if "FROM reservation_types WHERE name = %s" in query:
+                self._last = (1, "相談", True)
+            elif "WHERE r.user_id = %s AND r.status IN" in query:
+                self._last = None
+            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+                self._last = (10,)
+            elif "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = %s" in query:
+                self._last = (2,)
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(
+        app_module,
+        "refresh_wait_time_estimate",
+        lambda now=None: {"message": "現在の目安待ち時間: 6分0秒", "estimated_seconds": 360},
+    )
+
+    sent_texts = []
+
+    class FakeLineApi:
+        @staticmethod
+        def reply_message(_reply_token, message):
+            sent_texts.append(message.text)
+
+    monkeypatch.setattr(app_module, "line_bot_api", FakeLineApi())
+
+    event = SimpleNamespace(reply_token="reply-token")
+    app_module.process_reservation(event, "U-123", "予約 相談")
+
+    assert sent_texts
+    assert "【受付完了】番号: 10 / 種類: 相談 / 待ち: 2人" in sent_texts[0]
+    assert "現在の目安待ち時間: 6分0秒" in sent_texts[0]
