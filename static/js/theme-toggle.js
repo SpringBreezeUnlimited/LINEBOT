@@ -1,32 +1,4 @@
-const themeStorageKey = 'espresso-theme';
-
-function readStoredTheme() {
-    try {
-        const value = localStorage.getItem(themeStorageKey);
-        if (value === 'dark' || value === 'light') {
-            return value;
-        }
-    } catch (e) {
-        return '';
-    }
-    return '';
-}
-
-function writeStoredTheme(value) {
-    try {
-        localStorage.setItem(themeStorageKey, value);
-    } catch (e) {
-        // no-op
-    }
-}
-
 function getPreferredTheme() {
-    const stored = readStoredTheme();
-    if (stored) return stored;
-    const fromDom = document.documentElement.getAttribute('data-theme');
-    if (fromDom === 'dark' || fromDom === 'light') {
-        return fromDom;
-    }
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
         return 'dark';
     }
@@ -38,21 +10,24 @@ function applyTheme(theme) {
     document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
         const isDark = theme === 'dark';
         button.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-        button.textContent = isDark ? 'ライトモード' : 'ダークモード';
+        button.textContent = isDark ? 'OS連動中（ダーク）' : 'OS連動中（ライト）';
+        button.disabled = true;
     });
 }
 
 function initializeThemeToggle() {
-    const currentTheme = getPreferredTheme();
-    applyTheme(currentTheme);
-
-    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
-        button.addEventListener('click', () => {
-            const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            applyTheme(nextTheme);
-            writeStoredTheme(nextTheme);
+    const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    applyTheme(getPreferredTheme());
+    if (!media) return;
+    if (typeof media.addEventListener === 'function') {
+        media.addEventListener('change', (event) => {
+            applyTheme(event.matches ? 'dark' : 'light');
         });
-    });
+    } else if (typeof media.addListener === 'function') {
+        media.addListener((event) => {
+            applyTheme(event.matches ? 'dark' : 'light');
+        });
+    }
 }
 
 if (document.readyState === 'loading') {

@@ -6,13 +6,10 @@
     <meta name="csrf-token" content="{{ csrf_token }}">
     <script>
         (function () {
-            try {
-                var theme = localStorage.getItem('espresso-theme');
-                if (theme === 'dark' || theme === 'light') {
-                    document.documentElement.setAttribute('data-theme', theme);
-                }
-            } catch (e) {
-                // no-op
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
             }
         })();
     </script>
@@ -25,7 +22,7 @@
         <div class="container">
             <span class="navbar-brand">Espresso 管理パネル</span>
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">ダークモード</button>
+                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">OS連動中</button>
                 <a href="/admin/types" class="btn btn-outline-light btn-sm">種類管理</a>
                 <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
                 <form method="POST" action="/logout" class="mb-0">
