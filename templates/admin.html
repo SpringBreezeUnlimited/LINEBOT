@@ -4,14 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token }}">
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('espresso-theme');
+                if (theme === 'dark' || theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', theme);
+                }
+            } catch (e) {
+                // no-op
+            }
+        })();
+    </script>
     <title>Espresso 管理画面</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body class="bg-light" data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}">
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
             <span class="navbar-brand">Espresso 管理パネル</span>
             <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">ダークモード</button>
                 <a href="/admin/types" class="btn btn-outline-light btn-sm">種類管理</a>
                 <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
                 <form method="POST" action="/logout" class="mb-0">
@@ -193,6 +207,7 @@
     </div>
     <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/theme-toggle.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
 </body>
 </html>

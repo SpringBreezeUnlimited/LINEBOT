@@ -3,10 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('espresso-theme');
+                if (theme === 'dark' || theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', theme);
+                }
+            } catch (e) {
+                // no-op
+            }
+        })();
+    </script>
     <title>ログイン - Espresso</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body class="bg-light">
+    <div class="theme-toggle-wrap">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-theme-toggle aria-pressed="false">ダークモード</button>
+    </div>
     <div class="container mt-5 login-container">
         <div class="card shadow">
             <div class="card-body">
@@ -28,5 +44,6 @@
             </div>
         </div>
     </div>
+    <script src="{{ url_for('static', filename='js/theme-toggle.js') }}" defer></script>
 </body>
 </html>

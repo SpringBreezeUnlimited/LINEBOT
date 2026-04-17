@@ -1,0 +1,99 @@
+html[data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg: #0f1724;
+    --color-surface: #172235;
+    --color-surface-subtle: #1c2b40;
+    --color-border: #2f445f;
+    --color-border-strong: #48607d;
+    --color-text: #e5edf7;
+    --color-text-muted: #a6b7cb;
+    --color-primary: #4ea1f3;
+    --color-primary-hover: #7cbaf8;
+    --color-success: #2da765;
+    --color-success-hover: #3ec97a;
+    --color-danger: #d35852;
+    --color-danger-hover: #ea726d;
+    --color-info: #54acef;
+    --color-warning: #d8b544;
+    --color-warning-text: #201900;
+    --color-secondary: #8090a6;
+    --color-secondary-hover: #96a7be;
+    --color-nav: #0b1320;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-2: 0 10px 24px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] body {
+    background:
+        radial-gradient(circle at 10% -10%, rgba(78, 161, 243, 0.18), rgba(78, 161, 243, 0) 36%),
+        radial-gradient(circle at 90% 0%, rgba(45, 167, 101, 0.16), rgba(45, 167, 101, 0) 32%),
+        var(--color-bg);
+}
+
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] .form-select {
+    color: var(--color-text);
+    background: #111b2a;
+    border-color: var(--color-border);
+}
+
+html[data-theme="dark"] .btn-outline-secondary {
+    color: var(--color-text);
+    background: #111b2a;
+    border-color: var(--color-border-strong);
+}
+
+html[data-theme="dark"] .btn-outline-secondary:hover {
+    background: #1b2940;
+}
+
+html[data-theme="dark"] .btn-outline-danger {
+    color: #f0b2af;
+    background: #2a191b;
+    border-color: #754044;
+}
+
+html[data-theme="dark"] .btn-outline-danger:hover {
+    background: #3a1f22;
+}
+
+html[data-theme="dark"] .alert-danger {
+    color: #ffbeb9;
+    background: #402223;
+    border-color: #704042;
+}
+
+html[data-theme="dark"] .alert-info {
+    color: #bfd8ff;
+    background: #1e314d;
+    border-color: #35567f;
+}
+
+html[data-theme="dark"] .alert-success {
+    color: #b7f0cf;
+    background: #18372b;
+    border-color: #2f674a;
+}
+
+html[data-theme="dark"] .alert-warning {
+    color: #f7e5ac;
+    background: #473b1a;
+    border-color: #7f6a2f;
+}
+
+html[data-theme="dark"] .call-notification {
+    color: #b7f0cf;
+    background: #18372b;
+    border-color: #2f674a;
+}
+
+html[data-theme="dark"] .version-toggle {
+    background: #111b2a;
+}
+
+.theme-toggle-wrap {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 1050;
+}

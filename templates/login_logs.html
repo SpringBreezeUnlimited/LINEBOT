@@ -3,14 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        (function () {
+            try {
+                var theme = localStorage.getItem('espresso-theme');
+                if (theme === 'dark' || theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', theme);
+                }
+            } catch (e) {
+                // no-op
+            }
+        })();
+    </script>
     <title>Espresso ログイン履歴</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 <body class="bg-light">
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
             <span class="navbar-brand">Espresso ログイン履歴</span>
             <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">ダークモード</button>
                 <form method="POST" action="/logout" class="mb-0">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
@@ -66,5 +80,6 @@
             </div>
         </div>
     </div>
+    <script src="{{ url_for('static', filename='js/theme-toggle.js') }}" defer></script>
 </body>
 </html>
