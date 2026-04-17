@@ -5,10 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>
         (function () {
-            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                document.documentElement.setAttribute('data-theme', 'dark');
+            var theme = '';
+            try {
+                theme = localStorage.getItem('espresso-theme') || '';
+            } catch (e) {
+                theme = '';
+            }
+            if (theme === 'dark' || theme === 'light') {
+                document.documentElement.setAttribute('data-theme', theme);
             } else {
-                document.documentElement.setAttribute('data-theme', 'light');
+                document.documentElement.setAttribute(
+                    'data-theme',
+                    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+                );
             }
         })();
     </script>
@@ -21,7 +30,7 @@
         <div class="container">
             <span class="navbar-brand">Espresso 予約種類管理</span>
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">OS連動中</button>
+                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
                 <a href="/admin" class="btn btn-outline-light btn-sm">管理画面</a>
                 <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
                 <form method="POST" action="/logout" class="mb-0">
