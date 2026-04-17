@@ -70,7 +70,7 @@ select {
 
 .navbar {
     margin-bottom: var(--space-6);
-    padding: var(--space-4) 0;
+    padding: var(--space-3) 0;
     color: #fff;
     background: var(--color-nav);
     box-shadow: var(--shadow-1);
@@ -384,7 +384,7 @@ select {
 }
 
 .auto-call-summary-value {
-    font-size: 0.9375rem;
+    font-size: 0.8125rem;
     font-weight: 700;
 }
 
