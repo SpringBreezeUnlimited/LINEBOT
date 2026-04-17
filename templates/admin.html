@@ -54,8 +54,8 @@
                     </select>
                 </div>
             </div>
-            <div class="row g-2 align-items-center mt-2">
-                <div class="col-sm-6">
+            <div class="row g-2 align-items-center mt-2 controls-row">
+                <div class="col-sm-6 control-col">
                     <label class="form-label">新規受付</label>
                     {% if accepting_new %}
                     <form
@@ -79,8 +79,8 @@
                     </form>
                     {% endif %}
                 </div>
-                <div class="col-sm-6">
-                    <label class="form-label">5分ごとの自動呼出人数</label>
+                <div class="col-sm-6 control-col">
+                    <label class="form-label auto-call-label">5分ごとの自動呼出人数</label>
                     <form method="POST" action="/admin/auto-call-count" class="auto-call-form">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                         <input
