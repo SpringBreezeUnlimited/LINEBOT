@@ -123,6 +123,12 @@ input {
     transform: translateY(-1px);
 }
 
+.btn-sm {
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    font-size: 0.875rem;
+}
+
 .btn-primary {
     color: #fff;
     background: var(--color-primary);
@@ -130,6 +136,16 @@ input {
 
 .btn-primary:hover {
     background: var(--color-primary-hover);
+}
+
+.btn-outline-secondary {
+    color: var(--color-text);
+    background: #fff;
+    border-color: var(--color-border);
+}
+
+.btn-outline-secondary:hover {
+    background: #f8fafc;
 }
 
 .w-100 {
