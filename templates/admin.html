@@ -1,199 +1,184 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="csrf-token" content="{{ csrf_token }}">
-    <script>
-        (function () {
-            var theme = '';
-            try {
-                theme = localStorage.getItem('espresso-theme') || '';
-            } catch (e) {
-                theme = '';
-            }
-            if (theme === 'dark' || theme === 'light') {
-                document.documentElement.setAttribute('data-theme', theme);
-            } else {
-                document.documentElement.setAttribute(
-                    'data-theme',
-                    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-                );
-            }
-        })();
-    </script>
-    <title>Espresso 管理画面</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
-</head>
-<body class="bg-light" data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}">
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container">
-            <span class="navbar-brand">Espresso 管理パネル</span>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
-                <a href="/admin/types" class="btn btn-outline-light btn-sm">種類管理</a>
-                <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
-                <form method="POST" action="/logout" class="mb-0">
-                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                    <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
-                </form>
-                <a
-                    href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
-                    class="btn btn-outline-light btn-sm"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >お問い合わせ</a>
-            </div>
-        </div>
-    </nav>
+{% extends "base.html" %}
+
+{% block title %}Espresso 管理画面{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+{% endblock %}
+
+{% block body_attrs %}data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}"{% endblock %}
+
+{% block navbar %}
+<nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
-        <div class="card shadow-sm mb-4">
-            <div class="card-body">
-                <div class="row g-2 align-items-center">
-                    <div class="col-sm-6">
-                        <label class="form-label">種類で絞り込み</label>
-                        <select id="type-filter" class="form-select">
-                            <option value="">すべて</option>
-                            {% for t in types %}
-                            <option value="{{ t[0] }}" {% if current_type_id == t[0] %}selected{% endif %}>{{ t[1] }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label">待機数（種類別）</label>
-                        <div id="type-counts" class="d-flex flex-wrap gap-2">
-                            {% for c in type_counts %}
-                            <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-2 align-items-center mt-2">
-                    <div class="col-sm-6">
-                        <label class="form-label">新規受付</label>
-                        {% if accepting_new %}
-                        <form
-                            method="POST"
-                            action="/admin/toggle-accepting"
-                            class="d-grid"
-                            data-inline-confirm="新規受付を停止しますか？"
-                        >
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-success w-100">受付中（停止する）</button>
-                        </form>
-                        {% else %}
-                        <form
-                            method="POST"
-                            action="/admin/toggle-accepting"
-                            class="d-grid"
-                            data-inline-confirm="新規受付を再開しますか？"
-                        >
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-danger w-100">受付停止中（再開する）</button>
-                        </form>
-                        {% endif %}
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label">並べ替え</label>
-                        <select id="sort-by" class="form-select">
-                            <option value="id" {% if sort_by == 'id' %}selected{% endif %}>番号</option>
-                            <option value="status" {% if sort_by == 'status' %}selected{% endif %}>状態</option>
-                            <option value="type" {% if sort_by == 'type' %}selected{% endif %}>種類</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="row g-2 align-items-center mt-2">
-                    <div class="col-sm-6">
-                        <label class="form-label">順序</label>
-                        <select id="sort-order" class="form-select">
-                            <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>昇順</option>
-                            <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>降順</option>
-                        </select>
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label">5分ごとの自動呼出人数</label>
-                        <form method="POST" action="/admin/auto-call-count" class="auto-call-form">
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                            <input
-                                type="number"
-                                name="auto_call_count"
-                                min="0"
-                                max="50"
-                                step="1"
-                                value="{{ auto_call_count }}"
-                                class="form-control"
-                            >
-                            <button type="submit" class="btn btn-primary">保存</button>
-                        </form>
-                        <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
-                    </div>
-                </div>
-                <div class="auto-call-summary mt-3">
-                    <div class="auto-call-summary-label">前回の自動呼出</div>
-                    <div id="last-auto-call-message" class="auto-call-summary-value">{{ last_auto_call.message }}</div>
-                </div>
-            </div>
+        <span class="navbar-brand">Espresso 管理パネル</span>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
+            <a href="/admin/types" class="btn btn-outline-light btn-sm">種類管理</a>
+            <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
+            <form method="POST" action="/logout" class="mb-0">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
+            </form>
+            <a
+                href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
+                class="btn btn-outline-light btn-sm"
+                target="_blank"
+                rel="noopener noreferrer"
+            >お問い合わせ</a>
         </div>
-        <div class="card shadow-sm">
-            <div id="call-notification" class="call-notification" hidden></div>
-            <div class="list-meta">
-                <span class="list-meta-label">リスト最終更新</span>
-                <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-striped mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>番号</th>
-                            <th>受付時刻</th>
-                            <th>種類</th>
-                            <th>状態</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="active-rows">
-                        {% for row in rows %}
-                        <tr
-                            data-id="{{ row.id }}"
-                            data-created-at="{{ row.created_at if row.created_at else '' }}"
-                            data-type="{{ row.type or '' }}"
-                            data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
-                            data-status="{{ row.status }}"
-                        >
-                            <td>{{ row.id }}</td>
-                            <td>{{ row.created_at if row.created_at else '-' }}</td>
-                            <td>{{ row.type or '-' }}</td>
-                            <td>
-                                {% if row.status == 'waiting' %}
-                                <span class="badge bg-warning text-dark">待機中</span>
-                                {% elif row.status == 'called' %}
-                                <span class="badge bg-info">呼出中</span>
-                                {% else %}
-                                <span class="badge bg-success">到着済み</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if row.status == 'waiting' %}
-                                <form method="POST" action="/admin/call/{{ row.id }}" class="d-inline">
-                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-success">呼出</button>
-                                </form>
-                                {% elif row.status == 'called' %}
-                                <span class="text-muted small">到着待ち</span>
-                                {% else %}
-                                <form method="POST" action="/admin/finish/{{ row.id }}" class="d-inline">
-                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-primary">確認完了</button>
-                                </form>
-                                {% endif %}
-                            </td>
-                        </tr>
+    </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row g-2 align-items-center">
+                <div class="col-sm-6">
+                    <label class="form-label">種類で絞り込み</label>
+                    <select id="type-filter" class="form-select">
+                        <option value="">すべて</option>
+                        {% for t in types %}
+                        <option value="{{ t[0] }}" {% if current_type_id == t[0] %}selected{% endif %}>{{ t[1] }}</option>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </select>
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label">待機数（種類別）</label>
+                    <div id="type-counts" class="d-flex flex-wrap gap-2">
+                        {% for c in type_counts %}
+                        <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="row g-2 align-items-center mt-2">
+                <div class="col-sm-6">
+                    <label class="form-label">新規受付</label>
+                    {% if accepting_new %}
+                    <form
+                        method="POST"
+                        action="/admin/toggle-accepting"
+                        class="d-grid"
+                        data-inline-confirm="新規受付を停止しますか？"
+                    >
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-success w-100">受付中（停止する）</button>
+                    </form>
+                    {% else %}
+                    <form
+                        method="POST"
+                        action="/admin/toggle-accepting"
+                        class="d-grid"
+                        data-inline-confirm="新規受付を再開しますか？"
+                    >
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-danger w-100">受付停止中（再開する）</button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label">並べ替え</label>
+                    <select id="sort-by" class="form-select">
+                        <option value="id" {% if sort_by == 'id' %}selected{% endif %}>番号</option>
+                        <option value="status" {% if sort_by == 'status' %}selected{% endif %}>状態</option>
+                        <option value="type" {% if sort_by == 'type' %}selected{% endif %}>種類</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row g-2 align-items-center mt-2">
+                <div class="col-sm-6">
+                    <label class="form-label">順序</label>
+                    <select id="sort-order" class="form-select">
+                        <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>昇順</option>
+                        <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>降順</option>
+                    </select>
+                </div>
+                <div class="col-sm-6">
+                    <label class="form-label">5分ごとの自動呼出人数</label>
+                    <form method="POST" action="/admin/auto-call-count" class="auto-call-form">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                        <input
+                            type="number"
+                            name="auto_call_count"
+                            min="0"
+                            max="50"
+                            step="1"
+                            value="{{ auto_call_count }}"
+                            class="form-control"
+                        >
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </form>
+                    <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
+                </div>
+            </div>
+            <div class="auto-call-summary mt-3">
+                <div class="auto-call-summary-label">前回の自動呼出</div>
+                <div id="last-auto-call-message" class="auto-call-summary-value">{{ last_auto_call.message }}</div>
             </div>
         </div>
+    </div>
+    <div class="card shadow-sm">
+        <div id="call-notification" class="call-notification" hidden></div>
+        <div class="list-meta">
+            <span class="list-meta-label">リスト最終更新</span>
+            <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-striped mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>番号</th>
+                        <th>受付時刻</th>
+                        <th>種類</th>
+                        <th>状態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="active-rows">
+                    {% for row in rows %}
+                    <tr
+                        data-id="{{ row.id }}"
+                        data-created-at="{{ row.created_at if row.created_at else '' }}"
+                        data-type="{{ row.type or '' }}"
+                        data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
+                        data-status="{{ row.status }}"
+                    >
+                        <td>{{ row.id }}</td>
+                        <td>{{ row.created_at if row.created_at else '-' }}</td>
+                        <td>{{ row.type or '-' }}</td>
+                        <td>
+                            {% if row.status == 'waiting' %}
+                            <span class="badge bg-warning text-dark">待機中</span>
+                            {% elif row.status == 'called' %}
+                            <span class="badge bg-info">呼出中</span>
+                            {% else %}
+                            <span class="badge bg-success">到着済み</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.status == 'waiting' %}
+                            <form method="POST" action="/admin/call/{{ row.id }}" class="d-inline">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-success">呼出</button>
+                            </form>
+                            {% elif row.status == 'called' %}
+                            <span class="text-muted small">到着待ち</span>
+                            {% else %}
+                            <form method="POST" action="/admin/finish/{{ row.id }}" class="d-inline">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-primary">確認完了</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
     <div class="text-center mt-4">
         <a href="/admin" class="btn btn-secondary">リストを更新</a>
     </div>
@@ -210,10 +195,11 @@
         <div>Version: {{ app_version }}</div>
         <div>Released: {{ app_released_at }}</div>
     </div>
-    </div>
-    <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/theme-toggle.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
-</body>
-</html>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
+{% endblock %}

@@ -1,149 +1,134 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script>
-        (function () {
-            var theme = '';
-            try {
-                theme = localStorage.getItem('espresso-theme') || '';
-            } catch (e) {
-                theme = '';
-            }
-            if (theme === 'dark' || theme === 'light') {
-                document.documentElement.setAttribute('data-theme', theme);
-            } else {
-                document.documentElement.setAttribute(
-                    'data-theme',
-                    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-                );
-            }
-        })();
-    </script>
-    <title>Espresso 予約種類管理</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/types.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
-</head>
-<body class="bg-light">
-    <nav class="navbar navbar-dark bg-dark mb-4">
-        <div class="container">
-            <span class="navbar-brand">Espresso 予約種類管理</span>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
-                <a href="/admin" class="btn btn-outline-light btn-sm">管理画面</a>
-                <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
-                <form method="POST" action="/logout" class="mb-0">
-                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                    <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
-                </form>
-                <a
-                    href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
-                    class="btn btn-outline-light btn-sm"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >お問い合わせ</a>
-            </div>
-        </div>
-    </nav>
+{% extends "base.html" %}
+
+{% block title %}Espresso 予約種類管理{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/types.css') }}">
+{% endblock %}
+
+{% block navbar %}
+<nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
-        <div class="card shadow-sm mb-4">
-            <div class="card-body">
-                <h5 class="card-title">種類を追加</h5>
-                <div class="mb-3">
-                    <span class="me-2">全体の新規受付</span>
-                    {% if accepting_new %}
-                    <span class="badge bg-success">受付中</span>
-                    {% else %}
-                    <span class="badge bg-danger">停止中</span>
-                    {% endif %}
+        <span class="navbar-brand">Espresso 予約種類管理</span>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
+            <a href="/admin" class="btn btn-outline-light btn-sm">管理画面</a>
+            <a href="/admin/history" class="btn btn-outline-light btn-sm">過去ログ</a>
+            <form method="POST" action="/logout" class="mb-0">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
+            </form>
+            <a
+                href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
+                class="btn btn-outline-light btn-sm"
+                target="_blank"
+                rel="noopener noreferrer"
+            >お問い合わせ</a>
+        </div>
+    </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h5 class="card-title">種類を追加</h5>
+            <div class="mb-3">
+                <span class="me-2">全体の新規受付</span>
+                {% if accepting_new %}
+                <span class="badge bg-success">受付中</span>
+                {% else %}
+                <span class="badge bg-danger">停止中</span>
+                {% endif %}
+            </div>
+            {% if type_error %}
+            <div class="alert alert-danger">{{ type_error }}</div>
+            {% endif %}
+            {% if type_success %}
+            <div class="alert alert-success">{{ type_success }}</div>
+            {% endif %}
+            <form
+                method="POST"
+                action="/admin/types"
+                class="row g-2 align-items-center"
+                data-inline-confirm="この内容で種類を追加しますか？"
+            >
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <div class="col-sm-8">
+                    <input type="text" name="name" class="form-control" placeholder="種類名" required>
                 </div>
-                {% if type_error %}
-                <div class="alert alert-danger">{{ type_error }}</div>
-                {% endif %}
-                {% if type_success %}
-                <div class="alert alert-success">{{ type_success }}</div>
-                {% endif %}
-                <form
-                    method="POST"
-                    action="/admin/types"
-                    class="row g-2 align-items-center"
-                    data-inline-confirm="この内容で種類を追加しますか？"
-                >
-                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                    <div class="col-sm-8">
-                        <input type="text" name="name" class="form-control" placeholder="種類名" required>
-                    </div>
-                    <div class="col-sm-4 d-grid">
-                        <button type="submit" class="btn btn-primary">追加</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title">登録済みの種類</h5>
-                <ul class="list-group">
-                    {% for t in types %}
-                    <li class="list-group-item">
-                        <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                        <span>{{ t[1] }}</span>
-                        <div class="d-flex gap-2">
-                            {% if t[2] %}
-                            <form
-                                method="POST"
-                                action="/admin/types/toggle/{{ t[0] }}"
-                                class="d-inline"
-                                data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
-                            >
-                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-success">受付中</button>
-                            </form>
-                            {% else %}
-                            <form
-                                method="POST"
-                                action="/admin/types/toggle/{{ t[0] }}"
-                                class="d-inline"
-                                data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
-                            >
-                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
-                            </form>
-                            {% endif %}
-                            <form
-                                method="POST"
-                                action="/admin/types/delete/{{ t[0] }}"
-                                class="d-inline"
-                                data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
-                            >
-                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
-                            </form>
-                        </div>
-                        </div>
-                    </li>
-                    {% else %}
-                    <li class="list-group-item text-muted">登録されている種類はありません。</li>
-                    {% endfor %}
-                </ul>
-            </div>
+                <div class="col-sm-4 d-grid">
+                    <button type="submit" class="btn btn-primary">追加</button>
+                </div>
+            </form>
         </div>
     </div>
-    <button
-        type="button"
-        class="btn btn-outline-secondary btn-sm version-toggle"
-        data-version-toggle
-        aria-controls="version-badge"
-        aria-expanded="true"
-    >
-        バージョン非表示
-    </button>
-    <div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded shadow-sm small version-badge">
-        <div>Version: {{ app_version }}</div>
-        <div>Released: {{ app_released_at }}</div>
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <h5 class="card-title">登録済みの種類</h5>
+            <ul class="list-group">
+                {% for t in types %}
+                <li class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                    <span>{{ t[1] }}</span>
+                    <div class="d-flex gap-2">
+                        {% if t[2] %}
+                        <form
+                            method="POST"
+                            action="/admin/types/toggle/{{ t[0] }}"
+                            class="d-inline"
+                            data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
+                        >
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-success">受付中</button>
+                        </form>
+                        {% else %}
+                        <form
+                            method="POST"
+                            action="/admin/types/toggle/{{ t[0] }}"
+                            class="d-inline"
+                            data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
+                        >
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
+                        </form>
+                        {% endif %}
+                        <form
+                            method="POST"
+                            action="/admin/types/delete/{{ t[0] }}"
+                            class="d-inline"
+                            data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
+                        >
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
+                        </form>
+                    </div>
+                    </div>
+                </li>
+                {% else %}
+                <li class="list-group-item text-muted">登録されている種類はありません。</li>
+                {% endfor %}
+            </ul>
+        </div>
     </div>
-    <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/theme-toggle.js') }}" defer></script>
-</body>
-</html>
+</div>
+<button
+    type="button"
+    class="btn btn-outline-secondary btn-sm version-toggle"
+    data-version-toggle
+    aria-controls="version-badge"
+    aria-expanded="true"
+>
+    バージョン非表示
+</button>
+<div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded shadow-sm small version-badge">
+    <div>Version: {{ app_version }}</div>
+    <div>Released: {{ app_released_at }}</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
+{% endblock %}
