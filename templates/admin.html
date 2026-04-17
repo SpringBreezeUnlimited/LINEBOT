@@ -46,12 +46,12 @@
                     </select>
                 </div>
                 <div class="col-sm-6">
-                    <label class="form-label">待機数（種類別）</label>
-                    <div id="type-counts" class="d-flex flex-wrap gap-2">
-                        {% for c in type_counts %}
-                        <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
-                        {% endfor %}
-                    </div>
+                    <label class="form-label">並べ替え</label>
+                    <select id="sort-by" class="form-select">
+                        <option value="id" {% if sort_by == 'id' %}selected{% endif %}>番号</option>
+                        <option value="status" {% if sort_by == 'status' %}selected{% endif %}>状態</option>
+                        <option value="type" {% if sort_by == 'type' %}selected{% endif %}>種類</option>
+                    </select>
                 </div>
             </div>
             <div class="row g-2 align-items-center mt-2">
@@ -80,23 +80,6 @@
                     {% endif %}
                 </div>
                 <div class="col-sm-6">
-                    <label class="form-label">並べ替え</label>
-                    <select id="sort-by" class="form-select">
-                        <option value="id" {% if sort_by == 'id' %}selected{% endif %}>番号</option>
-                        <option value="status" {% if sort_by == 'status' %}selected{% endif %}>状態</option>
-                        <option value="type" {% if sort_by == 'type' %}selected{% endif %}>種類</option>
-                    </select>
-                </div>
-            </div>
-            <div class="row g-2 align-items-center mt-2">
-                <div class="col-sm-6">
-                    <label class="form-label">順序</label>
-                    <select id="sort-order" class="form-select">
-                        <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>昇順</option>
-                        <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>降順</option>
-                    </select>
-                </div>
-                <div class="col-sm-6">
                     <label class="form-label">5分ごとの自動呼出人数</label>
                     <form method="POST" action="/admin/auto-call-count" class="auto-call-form">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
@@ -112,6 +95,14 @@
                         <button type="submit" class="btn btn-primary">保存</button>
                     </form>
                     <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
+                </div>
+            </div>
+            <div class="mt-2">
+                <label class="form-label">待機数（種類別）</label>
+                <div id="type-counts" class="d-flex flex-wrap gap-2">
+                    {% for c in type_counts %}
+                    <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
+                    {% endfor %}
                 </div>
             </div>
             <div class="auto-call-summary mt-3">

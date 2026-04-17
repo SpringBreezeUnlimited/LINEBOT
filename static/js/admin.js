@@ -62,8 +62,6 @@ function getQueryParams() {
     if (select && select.value) params.set('type_id', select.value);
     const sortBy = document.getElementById('sort-by');
     if (sortBy && sortBy.value) params.set('sort_by', sortBy.value);
-    const sortOrder = document.getElementById('sort-order');
-    if (sortOrder && sortOrder.value) params.set('sort_order', sortOrder.value);
     const q = params.toString();
     return q ? `?${q}` : '';
 }
@@ -72,19 +70,17 @@ function getActiveFilters() {
     return {
         typeId: document.getElementById('type-filter')?.value || '',
         sortBy: document.getElementById('sort-by')?.value || 'id',
-        sortOrder: document.getElementById('sort-order')?.value || 'asc',
     };
 }
 
-function compareValues(left, right, sortOrder) {
-    const multiplier = sortOrder === 'desc' ? -1 : 1;
-    if (left < right) return -1 * multiplier;
-    if (left > right) return 1 * multiplier;
+function compareValues(left, right) {
+    if (left < right) return -1;
+    if (left > right) return 1;
     return 0;
 }
 
 function applyClientFilters(rows) {
-    const { typeId, sortBy, sortOrder } = getActiveFilters();
+    const { typeId, sortBy } = getActiveFilters();
     const filtered = rows.filter((row) => {
         if (!typeId) return true;
         return String(row.type_id || '') === typeId;
@@ -92,12 +88,12 @@ function applyClientFilters(rows) {
 
     filtered.sort((left, right) => {
         if (sortBy === 'status') {
-            return compareValues(left.status || '', right.status || '', sortOrder) || compareValues(left.id, right.id, 'asc');
+            return compareValues(left.status || '', right.status || '') || compareValues(left.id, right.id);
         }
         if (sortBy === 'type') {
-            return compareValues(left.type || '', right.type || '', sortOrder) || compareValues(left.id, right.id, 'asc');
+            return compareValues(left.type || '', right.type || '') || compareValues(left.id, right.id);
         }
-        return compareValues(left.id, right.id, sortOrder) || compareValues(left.id, right.id, 'asc');
+        return compareValues(left.id, right.id);
     });
 
     return filtered;
@@ -270,7 +266,6 @@ function applyAdminFilters() {
 
 document.getElementById('type-filter')?.addEventListener('change', applyAdminFilters);
 document.getElementById('sort-by')?.addEventListener('change', applyAdminFilters);
-document.getElementById('sort-order')?.addEventListener('change', applyAdminFilters);
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
         refreshAdminData();
