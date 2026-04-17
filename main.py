@@ -28,6 +28,17 @@ def parse_bool_env(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def parse_int_env(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw.strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(value, maximum))
+
+
 def normalize_db_url(raw_url: str) -> str:
     url = raw_url.replace("postgres://", "postgresql://", 1)
     parsed = urlparse(url)
@@ -69,8 +80,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.37"
-APP_RELEASED_AT = "2026-04-16 01:40 JST"
+APP_VERSION = "v1.0.38"
+APP_RELEASED_AT = "2026-04-17 00:20 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -85,6 +96,7 @@ TYPE_NAME_PATTERN = re.compile(
 
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
+ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
 app.config.update(
@@ -988,6 +1000,7 @@ def admin_page():
         auto_call_count=runtime_settings["auto_call_count"],
         last_auto_call=runtime_settings["last_auto_call"],
         latest_auto_call=runtime_settings["latest_auto_call"],
+        admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token()
     )
 

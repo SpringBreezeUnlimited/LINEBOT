@@ -1,6 +1,9 @@
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 const autoCallNotificationStorageKey = 'espresso-last-auto-call-run-at';
-const adminRefreshIntervalMs = 15000;
+const configuredRefreshIntervalMs = Number(document.body?.dataset.adminRefreshIntervalMs || '15000');
+const adminRefreshIntervalMs = Number.isFinite(configuredRefreshIntervalMs)
+    ? Math.min(300000, Math.max(1000, Math.trunc(configuredRefreshIntervalMs)))
+    : 15000;
 
 function parseInitialRowsFromDom() {
     return Array.from(document.querySelectorAll('#active-rows tr')).map((row) => ({

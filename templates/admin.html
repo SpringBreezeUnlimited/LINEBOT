@@ -7,7 +7,7 @@
     <title>Espresso 管理画面</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
-<body class="bg-light">
+<body class="bg-light" data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}">
     <nav class="navbar navbar-dark bg-dark mb-4">
         <div class="container">
             <span class="navbar-brand">Espresso 管理パネル</span>
