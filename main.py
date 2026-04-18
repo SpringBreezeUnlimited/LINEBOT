@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.52"
-APP_RELEASED_AT = "2026-04-18 03:05 JST"
+APP_VERSION = "v1.0.53"
+APP_RELEASED_AT = "2026-04-18 03:35 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1211,6 +1211,82 @@ def admin_accounts_create():
 
     login_id = (request.form.get("login_id") or "").strip().lower()
     password = request.form.get("password") or ""
+    bulk_accounts_raw = request.form.get("bulk_accounts") or ""
+    bulk_lines = [line.strip() for line in bulk_accounts_raw.splitlines() if line.strip()]
+
+    if bulk_lines:
+        accounts_to_create = []
+        seen_login_ids = set()
+        for idx, line in enumerate(bulk_lines, start=1):
+            if "," not in line:
+                return redirect(
+                    url_for(
+                        "admin_login_logs_page",
+                        account_error=f"{idx}行目の形式が不正です。login_id,password 形式で入力してください。",
+                    )
+                )
+            raw_login_id, raw_password = line.split(",", 1)
+            parsed_login_id = raw_login_id.strip().lower()
+            parsed_password = raw_password.strip()
+            if not LOGIN_ID_PATTERN.fullmatch(parsed_login_id):
+                return redirect(
+                    url_for(
+                        "admin_login_logs_page",
+                        account_error=f"{idx}行目のログインIDが不正です。3〜32文字の英小文字・数字・_-で入力してください。",
+                    )
+                )
+            if len(parsed_password) < 8:
+                return redirect(
+                    url_for(
+                        "admin_login_logs_page",
+                        account_error=f"{idx}行目のパスワードは8文字以上で入力してください。",
+                    )
+                )
+            if parsed_login_id in seen_login_ids:
+                return redirect(
+                    url_for(
+                        "admin_login_logs_page",
+                        account_error=f"入力内でログインID「{parsed_login_id}」が重複しています。",
+                    )
+                )
+            seen_login_ids.add(parsed_login_id)
+            accounts_to_create.append((parsed_login_id, parsed_password))
+
+        try:
+            with get_connection() as conn:
+                with conn.cursor() as cur:
+                    login_ids = [item[0] for item in accounts_to_create]
+                    cur.execute(
+                        "SELECT login_id FROM admin_accounts WHERE login_id = ANY(%s)",
+                        (login_ids,),
+                    )
+                    existing_ids = {row[0] for row in cur.fetchall()}
+                    if existing_ids:
+                        existing_label = sorted(existing_ids)[0]
+                        return redirect(
+                            url_for(
+                                "admin_login_logs_page",
+                                account_error=f"ログインID「{existing_label}」は既に存在します。",
+                            )
+                        )
+                    for parsed_login_id, parsed_password in accounts_to_create:
+                        cur.execute(
+                            """
+                                INSERT INTO admin_accounts (login_id, password_hash, role, active)
+                                VALUES (%s, %s, %s, TRUE)
+                            """,
+                            (parsed_login_id, generate_password_hash(parsed_password), ROLE_ADMIN),
+                        )
+                    conn.commit()
+        except psycopg2.IntegrityError:
+            return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
+
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_success=f"管理者アカウントを{len(accounts_to_create)}件作成しました。",
+            )
+        )
 
     if not LOGIN_ID_PATTERN.fullmatch(login_id):
         return redirect(

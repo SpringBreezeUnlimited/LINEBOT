@@ -45,6 +45,16 @@
                 <div class="col-md-3 d-grid pt-md-4">
                     <button type="submit" class="btn btn-primary">作成</button>
                 </div>
+                <div class="col-12 mt-3">
+                    <label class="form-label">一括作成（任意）</label>
+                    <textarea
+                        name="bulk_accounts"
+                        class="form-control"
+                        rows="5"
+                        placeholder="manager01,superpower01\nmanager02,superpower02"
+                    ></textarea>
+                    <p class="text-muted small mt-2 mb-0">1行1アカウントで login_id,password 形式。ここに入力した場合は一括作成を優先します。</p>
+                </div>
             </form>
             <p class="text-muted small mt-2 mb-0">作成されるロールは通常管理者（admin）です。</p>
         </div>

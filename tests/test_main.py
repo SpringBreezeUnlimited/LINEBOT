@@ -401,6 +401,78 @@ def test_admin_accounts_create_duplicate_login_id(app_module, monkeypatch):
     assert "account_error" in response.headers["Location"]
 
 
+def test_admin_accounts_bulk_create_success(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+
+    calls = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+            if "SELECT login_id FROM admin_accounts" in query:
+                self._rows = []
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts",
+        method="POST",
+        data={
+            "login_id": "",
+            "password": "",
+            "bulk_accounts": "manager01,superpower01\nmanager02,superpower02",
+        },
+    ):
+        response = app_module.admin_accounts_create()
+
+    assert response.status_code == 302
+    assert "account_success" in response.headers["Location"]
+    assert any("SELECT login_id FROM admin_accounts" in query for query, _ in calls)
+
+
+def test_admin_accounts_bulk_create_invalid_line_format(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts",
+        method="POST",
+        data={
+            "login_id": "",
+            "password": "",
+            "bulk_accounts": "manager01-superpower01",
+        },
+    ):
+        response = app_module.admin_accounts_create()
+
+    assert response.status_code == 302
+    assert "account_error" in response.headers["Location"]
+
+
 def test_admin_accounts_update_login_id_requires_audit_auth(app_module):
     with app_module.app.test_request_context(
         "/admin/admin-accounts/1/login-id",
