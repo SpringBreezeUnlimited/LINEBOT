@@ -89,6 +89,12 @@ FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
     host.strip().lower() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()
 }
+
+# 本番環境での安全性チェック
+IS_PRODUCTION = bool(os.getenv("RENDER"))
+if IS_PRODUCTION and not ALLOWED_HOSTS:
+    raise RuntimeError("ALLOWED_HOSTS is required in production environment. Set it to your Render app domain(s)")
+
 SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "1800"))
 MAX_TYPE_NAME_LENGTH = int(os.getenv("MAX_TYPE_NAME_LENGTH", "40"))
 MAX_USER_MESSAGE_CHARS = int(os.getenv("MAX_USER_MESSAGE_CHARS", "100"))
