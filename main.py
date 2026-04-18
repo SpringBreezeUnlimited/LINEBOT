@@ -12,9 +12,10 @@ import pytz # type: ignore
 
 import psycopg2 # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context # type: ignore
-from linebot import LineBotApi, WebhookHandler # type: ignore
-from linebot.exceptions import InvalidSignatureError # type: ignore
-from linebot.models import MessageEvent, TextMessage, TextSendMessage # type: ignore
+from linebot.v3 import WebhookHandler # type: ignore
+from linebot.v3.exceptions import InvalidSignatureError # type: ignore
+from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage # type: ignore
+from linebot.v3.webhooks import MessageEvent, TextMessageContent # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix # type: ignore
 from werkzeug.security import check_password_hash # type: ignore
 
@@ -100,6 +101,8 @@ WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SEC
 ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
+MESSAGING_CONFIGURATION = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
@@ -118,7 +121,6 @@ def inject_template_globals():
         "format_duration": format_duration_from_seconds,
     }
 
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
 STATUS_WAITING = "waiting"
@@ -181,6 +183,26 @@ def get_connection():
             g._db_connection = connection
         return ManagedConnection(connection, close_on_exit=False)
     return ManagedConnection(create_connection(), close_on_exit=True)
+
+
+def send_push_message(user_id: str, text: str):
+    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+        MessagingApi(api_client).push_message(
+            PushMessageRequest(
+                to=user_id,
+                messages=[TextMessage(text=text)],
+            )
+        )
+
+
+def send_reply_message(reply_token: str, text: str):
+    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+        MessagingApi(api_client).reply_message(
+            ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[TextMessage(text=text)],
+            )
+        )
 
 
 def format_dt(value):
@@ -257,10 +279,7 @@ def process_queued_calls(now=None):
     failed_ids = []
     for res_id, user_id in auto_rows:
         try:
-            line_bot_api.push_message(
-                user_id,
-                TextSendMessage(text=f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！"),
-            )
+            send_push_message(user_id, f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！")
             sent_ids.append(res_id)
         except Exception:
             failed_ids.append(res_id)
@@ -1354,10 +1373,7 @@ def admin_call(res_id):
             conn.commit()
 
     try:
-        line_bot_api.push_message(
-            user_id,
-            TextSendMessage(text=f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！"),
-        )
+        send_push_message(user_id, f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！")
     except Exception:
         app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
         with get_connection() as rollback_conn:
@@ -1434,7 +1450,7 @@ def callback():
         abort(400)
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
@@ -1443,16 +1459,13 @@ def handle_message(event):
 def process_reservation(event, user_id, user_message):
     normalized = user_message.strip()
     if not normalized:
-        line_bot_api.reply_message(
+        send_reply_message(
             event.reply_token,
-            TextSendMessage(text="メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」と送信してください。")
+            "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」と送信してください。",
         )
         return
     if len(normalized) > MAX_USER_MESSAGE_CHARS:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=f"メッセージは{MAX_USER_MESSAGE_CHARS}文字以内で送信してください。"),
-        )
+        send_reply_message(event.reply_token, f"メッセージは{MAX_USER_MESSAGE_CHARS}文字以内で送信してください。")
         return
 
     accepting_new = is_accepting_new()
@@ -1461,7 +1474,7 @@ def process_reservation(event, user_id, user_message):
             if normalized.startswith('予約'):
                 if not accepting_new:
                     reply = "現在、新規の予約受付は停止中です。"
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                    send_reply_message(event.reply_token, reply)
                     return
                 requested_type_name = normalize_type_name(normalized[2:])
                 type_id = None
@@ -1472,7 +1485,7 @@ def process_reservation(event, user_id, user_message):
                             f"種類名は1〜{MAX_TYPE_NAME_LENGTH}文字で指定してください。"
                             "\n例: 予約 相談"
                         )
-                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                        send_reply_message(event.reply_token, reply)
                         return
                     cur.execute("SELECT id, name, accepting FROM reservation_types WHERE name = %s", (requested_type_name,))
                     type_row = cur.fetchone()
@@ -1482,7 +1495,7 @@ def process_reservation(event, user_id, user_message):
                             reply = f"指定した種類「{requested_type_name}」は存在しません。\n利用可能: " + " / ".join(names)
                         else:
                             reply = "予約の種類がまだ登録されていません。管理画面で追加してください。"
-                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                        send_reply_message(event.reply_token, reply)
                         return
                     type_id, type_name, type_accepting = type_row
                     if not type_accepting:
@@ -1491,7 +1504,7 @@ def process_reservation(event, user_id, user_message):
                             reply = f"「{type_name}」の新規受付は停止中です。\n利用可能: " + " / ".join(names)
                         else:
                             reply = f"「{type_name}」の新規受付は停止中です。"
-                        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                        send_reply_message(event.reply_token, reply)
                         return
                 else:
                     names = get_accepting_type_names(cur)
@@ -1499,7 +1512,7 @@ def process_reservation(event, user_id, user_message):
                         reply = "予約の種類を指定してください。\n利用可能: " + " / ".join(names) + "\n例: 予約 相談"
                     else:
                         reply = "現在受付可能な予約の種類がありません。管理画面で受付を再開してください。"
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+                    send_reply_message(event.reply_token, reply)
                     return
 
                 cur.execute(
@@ -1593,7 +1606,7 @@ def process_reservation(event, user_id, user_message):
                         reply = f"到着を受け付けました。番号: {res_id} / スタッフが確認します。"
             else:
                 reply = "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」と送信してください。"
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+    send_reply_message(event.reply_token, reply)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))

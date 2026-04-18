@@ -136,6 +136,22 @@ def test_calculate_wait_time_minutes_formula(app_module):
     assert app_module.calculate_wait_time_minutes(3) == 4
 
 
+@pytest.mark.parametrize(
+    ("people_ahead", "expected_minutes"),
+    [
+        (0, 2),
+        (1, 3),
+        (2, 3),
+        (3, 4),
+        (4, 4),
+        (5, 5),
+        (6, 5),
+    ],
+)
+def test_calculate_wait_time_minutes_boundaries(app_module, people_ahead, expected_minutes):
+    assert app_module.calculate_wait_time_minutes(people_ahead) == expected_minutes
+
+
 def test_validate_batch_runner_token_authorization_header(app_module):
     app_module.BATCH_CALL_RUNNER_TOKEN = "token123"
     with app_module.app.test_request_context(
@@ -433,12 +449,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
 
     sent_texts = []
 
-    class FakeLineApi:
-        @staticmethod
-        def reply_message(_reply_token, message):
-            sent_texts.append(message.text)
-
-    monkeypatch.setattr(app_module, "line_bot_api", FakeLineApi())
+    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-123", "予約 相談")

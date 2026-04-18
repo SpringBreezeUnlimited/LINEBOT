@@ -101,12 +101,7 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
 
     push_calls = []
 
-    class FakeLineApi:
-        @staticmethod
-        def push_message(user_id, _message):
-            push_calls.append(user_id)
-
-    monkeypatch.setattr(app_module, "line_bot_api", FakeLineApi())
+    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, _text: push_calls.append(user_id))
 
     statuses = []
     barrier = threading.Barrier(2)
