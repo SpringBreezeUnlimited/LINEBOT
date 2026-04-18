@@ -401,6 +401,100 @@ def test_admin_accounts_create_duplicate_login_id(app_module, monkeypatch):
     assert "account_error" in response.headers["Location"]
 
 
+def test_admin_accounts_update_login_id_requires_audit_auth(app_module):
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts/1/login-id",
+        method="POST",
+        data={"login_id": "manager02"},
+    ):
+        response = app_module.admin_accounts_update_login_id(1)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+def test_admin_accounts_update_login_id_success(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+
+    calls = []
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts/1/login-id",
+        method="POST",
+        data={"login_id": "manager02"},
+    ):
+        response = app_module.admin_accounts_update_login_id(1)
+
+    assert response.status_code == 302
+    assert "account_success" in response.headers["Location"]
+    assert calls
+
+
+def test_admin_accounts_update_login_id_duplicate(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, _query, _params=None):
+            raise app_module.psycopg2.IntegrityError()
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts/1/login-id",
+        method="POST",
+        data={"login_id": "manager02"},
+    ):
+        response = app_module.admin_accounts_update_login_id(1)
+
+    assert response.status_code == 302
+    assert "account_error" in response.headers["Location"]
+
+
 def test_admin_data_unauthorized(client):
     response = client.get("/admin/data")
     assert response.status_code == 401

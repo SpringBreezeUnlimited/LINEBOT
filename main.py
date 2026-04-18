@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.51"
-APP_RELEASED_AT = "2026-04-18 02:35 JST"
+APP_VERSION = "v1.0.52"
+APP_RELEASED_AT = "2026-04-18 03:05 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1243,6 +1243,36 @@ def admin_accounts_create():
         return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
 
     return redirect(url_for("admin_login_logs_page", account_success=f"管理者アカウント「{login_id}」を作成しました。"))
+
+
+@app.route("/admin/admin-accounts/<int:account_id>/login-id", methods=["POST"])
+def admin_accounts_update_login_id(account_id):
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+
+    login_id = (request.form.get("login_id") or "").strip().lower()
+    if not LOGIN_ID_PATTERN.fullmatch(login_id):
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="ログインIDは3〜32文字の英小文字・数字・_-で入力してください。",
+            )
+        )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE admin_accounts SET login_id = %s WHERE id = %s",
+                    (login_id, account_id),
+                )
+                if cur.rowcount == 0:
+                    return redirect(url_for("admin_login_logs_page", account_error="対象アカウントが存在しません。"))
+                conn.commit()
+    except psycopg2.IntegrityError:
+        return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
+
+    return redirect(url_for("admin_login_logs_page", account_success=f"ログインIDを「{login_id}」に更新しました。"))
 
 @app.route("/admin")
 def admin_page():

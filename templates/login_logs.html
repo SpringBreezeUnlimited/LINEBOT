@@ -57,6 +57,7 @@
                     <tr>
                         <th>ID</th>
                         <th>ログインID</th>
+                        <th>編集</th>
                         <th>権限</th>
                         <th>状態</th>
                         <th>作成時刻</th>
@@ -67,6 +68,13 @@
                     <tr>
                         <td>{{ account[0] }}</td>
                         <td>{{ account[1] }}</td>
+                        <td>
+                            <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/login-id" class="d-flex gap-2 align-items-center">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                <input type="text" name="login_id" class="form-control form-control-sm" value="{{ account[1] }}" required>
+                                <button type="submit" class="btn btn-sm btn-outline-primary">更新</button>
+                            </form>
+                        </td>
                         <td>
                             {% if account[2] == 'audit_admin' %}
                             <span class="badge bg-primary">監査管理者</span>
@@ -85,7 +93,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-center">管理者アカウントはまだありません。</td>
+                        <td colspan="6" class="text-center">管理者アカウントはまだありません。</td>
                     </tr>
                     {% endfor %}
                 </tbody>
