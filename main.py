@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.50"
-APP_RELEASED_AT = "2026-04-18 01:20 JST"
+APP_VERSION = "v1.0.51"
+APP_RELEASED_AT = "2026-04-18 02:05 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1160,7 +1160,7 @@ def logout():
 def admin_login_logs_page():
     if not is_audit_admin_authenticated():
         return redirect(url_for("login"))
-    if not AUDIT_ADMIN_PASSWORD_HASH:
+    if not has_audit_admin_account():
         abort(404)
 
     with get_connection() as conn:
