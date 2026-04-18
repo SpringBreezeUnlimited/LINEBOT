@@ -17,7 +17,7 @@ from linebot.v3.exceptions import InvalidSignatureError # type: ignore
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix # type: ignore
-from werkzeug.security import check_password_hash # type: ignore
+from werkzeug.security import check_password_hash, generate_password_hash # type: ignore
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
 APP_VERSION = "v1.0.51"
-APP_RELEASED_AT = "2026-04-18 02:05 JST"
+APP_RELEASED_AT = "2026-04-18 02:35 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -95,6 +95,7 @@ MAX_USER_MESSAGE_CHARS = int(os.getenv("MAX_USER_MESSAGE_CHARS", "100"))
 TYPE_NAME_PATTERN = re.compile(
     rf"^[A-Za-z0-9ぁ-んァ-ヶー一-龠々・ 　_-]{{1,{MAX_TYPE_NAME_LENGTH}}}$"
 )
+LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
@@ -1163,6 +1164,9 @@ def admin_login_logs_page():
     if not has_audit_admin_account():
         abort(404)
 
+    account_error = request.args.get("account_error")
+    account_success = request.args.get("account_success")
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1179,11 +1183,66 @@ def admin_login_logs_page():
                 (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
                 for row in rows
             ]
+            cur.execute(
+                """
+                    SELECT id, login_id, role, active, created_at AT TIME ZONE 'Asia/Tokyo'
+                    FROM admin_accounts
+                    ORDER BY id ASC
+                """
+            )
+            admin_accounts = [
+                (row[0], row[1], row[2], row[3], format_dt(row[4]))
+                for row in cur.fetchall()
+            ]
     return render_template(
         "login_logs.html",
         rows=rows,
+        admin_accounts=admin_accounts,
+        account_error=account_error,
+        account_success=account_success,
         csrf_token=get_csrf_token(),
     )
+
+
+@app.route("/admin/admin-accounts", methods=["POST"])
+def admin_accounts_create():
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+
+    login_id = (request.form.get("login_id") or "").strip().lower()
+    password = request.form.get("password") or ""
+
+    if not LOGIN_ID_PATTERN.fullmatch(login_id):
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="ログインIDは3〜32文字の英小文字・数字・_-で入力してください。",
+            )
+        )
+    if len(password) < 8:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="パスワードは8文字以上で入力してください。",
+            )
+        )
+
+    password_hash = generate_password_hash(password)
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        INSERT INTO admin_accounts (login_id, password_hash, role, active)
+                        VALUES (%s, %s, %s, TRUE)
+                    """,
+                    (login_id, password_hash, ROLE_ADMIN),
+                )
+                conn.commit()
+    except psycopg2.IntegrityError:
+        return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
+
+    return redirect(url_for("admin_login_logs_page", account_success=f"管理者アカウント「{login_id}」を作成しました。"))
 
 @app.route("/admin")
 def admin_page():
