@@ -126,7 +126,14 @@ def test_get_latest_wait_time_summary_with_values(app_module):
     assert summary["estimated_seconds"] == 420
     assert summary["waiting_count"] == 3
     assert summary["avg_service_seconds"] == 140
-    assert "7分0秒" in summary["message"]
+    assert "7分" in summary["message"]
+
+
+def test_calculate_wait_time_minutes_formula(app_module):
+    assert app_module.calculate_wait_time_minutes(0) == 2
+    assert app_module.calculate_wait_time_minutes(1) == 3
+    assert app_module.calculate_wait_time_minutes(2) == 3
+    assert app_module.calculate_wait_time_minutes(3) == 4
 
 
 def test_validate_batch_runner_token_authorization_header(app_module):
@@ -421,7 +428,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda now=None: {"message": "現在の目安待ち時間: 6分0秒", "estimated_seconds": 360},
+        lambda now=None: {"message": "現在の目安待ち時間: 6分", "estimated_seconds": 360},
     )
 
     sent_texts = []
@@ -438,4 +445,4 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
 
     assert sent_texts
     assert "【受付完了】番号: 10 / 種類: 相談 / 待ち: 2人" in sent_texts[0]
-    assert "現在の目安待ち時間: 6分0秒" in sent_texts[0]
+    assert "現在の目安待ち時間: 3分" in sent_texts[0]

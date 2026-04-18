@@ -1,5 +1,6 @@
 import csv
 import io
+import math
 import os
 import re
 import secrets
@@ -80,8 +81,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.48"
-APP_RELEASED_AT = "2026-04-17 03:35 JST"
+APP_VERSION = "v1.0.49"
+APP_RELEASED_AT = "2026-04-18 00:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -97,7 +98,6 @@ TYPE_NAME_PATTERN = re.compile(
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
 ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
-WAIT_TIME_FALLBACK_PER_PERSON_SECONDS = parse_int_env("WAIT_TIME_FALLBACK_PER_PERSON_SECONDS", 180, 30, 1800)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
 app.config.update(
@@ -207,6 +207,11 @@ def format_duration_from_seconds(total_seconds):
     return f"{secs}秒"
 
 
+def calculate_wait_time_minutes(people_ahead: int) -> int:
+    ahead = max(0, int(people_ahead))
+    return max(0, math.ceil(ahead * 0.5 + 2))
+
+
 def should_run_call_batch(now=None) -> bool:
     current = now or time.localtime()
     return current.tm_min % 5 == 0
@@ -301,7 +306,7 @@ def process_queued_calls(now=None):
 
 
 def refresh_wait_time_estimate(now=None):
-    # 直近の完了実績から1人あたりの平均対応時間を算出し、待機人数と掛け合わせて目安待ち時間を保存する。
+    # 目安待ち時間は「前に並んでいる人数 × 0.5 + 2分」で算出し、整数分で保存する。
     jst = pytz.timezone('Asia/Tokyo')
     current_dt = datetime.now(jst) if now is None else now
     minute_label = current_dt.strftime("%m-%d %H:%M")
@@ -310,43 +315,29 @@ def refresh_wait_time_estimate(now=None):
         "waiting_count": 0,
         "avg_service_seconds": 0,
         "estimated_seconds": 0,
-        "message": "現在の目安待ち時間: 0秒",
+        "message": "現在の目安待ち時間: 2分",
     }
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s", (STATUS_WAITING,))
                 waiting_count = int(cur.fetchone()[0] or 0)
-                cur.execute(
-                    """
-                        SELECT AVG(EXTRACT(EPOCH FROM (completed_at - arrived_at)))
-                        FROM reservations
-                        WHERE status = %s
-                        AND arrived_at IS NOT NULL
-                        AND completed_at IS NOT NULL
-                        AND completed_at >= (CURRENT_TIMESTAMP - INTERVAL '7 days')
-                    """,
-                    (STATUS_DONE,),
-                )
-                avg_row = cur.fetchone()
-                avg_service_seconds = int(max(0, round(avg_row[0]))) if avg_row and avg_row[0] is not None else 0
-
-        per_person_seconds = avg_service_seconds if avg_service_seconds > 0 else WAIT_TIME_FALLBACK_PER_PERSON_SECONDS
-        estimated_seconds = waiting_count * per_person_seconds
+        estimated_minutes = calculate_wait_time_minutes(waiting_count)
+        estimated_seconds = estimated_minutes * 60
         set_settings(
             {
                 "last_wait_time_run_at": minute_label,
                 "last_wait_time_estimated_seconds": str(estimated_seconds),
                 "last_wait_time_waiting_count": str(waiting_count),
-                "last_wait_time_avg_service_seconds": str(avg_service_seconds),
+                "last_wait_time_avg_service_seconds": "0",
             }
         )
         return {
             "run_at": minute_label,
             "waiting_count": waiting_count,
-            "avg_service_seconds": avg_service_seconds,
+            "avg_service_seconds": 0,
             "estimated_seconds": estimated_seconds,
-            "message": f"現在の目安待ち時間: {format_duration_from_seconds(estimated_seconds)}",
+            "message": f"現在の目安待ち時間: {estimated_minutes}分",
         }
     except Exception:
         app.logger.exception("Failed to refresh wait time estimate")
@@ -370,12 +361,13 @@ def get_latest_wait_time_summary(values=None):
     estimated_seconds = int(estimated_seconds_raw) if estimated_seconds_raw.isdigit() else 0
     waiting_count = int(waiting_count_raw) if waiting_count_raw.isdigit() else 0
     avg_service_seconds = int(avg_service_seconds_raw) if avg_service_seconds_raw.isdigit() else 0
+    estimated_minutes = max(0, math.ceil(estimated_seconds / 60))
     return {
         "run_at": run_at,
         "estimated_seconds": estimated_seconds,
         "waiting_count": waiting_count,
         "avg_service_seconds": avg_service_seconds,
-        "message": f"現在の目安待ち時間: {format_duration_from_seconds(estimated_seconds)}",
+        "message": f"現在の目安待ち時間: {estimated_minutes}分",
     }
 
 
@@ -1549,12 +1541,15 @@ def process_reservation(event, user_id, user_message):
                     conn.commit()
                     if type_id:
                         cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = %s", (STATUS_WAITING, new_id, type_id))
-                        reply = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {cur.fetchone()[0]}人"
+                        waiting_people_ahead = int(cur.fetchone()[0] or 0)
+                        reply = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, new_id))
-                        reply = f"【受付完了】番号: {new_id} / 待ち: {cur.fetchone()[0]}人"
-                    latest_wait_time = refresh_wait_time_estimate()
-                    reply += f"\n{latest_wait_time['message']}"
+                        waiting_people_ahead = int(cur.fetchone()[0] or 0)
+                        reply = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
+                    refresh_wait_time_estimate()
+                    estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
+                    reply += f"\n現在の目安待ち時間: {estimated_minutes}分"
             elif normalized == 'キャンセル':
                 cur.execute(
                     """
