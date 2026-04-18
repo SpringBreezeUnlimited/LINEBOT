@@ -5,10 +5,10 @@ import os
 import re
 import secrets
 import time
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-import pytz # type: ignore
+from zoneinfo import ZoneInfo
 
 import psycopg2 # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context # type: ignore
@@ -102,6 +102,7 @@ ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 10
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
 MESSAGING_CONFIGURATION = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+JST = ZoneInfo("Asia/Tokyo")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -209,10 +210,9 @@ def format_dt(value):
     if not value:
         return ""
     # UTCまたはnaive datetimeの場合、JSTに変換
-    jst = pytz.timezone('Asia/Tokyo')
     if value.tzinfo is None:
-        value = pytz.utc.localize(value)
-    value = value.astimezone(jst)
+        value = value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(JST)
     return value.strftime("%m-%d %H:%M")
 
 
@@ -241,8 +241,7 @@ def should_run_call_batch(now=None) -> bool:
 
 def process_queued_calls(now=None):
     # 日本時間で現在時刻を取得
-    jst = pytz.timezone('Asia/Tokyo')
-    current_dt = datetime.now(jst) if now is None else now
+    current_dt = datetime.now(JST) if now is None else now
     current = current_dt.timetuple()
     minute_label = current_dt.strftime("%m-%d %H:%M")
     latest_wait_time = refresh_wait_time_estimate(current_dt)
@@ -326,8 +325,7 @@ def process_queued_calls(now=None):
 
 def refresh_wait_time_estimate(now=None):
     # 目安待ち時間は「前に並んでいる人数 × 0.5 + 2分」で算出し、整数分で保存する。
-    jst = pytz.timezone('Asia/Tokyo')
-    current_dt = datetime.now(jst) if now is None else now
+    current_dt = datetime.now(JST) if now is None else now
     minute_label = current_dt.strftime("%m-%d %H:%M")
     default_result = {
         "run_at": minute_label,

@@ -1,7 +1,7 @@
 from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
-import pytz
 import pytest
 from werkzeug.exceptions import Forbidden
 
@@ -62,7 +62,7 @@ def test_format_dt_with_naive_datetime(app_module):
 
 
 def test_format_dt_with_aware_datetime(app_module):
-    utc = pytz.utc.localize(datetime(2026, 4, 16, 0, 0, 0))
+    utc = datetime(2026, 4, 16, 0, 0, 0, tzinfo=ZoneInfo("UTC"))
     assert app_module.format_dt(utc) == "04-16 09:00"
 
 
@@ -390,7 +390,7 @@ def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
         "refresh_wait_time_estimate",
         lambda _now=None: {"message": "現在の目安待ち時間: 6分0秒", "estimated_seconds": 360},
     )
-    now = pytz.timezone("Asia/Tokyo").localize(datetime(2026, 4, 16, 10, 1))
+    now = datetime(2026, 4, 16, 10, 1, tzinfo=ZoneInfo("Asia/Tokyo"))
     result = app_module.process_queued_calls(now=now)
     assert result["processed"] is False
     assert result["reason"] == "not_due"
