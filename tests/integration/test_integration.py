@@ -45,6 +45,7 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
     monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
     monkeypatch.setattr(app_module, "enforce_https", lambda: None)
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda update_activity=True: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "validate_csrf", lambda: None)
 
     state = {
@@ -64,15 +65,16 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
             return False
 
         def execute(self, query, params=None):
-            if query.startswith("UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP"):
+            normalized_query = " ".join(query.split())
+            if normalized_query.startswith("UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP"):
                 with lock:
-                    new_status, _res_id, expected_status = params
+                    new_status, _res_id, expected_status, _owner_admin_id = params
                     if state["status"] == expected_status:
                         state["status"] = new_status
                         self._last = (state["user_id"],)
                     else:
                         self._last = None
-            elif query.startswith("UPDATE reservations SET status = %s, called_at = NULL"):
+            elif normalized_query.startswith("UPDATE reservations SET status = %s, called_at = NULL"):
                 with lock:
                     rollback_status, _res_id, expected_status = params
                     if state["status"] == expected_status:

@@ -201,6 +201,7 @@ def test_is_authenticated_as_success(app_module):
         now = 1000.0
         app_module.session["logged_in"] = True
         app_module.session["admin_role"] = app_module.ROLE_ADMIN
+        app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(app_module.time, "time", lambda: now + 10)
@@ -212,6 +213,7 @@ def test_is_authenticated_as_timeout_clears_session(app_module):
         now = 1000.0
         app_module.session["logged_in"] = True
         app_module.session["admin_role"] = app_module.ROLE_ADMIN
+        app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(app_module.time, "time", lambda: now + app_module.SESSION_IDLE_TIMEOUT_SECONDS + 1)
@@ -252,41 +254,58 @@ def test_login_get_ok(client):
 
 def test_login_post_admin_success_redirect(client, csrf_token, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_login_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module, "verify_admin_password", lambda _pwd: True)
-    monkeypatch.setattr(app_module, "verify_audit_admin_password", lambda _pwd: False)
+    monkeypatch.setattr(
+        app_module,
+        "authenticate_admin_account",
+        lambda _login_id, _pwd: {"id": 1, "login_id": "admin", "role": app_module.ROLE_ADMIN},
+    )
     monkeypatch.setattr(app_module, "record_admin_login", lambda *args, **kwargs: None)
 
-    response = client.post("/login", data={"password": "admin-pass", "_csrf_token": csrf_token})
+    response = client.post(
+        "/login",
+        data={"login_id": "admin", "password": "admin-pass", "_csrf_token": csrf_token},
+    )
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin")
 
 
 def test_login_post_audit_success_redirect(client, csrf_token, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_login_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module, "verify_admin_password", lambda _pwd: False)
-    monkeypatch.setattr(app_module, "verify_audit_admin_password", lambda _pwd: True)
+    monkeypatch.setattr(
+        app_module,
+        "authenticate_admin_account",
+        lambda _login_id, _pwd: {"id": 2, "login_id": "audit", "role": app_module.ROLE_AUDIT_ADMIN},
+    )
     monkeypatch.setattr(app_module, "record_admin_login", lambda *args, **kwargs: None)
 
-    response = client.post("/login", data={"password": "audit-pass", "_csrf_token": csrf_token})
+    response = client.post(
+        "/login",
+        data={"login_id": "audit", "password": "audit-pass", "_csrf_token": csrf_token},
+    )
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/login-logs")
 
 
 def test_login_post_failure_shows_error(client, csrf_token, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_login_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module, "verify_admin_password", lambda _pwd: False)
-    monkeypatch.setattr(app_module, "verify_audit_admin_password", lambda _pwd: False)
+    monkeypatch.setattr(app_module, "authenticate_admin_account", lambda _login_id, _pwd: None)
     monkeypatch.setattr(app_module, "record_admin_login", lambda *args, **kwargs: None)
     monkeypatch.setattr(app_module, "record_login_failure", lambda _ip: None)
 
-    response = client.post("/login", data={"password": "wrong", "_csrf_token": csrf_token})
+    response = client.post(
+        "/login",
+        data={"login_id": "admin", "password": "wrong", "_csrf_token": csrf_token},
+    )
     assert response.status_code == 200
     assert "パスワードが正しくありません" in response.get_data(as_text=True)
 
 
 def test_login_post_rate_limited(client, csrf_token, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_login_rate_limited", lambda _ip: True)
-    response = client.post("/login", data={"password": "x", "_csrf_token": csrf_token})
+    response = client.post(
+        "/login",
+        data={"login_id": "admin", "password": "x", "_csrf_token": csrf_token},
+    )
     assert response.status_code == 429
 
 

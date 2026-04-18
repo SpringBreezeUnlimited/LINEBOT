@@ -23,6 +23,10 @@
             <form method="POST">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3">
+                    <label class="form-label">ログインID</label>
+                    <input type="text" name="login_id" class="form-control" required>
+                </div>
+                <div class="mb-3">
                     <label class="form-label">パスワード</label>
                     <input type="password" name="password" class="form-control" required>
                 </div>

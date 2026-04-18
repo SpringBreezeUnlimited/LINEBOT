@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.49"
-APP_RELEASED_AT = "2026-04-18 00:10 JST"
+APP_VERSION = "v1.0.50"
+APP_RELEASED_AT = "2026-04-18 01:20 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -463,6 +463,7 @@ def ensure_database_schema():
         if SCHEMA_READY:
             return
         ensure_reservations_table()
+        ensure_admin_accounts_table()
         ensure_types_table()
         ensure_settings_table()
         ensure_admin_login_logs_table()
@@ -502,6 +503,47 @@ def ensure_admin_login_logs_table():
                 CREATE INDEX IF NOT EXISTS idx_admin_login_logs_logged_in_at
                 ON admin_login_logs (logged_in_at DESC)
             """)
+            conn.commit()
+
+
+def ensure_admin_accounts_table():
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    CREATE TABLE IF NOT EXISTS admin_accounts (
+                        id SERIAL PRIMARY KEY,
+                        login_id TEXT NOT NULL UNIQUE,
+                        password_hash TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        active BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                """
+            )
+            cur.execute(
+                """
+                    CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
+                    ON admin_accounts (role, active)
+                """
+            )
+            cur.execute(
+                """
+                    INSERT INTO admin_accounts (login_id, password_hash, role)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (login_id) DO NOTHING
+                """,
+                ("admin", ADMIN_PASSWORD_HASH, ROLE_ADMIN),
+            )
+            if AUDIT_ADMIN_PASSWORD_HASH:
+                cur.execute(
+                    """
+                        INSERT INTO admin_accounts (login_id, password_hash, role)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (login_id) DO NOTHING
+                    """,
+                    ("audit", AUDIT_ADMIN_PASSWORD_HASH, ROLE_AUDIT_ADMIN),
+                )
             conn.commit()
 
 
@@ -557,6 +599,50 @@ def verify_audit_admin_password(candidate: str) -> bool:
     return check_password_hash(AUDIT_ADMIN_PASSWORD_HASH, candidate)
 
 
+def authenticate_admin_account(login_id: str, candidate: str):
+    normalized_login_id = (login_id or "").strip().lower()
+    if not normalized_login_id or not candidate:
+        return None
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        SELECT id, login_id, password_hash, role
+                        FROM admin_accounts
+                        WHERE login_id = %s AND active = TRUE
+                        LIMIT 1
+                    """,
+                    (normalized_login_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                if not check_password_hash(row[2], candidate):
+                    return None
+                return {
+                    "id": row[0],
+                    "login_id": row[1],
+                    "role": row[3],
+                }
+    except Exception:
+        app.logger.exception("Failed to authenticate admin account")
+        return None
+
+
+def has_audit_admin_account() -> bool:
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM admin_accounts WHERE role = %s AND active = TRUE LIMIT 1",
+                    (ROLE_AUDIT_ADMIN,),
+                )
+                return bool(cur.fetchone())
+    except Exception:
+        return bool(AUDIT_ADMIN_PASSWORD_HASH)
+
+
 def is_local_host(host: str) -> bool:
     return host in {"localhost", "127.0.0.1"}
 
@@ -584,11 +670,13 @@ def enforce_https():
     return redirect(secure_url, code=301)
 
 
-def start_admin_session(role: str):
+def start_admin_session(role: str, admin_account_id: int, admin_login_id: str):
     now = time.time()
     session.clear()
     session["logged_in"] = True
     session["admin_role"] = role
+    session["admin_account_id"] = admin_account_id
+    session["admin_login_id"] = admin_login_id
     session["issued_at"] = now
     session["last_activity"] = now
     session["_csrf_token"] = secrets.token_urlsafe(32)
@@ -599,6 +687,10 @@ def is_authenticated_as(role: str, update_activity: bool = True) -> bool:
     if not session.get("logged_in"):
         return False
     if session.get("admin_role") != role:
+        return False
+    admin_account_id = session.get("admin_account_id")
+    if not isinstance(admin_account_id, int) or admin_account_id <= 0:
+        session.clear()
         return False
     last_activity = session.get("last_activity")
     if not isinstance(last_activity, (int, float)):
@@ -620,6 +712,13 @@ def is_admin_authenticated(update_activity: bool = True) -> bool:
 
 def is_audit_admin_authenticated(update_activity: bool = True) -> bool:
     return is_authenticated_as(ROLE_AUDIT_ADMIN, update_activity)
+
+
+def get_current_admin_account_id():
+    admin_account_id = session.get("admin_account_id")
+    if isinstance(admin_account_id, int) and admin_account_id > 0:
+        return admin_account_id
+    return None
 
 
 def normalize_type_name(value: str) -> str:
@@ -779,15 +878,15 @@ def login():
     if request.method == "POST":
         if is_login_rate_limited(ip):
             abort(429)
+        login_id = (request.form.get("login_id") or "").strip().lower()
         password = request.form.get("password")
-        if verify_admin_password(password):
-            start_admin_session(ROLE_ADMIN)
-            record_admin_login(ROLE_ADMIN, ip, request.headers.get("User-Agent"))
+        account = authenticate_admin_account(login_id, password)
+        if account:
+            start_admin_session(account["role"], account["id"], account["login_id"])
+            record_admin_login(account["role"], ip, request.headers.get("User-Agent"))
+            if account["role"] == ROLE_AUDIT_ADMIN:
+                return redirect(url_for("admin_login_logs_page"))
             return redirect(url_for("admin_page"))
-        if verify_audit_admin_password(password):
-            start_admin_session(ROLE_AUDIT_ADMIN)
-            record_admin_login(ROLE_AUDIT_ADMIN, ip, request.headers.get("User-Agent"))
-            return redirect(url_for("admin_login_logs_page"))
         else:
             record_admin_login("unknown", ip, request.headers.get("User-Agent"), login_result="failure")
             record_login_failure(ip)
@@ -796,7 +895,7 @@ def login():
         "login.html",
         error=error,
         csrf_token=get_csrf_token(),
-        audit_admin_enabled=bool(AUDIT_ADMIN_PASSWORD_HASH),
+        audit_admin_enabled=has_audit_admin_account(),
     )
 
 def ensure_types_table():
@@ -806,6 +905,7 @@ def ensure_types_table():
                 CREATE TABLE IF NOT EXISTS reservation_types (
                     id SERIAL PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE,
+                    owner_admin_id INTEGER REFERENCES admin_accounts(id) ON DELETE RESTRICT,
                     accepting BOOLEAN NOT NULL DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
@@ -819,6 +919,21 @@ def ensure_types_table():
                 ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS accepting BOOLEAN NOT NULL DEFAULT TRUE
             """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS owner_admin_id INTEGER
+                REFERENCES admin_accounts(id) ON DELETE RESTRICT
+            """)
+            cur.execute(
+                "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
+                (ROLE_ADMIN,),
+            )
+            admin_row = cur.fetchone()
+            if admin_row:
+                cur.execute(
+                    "UPDATE reservation_types SET owner_admin_id = %s WHERE owner_admin_id IS NULL",
+                    (admin_row[0],),
+                )
             conn.commit()
 
 def ensure_settings_table():
@@ -985,17 +1100,18 @@ def serialize_active_rows(rows):
     ]
 
 
-def fetch_type_counts(cur):
+def fetch_type_counts(cur, owner_admin_id: int):
     cur.execute(
         """
-            SELECT COALESCE(t.name, '未設定') AS name, COUNT(*)
+            SELECT t.name, COUNT(*)
             FROM reservations r
-            LEFT JOIN reservation_types t ON r.type_id = t.id
+            JOIN reservation_types t ON r.type_id = t.id
             WHERE r.status IN (%s, %s, %s)
-            GROUP BY COALESCE(t.name, '未設定')
-            ORDER BY COUNT(*) DESC, name ASC
+              AND t.owner_admin_id = %s
+            GROUP BY t.name
+            ORDER BY COUNT(*) DESC, t.name ASC
         """,
-        (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
+        (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED, owner_admin_id),
     )
     return cur.fetchall()
 
@@ -1004,9 +1120,10 @@ def serialize_type_counts(rows):
     return [{"name": row[0], "count": row[1]} for row in rows]
 
 
-def get_active_rows(cur, current_type_id=None, sort_by="id", sort_order="asc"):
+def get_active_rows(cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"):
     params = [STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED]
-    where = "WHERE r.status IN (%s, %s, %s)"
+    where = "WHERE r.status IN (%s, %s, %s) AND t.owner_admin_id = %s"
+    params.append(owner_admin_id)
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
@@ -1072,6 +1189,10 @@ def admin_login_logs_page():
 def admin_page():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
 
     type_error = request.args.get("type_error")
     type_id = request.args.get("type_id", "").strip()
@@ -1086,11 +1207,20 @@ def admin_page():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            rows = get_active_rows(cur, current_type_id=current_type_id, sort_by=sort_by, sort_order=sort_order)
+            rows = get_active_rows(
+                cur,
+                owner_admin_id=current_admin_account_id,
+                current_type_id=current_type_id,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
             active_rows = serialize_active_rows(rows)
-            cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
+            cur.execute(
+                "SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
+                (current_admin_account_id,),
+            )
             types = cur.fetchall()
-            type_counts = serialize_type_counts(fetch_type_counts(cur))
+            type_counts = serialize_type_counts(fetch_type_counts(cur, current_admin_account_id))
     return render_template(
         "admin.html",
         rows=active_rows,
@@ -1112,11 +1242,14 @@ def admin_page():
 def admin_data():
     if not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        return jsonify({"error": "unauthorized"}), 401
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            rows = get_active_rows(cur)
-            type_counts = serialize_type_counts(fetch_type_counts(cur))
+            rows = get_active_rows(cur, owner_admin_id=current_admin_account_id)
+            type_counts = serialize_type_counts(fetch_type_counts(cur, current_admin_account_id))
     runtime_settings = get_runtime_settings()
     return jsonify({
         "rows": serialize_active_rows(rows),
@@ -1131,10 +1264,13 @@ def admin_data():
 def admin_type_counts():
     if not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        return jsonify({"error": "unauthorized"}), 401
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            counts = fetch_type_counts(cur)
+            counts = fetch_type_counts(cur, current_admin_account_id)
     return jsonify({
         "counts": serialize_type_counts(counts)
     })
@@ -1142,6 +1278,10 @@ def admin_type_counts():
 @app.route("/admin/types", methods=["GET", "POST"])
 def admin_types_page():
     if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
         return redirect(url_for("login"))
 
     accepting_new = is_accepting_new()
@@ -1159,7 +1299,10 @@ def admin_types_page():
         try:
             with get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("INSERT INTO reservation_types (name) VALUES (%s)", (name,))
+                    cur.execute(
+                        "INSERT INTO reservation_types (name, owner_admin_id) VALUES (%s, %s)",
+                        (name, current_admin_account_id),
+                    )
                     conn.commit()
             return redirect(url_for("admin_types_page", type_success="種類を追加しました。"))
         except psycopg2.IntegrityError:
@@ -1167,7 +1310,10 @@ def admin_types_page():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, accepting FROM reservation_types ORDER BY id ASC")
+            cur.execute(
+                "SELECT id, name, accepting FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
+                (current_admin_account_id,),
+            )
             types = cur.fetchall()
     return render_template(
         "types.html",
@@ -1182,10 +1328,19 @@ def admin_types_page():
 def admin_types_delete(type_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM reservation_types WHERE id = %s", (type_id,))
+            cur.execute(
+                "DELETE FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                (type_id, current_admin_account_id),
+            )
+            if cur.rowcount == 0:
+                abort(403)
             conn.commit()
     return redirect(url_for("admin_types_page"))
 
@@ -1193,16 +1348,29 @@ def admin_types_delete(type_id):
 def admin_types_toggle(type_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("UPDATE reservation_types SET accepting = NOT accepting WHERE id = %s", (type_id,))
+            cur.execute(
+                "UPDATE reservation_types SET accepting = NOT accepting WHERE id = %s AND owner_admin_id = %s",
+                (type_id, current_admin_account_id),
+            )
+            if cur.rowcount == 0:
+                abort(403)
             conn.commit()
     return redirect(url_for("admin_types_page"))
 
 @app.route("/admin/history")
 def admin_history():
     if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
         return redirect(url_for("login"))
 
     history_page_size = 200
@@ -1220,8 +1388,9 @@ def admin_history():
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
             params = []
-            where = "WHERE r.status IN (%s, %s, %s)"
+            where = "WHERE r.status IN (%s, %s, %s) AND t.owner_admin_id = %s"
             params.extend([STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED])
+            params.append(current_admin_account_id)
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
@@ -1255,7 +1424,10 @@ def admin_history():
                 (row[0], row[1], row[2], row[3], format_dt(row[4]), format_dt(row[5]), format_dt(row[6]), row[7])
                 for row in rows
             ]
-            cur.execute("SELECT id, name FROM reservation_types ORDER BY id ASC")
+            cur.execute(
+                "SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
+                (current_admin_account_id,),
+            )
             types = cur.fetchall()
     has_next = len(rows) > history_page_size
     rows = rows[:history_page_size]
@@ -1277,6 +1449,10 @@ def admin_history():
 def admin_history_export():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
 
     type_id = request.args.get("type_id", "").strip()
     current_type_id = int(type_id) if type_id.isdigit() else None
@@ -1288,7 +1464,8 @@ def admin_history_export():
         sort_order = "desc"
 
     params = [STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED]
-    where = "WHERE r.status IN (%s, %s, %s)"
+    where = "WHERE r.status IN (%s, %s, %s) AND t.owner_admin_id = %s"
+    params.append(current_admin_account_id)
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
@@ -1357,12 +1534,25 @@ def admin_history_export():
 def admin_call(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING user_id",
-                (STATUS_CALLED, res_id, STATUS_WAITING),
+                """
+                    UPDATE reservations
+                    SET status = %s, called_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                      AND status = %s
+                      AND type_id IN (
+                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
+                      )
+                    RETURNING user_id
+                """,
+                (STATUS_CALLED, res_id, STATUS_WAITING, current_admin_account_id),
             )
             row = cur.fetchone()
             if not row:
@@ -1388,12 +1578,25 @@ def admin_call(res_id):
 def admin_finish(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE reservations SET status = %s, completed_at = CURRENT_TIMESTAMP WHERE id = %s AND status = %s RETURNING id",
-                (STATUS_DONE, res_id, STATUS_ARRIVED),
+                """
+                    UPDATE reservations
+                    SET status = %s, completed_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                      AND status = %s
+                      AND type_id IN (
+                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
+                      )
+                    RETURNING id
+                """,
+                (STATUS_DONE, res_id, STATUS_ARRIVED, current_admin_account_id),
             )
             if not cur.fetchone():
                 abort(404)
