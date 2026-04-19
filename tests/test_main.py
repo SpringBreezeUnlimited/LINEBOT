@@ -1026,4 +1026,5 @@ def test_admin_reservation_hours_updates_window(app_module, monkeypatch):
 
     assert response.status_code == 302
     assert "schedule_success" in response.headers["Location"]
+    assert "/admin/types" in response.headers["Location"]
     assert any("UPDATE admin_accounts" in query for query, _ in calls)

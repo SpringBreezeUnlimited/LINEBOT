@@ -40,12 +40,6 @@
 
 {% block content %}
 <div class="container">
-    {% if schedule_error %}
-    <div class="alert alert-danger" role="alert">{{ schedule_error }}</div>
-    {% endif %}
-    {% if schedule_success %}
-    <div class="alert alert-success" role="alert">{{ schedule_success }}</div>
-    {% endif %}
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <div class="row g-2 align-items-center">
@@ -108,38 +102,6 @@
                         <button type="submit" class="btn btn-primary">保存</button>
                     </form>
                     <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
-                </div>
-            </div>
-            <div class="row g-2 align-items-end mt-2 controls-row">
-                <div class="col-12 control-col">
-                    <label class="form-label">予約受付時間（分単位）</label>
-                    <form method="POST" action="/admin/reservation-hours" class="row g-2 align-items-end">
-                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                        <div class="col-sm-4 col-md-3">
-                            <label class="form-label">開始</label>
-                            <input
-                                type="time"
-                                name="reservation_start_time"
-                                step="60"
-                                value="{{ reservation_start_time }}"
-                                class="form-control"
-                            >
-                        </div>
-                        <div class="col-sm-4 col-md-3">
-                            <label class="form-label">終了</label>
-                            <input
-                                type="time"
-                                name="reservation_end_time"
-                                step="60"
-                                value="{{ reservation_end_time }}"
-                                class="form-control"
-                            >
-                        </div>
-                        <div class="col-sm-4 col-md-3 d-grid">
-                            <button type="submit" class="btn btn-primary">保存</button>
-                        </div>
-                    </form>
-                    <p class="helper-text">未入力で保存すると時間制限を解除します。開始=終了は24時間受付として扱います。</p>
                 </div>
             </div>
             <div class="type-count-summary-row mt-2">

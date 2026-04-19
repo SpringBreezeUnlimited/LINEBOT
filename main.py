@@ -83,8 +83,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.75"
-APP_RELEASED_AT = "2026-04-19 07:50 JST"
+APP_VERSION = "v1.0.76"
+APP_RELEASED_AT = "2026-04-19 08:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1563,8 +1563,6 @@ def admin_page():
         return redirect(url_for("login"))
 
     type_error = request.args.get("type_error")
-    schedule_error = request.args.get("schedule_error")
-    schedule_success = request.args.get("schedule_success")
     type_id = request.args.get("type_id", "").strip()
     current_type_id = int(type_id) if type_id.isdigit() else None
     sort_by = request.args.get("sort_by", "id").strip()
@@ -1574,13 +1572,6 @@ def admin_page():
     if sort_order not in ("asc", "desc"):
         sort_order = "asc"
     runtime_settings = get_runtime_settings()
-    reservation_start_time = ""
-    reservation_end_time = ""
-
-    start_minute, end_minute = get_admin_reservation_window(current_admin_account_id)
-    reservation_start_time = format_minute_of_day(start_minute)
-    reservation_end_time = format_minute_of_day(end_minute)
-
     with get_connection() as conn:
         with conn.cursor() as cur:
             rows = get_active_rows(
@@ -1610,10 +1601,6 @@ def admin_page():
         auto_call_count=runtime_settings["auto_call_count"],
         last_auto_call=runtime_settings["last_auto_call"],
         latest_auto_call=runtime_settings["latest_auto_call"],
-        schedule_error=schedule_error,
-        schedule_success=schedule_success,
-        reservation_start_time=reservation_start_time,
-        reservation_end_time=reservation_end_time,
         admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token()
     )
@@ -1639,15 +1626,15 @@ def admin_reservation_hours():
                     (current_admin_account_id,),
                 )
                 conn.commit()
-        return redirect(url_for("admin_page", schedule_success="予約受付時間の制限を解除しました。"))
+        return redirect(url_for("admin_types_page", schedule_success="予約受付時間の制限を解除しました。"))
 
     if not start_text or not end_text:
-        return redirect(url_for("admin_page", schedule_error="開始時刻と終了時刻は両方入力してください。"))
+        return redirect(url_for("admin_types_page", schedule_error="開始時刻と終了時刻は両方入力してください。"))
 
     start_minute = parse_hhmm_to_minute_of_day(start_text)
     end_minute = parse_hhmm_to_minute_of_day(end_text)
     if start_minute is None or end_minute is None:
-        return redirect(url_for("admin_page", schedule_error="時刻形式が不正です。HH:MM で入力してください。"))
+        return redirect(url_for("admin_types_page", schedule_error="時刻形式が不正です。HH:MM で入力してください。"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1663,7 +1650,7 @@ def admin_reservation_hours():
 
     return redirect(
         url_for(
-            "admin_page",
+            "admin_types_page",
             schedule_success=f"予約受付時間を {format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)} に更新しました。",
         )
     )
@@ -1717,6 +1704,11 @@ def admin_types_page():
     accepting_new = is_accepting_new()
     type_error = request.args.get("type_error")
     type_success = request.args.get("type_success")
+    schedule_error = request.args.get("schedule_error")
+    schedule_success = request.args.get("schedule_success")
+    start_minute, end_minute = get_admin_reservation_window(current_admin_account_id)
+    reservation_start_time = format_minute_of_day(start_minute)
+    reservation_end_time = format_minute_of_day(end_minute)
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
         if not validate_type_name(name):
@@ -1751,6 +1743,10 @@ def admin_types_page():
         accepting_new=accepting_new,
         type_error=type_error,
         type_success=type_success,
+        schedule_error=schedule_error,
+        schedule_success=schedule_success,
+        reservation_start_time=reservation_start_time,
+        reservation_end_time=reservation_end_time,
         csrf_token=get_csrf_token()
     )
 
