@@ -71,6 +71,22 @@ def test_should_run_call_batch(app_module):
     assert app_module.should_run_call_batch(SimpleNamespace(tm_min=11)) is False
 
 
+def test_parse_hhmm_to_minute_of_day(app_module):
+    assert app_module.parse_hhmm_to_minute_of_day("09:30") == 570
+    assert app_module.parse_hhmm_to_minute_of_day("23:59") == 1439
+    assert app_module.parse_hhmm_to_minute_of_day("") is None
+    assert app_module.parse_hhmm_to_minute_of_day("24:00") is None
+    assert app_module.parse_hhmm_to_minute_of_day("9:30") is None
+
+
+def test_is_minute_in_window_supports_overnight(app_module):
+    assert app_module.is_minute_in_window(600, 540, 1020) is True
+    assert app_module.is_minute_in_window(500, 540, 1020) is False
+    assert app_module.is_minute_in_window(30, 1320, 120) is True
+    assert app_module.is_minute_in_window(800, 1320, 120) is False
+    assert app_module.is_minute_in_window(123, 500, 500) is True
+
+
 def test_send_push_message_uses_retry_key(app_module, monkeypatch):
     captured = []
 
@@ -900,6 +916,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_within_admin_reservation_window", lambda _admin_id: True)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -916,3 +933,97 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
     assert sent_texts
     assert "【受付完了】番号: 10 / 種類: 相談 / 待ち: 2人" in sent_texts[0]
     assert "現在の目安待ち時間: 3分" in sent_texts[0]
+
+
+def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "FROM reservation_types WHERE name = %s" in query:
+                self._last = (1, "相談", True, 7)
+            elif "WHERE r.user_id = %s AND r.status IN" in query:
+                self._last = None
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_within_admin_reservation_window", lambda _admin_id: False)
+    monkeypatch.setattr(app_module, "get_admin_reservation_window", lambda _admin_id: (570, 1020))
+
+    sent_texts = []
+    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+
+    event = SimpleNamespace(reply_token="reply-token")
+    app_module.process_reservation(event, "U-456", "予約 相談")
+
+    assert sent_texts
+    assert "予約受付時間は 09:30〜17:00" in sent_texts[-1]
+    assert "受付時間外" in sent_texts[-1]
+
+
+def test_admin_reservation_hours_updates_window(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 5)
+
+    calls = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/reservation-hours",
+        method="POST",
+        data={"reservation_start_time": "09:30", "reservation_end_time": "17:00"},
+    ):
+        response = app_module.admin_reservation_hours()
+
+    assert response.status_code == 302
+    assert "schedule_success" in response.headers["Location"]
+    assert any("UPDATE admin_accounts" in query for query, _ in calls)
