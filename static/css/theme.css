@@ -155,6 +155,10 @@ html[data-theme="dark"] .version-toggle {
     color: #005bac;
 }
 
+html[data-theme="dark"] .site-footer a {
+    color: #add8e6;
+}
+
 @media (max-width: 760px) {
     .site-footer {
         padding-bottom: var(--space-3);
