@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from datetime import timedelta, datetime, timezone
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -82,8 +83,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.73"
-APP_RELEASED_AT = "2026-04-19 06:20 JST"
+APP_VERSION = "v1.0.74"
+APP_RELEASED_AT = "2026-04-19 07:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -108,6 +109,9 @@ WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SEC
 CALL_TIMEOUT_MINUTES = int(os.getenv("CALL_TIMEOUT_MINUTES", "15"))
 ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
+LINE_PUSH_MAX_RETRIES = parse_int_env("LINE_PUSH_MAX_RETRIES", 3, 1, 10)
+LINE_PUSH_RETRY_BASE_SECONDS = parse_int_env("LINE_PUSH_RETRY_BASE_SECONDS", 1, 1, 30)
+LINE_PUSH_RETRY_MAX_SECONDS = parse_int_env("LINE_PUSH_RETRY_MAX_SECONDS", 8, 1, 300)
 
 MESSAGING_CONFIGURATION = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 JST = ZoneInfo("Asia/Tokyo")
@@ -194,14 +198,65 @@ def get_connection():
     return ManagedConnection(create_connection(), close_on_exit=True)
 
 
-def send_push_message(user_id: str, text: str):
-    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-        MessagingApi(api_client).push_message(
-            PushMessageRequest(
-                to=user_id,
-                messages=[TextMessage(text=text)],
+def extract_http_status(error: Exception):
+    for attr in ("status", "status_code"):
+        value = getattr(error, attr, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def is_retryable_push_error(error: Exception) -> bool:
+    status = extract_http_status(error)
+    if status is None:
+        # タイムアウトやネットワーク断のようにHTTPステータスが取れない失敗は再試行対象
+        return True
+    if status >= 500 or status == 429:
+        return True
+    return False
+
+
+def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: PushMessageRequest, retry_key: str):
+    try:
+        return messaging_api.push_message(request_payload, x_line_retry_key=retry_key)
+    except TypeError as error:
+        message = str(error)
+        if "x_line_retry_key" not in message:
+            raise
+        app.logger.warning("line-bot-sdk does not support x_line_retry_key argument; fallback without retry key")
+        return messaging_api.push_message(request_payload)
+
+
+def send_push_message(user_id: str, text: str, retry_key: str | None = None):
+    stable_retry_key = retry_key or str(uuid.uuid4())
+    payload = PushMessageRequest(
+        to=user_id,
+        messages=[TextMessage(text=text)],
+    )
+    for attempt in range(1, LINE_PUSH_MAX_RETRIES + 1):
+        try:
+            with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+                messaging_api = MessagingApi(api_client)
+                push_message_with_retry_key(messaging_api, payload, stable_retry_key)
+            return
+        except Exception as error:
+            status = extract_http_status(error)
+            if status == 409:
+                # 同じリトライキーで受理済み。重複送信は行われていないので成功扱いにする。
+                app.logger.info("Push already accepted (409) retry_key=%s user_id=%s", stable_retry_key, user_id)
+                return
+            if attempt >= LINE_PUSH_MAX_RETRIES or not is_retryable_push_error(error):
+                raise
+            delay_seconds = min(LINE_PUSH_RETRY_MAX_SECONDS, LINE_PUSH_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+            app.logger.warning(
+                "Push failed (attempt %s/%s, status=%s). Retry after %ss retry_key=%s",
+                attempt,
+                LINE_PUSH_MAX_RETRIES,
+                status,
+                delay_seconds,
+                stable_retry_key,
             )
-        )
+            time.sleep(delay_seconds)
 
 
 def send_reply_message(reply_token: str, text: str):

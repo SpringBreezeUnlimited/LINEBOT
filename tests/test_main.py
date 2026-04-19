@@ -71,6 +71,97 @@ def test_should_run_call_batch(app_module):
     assert app_module.should_run_call_batch(SimpleNamespace(tm_min=11)) is False
 
 
+def test_send_push_message_uses_retry_key(app_module, monkeypatch):
+    captured = []
+
+    class DummyApiClient:
+        def __init__(self, _config):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyMessagingApi:
+        def __init__(self, _api_client):
+            return None
+
+        def push_message(self, request_payload, x_line_retry_key=None):
+            captured.append((request_payload.to, request_payload.messages[0].text, x_line_retry_key))
+            return None
+
+    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+    app_module.send_push_message("U1", "hello", retry_key="retry-key-1")
+    assert captured == [("U1", "hello", "retry-key-1")]
+
+
+def test_send_push_message_retries_with_same_key(app_module, monkeypatch):
+    attempt_keys = []
+
+    class RetryableError(Exception):
+        status = 500
+
+    class DummyApiClient:
+        def __init__(self, _config):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyMessagingApi:
+        calls = 0
+
+        def __init__(self, _api_client):
+            return None
+
+        def push_message(self, _request_payload, x_line_retry_key=None):
+            DummyMessagingApi.calls += 1
+            attempt_keys.append(x_line_retry_key)
+            if DummyMessagingApi.calls == 1:
+                raise RetryableError("temporary failure")
+            return None
+
+    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+    monkeypatch.setattr(app_module, "LINE_PUSH_MAX_RETRIES", 2)
+    monkeypatch.setattr(app_module.time, "sleep", lambda _secs: None)
+    app_module.send_push_message("U2", "hello", retry_key="retry-fixed")
+    assert attempt_keys == ["retry-fixed", "retry-fixed"]
+
+
+def test_send_push_message_treats_409_as_success(app_module, monkeypatch):
+    class ConflictError(Exception):
+        status = 409
+
+    class DummyApiClient:
+        def __init__(self, _config):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyMessagingApi:
+        def __init__(self, _api_client):
+            return None
+
+        def push_message(self, _request_payload, x_line_retry_key=None):
+            raise ConflictError("already accepted")
+
+    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+    # 409は受理済み扱いで例外を送出しない
+    app_module.send_push_message("U3", "hello", retry_key="retry-409")
+
+
 def test_normalize_and_validate_type_name(app_module):
     assert app_module.normalize_type_name("  A   B  ") == "A B"
     assert app_module.validate_type_name("相談") is True
