@@ -70,7 +70,7 @@ select {
 
 .navbar {
     margin-bottom: var(--space-6);
-    padding: var(--space-3) 0;
+    padding: var(--space-4) 0;
     color: #fff;
     background: var(--color-nav);
     box-shadow: var(--shadow-1);
@@ -140,6 +140,7 @@ select {
 .control-col {
     display: flex;
     flex-direction: column;
+    justify-content: flex-start;
 }
 
 .form-label {
@@ -358,6 +359,10 @@ select {
 
 .align-items-center {
     align-items: center;
+}
+
+.align-items-start {
+    align-items: flex-start;
 }
 
 .gap-2 {
