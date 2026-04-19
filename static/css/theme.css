@@ -132,6 +132,10 @@ html[data-theme="dark"] .version-toggle {
     margin: 0 auto;
 }
 
+.site-footer a {
+    color: #add8e6;
+}
+
 @media (max-width: 760px) {
     .site-footer {
         padding-bottom: var(--space-3);
