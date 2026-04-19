@@ -422,6 +422,11 @@ input {
         align-items: stretch;
     }
 
+    .navbar .container > .d-flex {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
     .position-fixed.version-badge {
         position: static;
         margin: var(--space-4);
@@ -430,5 +435,21 @@ input {
     .version-toggle {
         bottom: 0;
         margin: 0 var(--space-4) var(--space-4);
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        width: calc(100% - 16px);
+    }
+
+    .navbar .container > .d-flex {
+        gap: var(--space-1);
+    }
+
+    .navbar .btn-sm {
+        min-height: 36px;
+        padding: 0 var(--space-2);
+        font-size: 0.8125rem;
     }
 }
