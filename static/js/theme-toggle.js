@@ -36,7 +36,9 @@ function applyTheme(theme) {
     document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
         const isDark = theme === 'dark';
         button.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-        const iconPath = isDark ? '/static/img/luna.svg' : '/static/img/helios.svg';
+        const darkIconPath = button.dataset.themeToggleDarkIcon || '/static/img/luna.svg';
+        const lightIconPath = button.dataset.themeToggleLightIcon || '/static/img/helios.svg';
+        const iconPath = isDark ? darkIconPath : lightIconPath;
         const label = isDark ? 'ダーク' : 'ライト';
         button.innerHTML = `<img src="${iconPath}" alt="" aria-hidden="true" class="theme-mode-icon"><span class="theme-mode-label">${label}</span>`;
         button.disabled = false;
