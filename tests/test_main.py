@@ -660,6 +660,15 @@ def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypa
     assert app_module.should_run_call_batch() is True
 
 
+def test_build_call_message_includes_timeout_minutes_and_deadline(app_module):
+    called_at = datetime(2026, 4, 19, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    message = app_module.build_call_message(15, called_at=called_at)
+    assert "番号 15" in message
+    assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in message
+    assert "04-19 10:15" in message
+    assert "自動でキャンセル" in message
+
+
 def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
     sent_messages = []
 
@@ -703,6 +712,41 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
     assert len(sent_messages) == 3
     assert sent_messages[0][0] == "U-1"
     assert "自動キャンセル" in sent_messages[0][1]
+
+
+def test_expire_called_reservations_ignores_push_failure(app_module, monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self._rows = [(20, "U-timeout")]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, _query, _params=None):
+            return None
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "send_push_message", lambda _user_id, _text: (_ for _ in ()).throw(RuntimeError("push fail")))
+    assert app_module.expire_called_reservations() == 1
 
 
 def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
