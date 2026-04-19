@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.71"
-APP_RELEASED_AT = "2026-04-19 05:30 JST"
+APP_VERSION = "v1.0.72"
+APP_RELEASED_AT = "2026-04-19 06:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -262,6 +262,17 @@ def should_run_call_batch(now=None) -> bool:
     return current.tm_min % 5 == 0
 
 
+def build_call_message(reservation_id: int, called_at=None) -> str:
+    called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
+    timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
+    timeout_label = timeout_at.strftime("%m-%d %H:%M")
+    return (
+        f"【順番が来ました】番号 {reservation_id} 番の方、会場へお越しください！"
+        f"\n{CALL_TIMEOUT_MINUTES}分以内（{timeout_label}まで）に「到着」と送信してください。"
+        "\n時間を過ぎると自動でキャンセルされます。"
+    )
+
+
 def expire_called_reservations() -> int:
     if CALL_TIMEOUT_MINUTES <= 0:
         return 0
@@ -275,12 +286,24 @@ def expire_called_reservations() -> int:
                         WHERE status = %s
                           AND called_at IS NOT NULL
                           AND called_at <= (CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute'))
+                        RETURNING id, user_id
                     """,
                     (STATUS_CANCELLED, STATUS_CALLED, CALL_TIMEOUT_MINUTES),
                 )
-                timed_out_count = cur.rowcount
+                timed_out_rows = cur.fetchall()
                 conn.commit()
-                return timed_out_count
+        for reservation_id, user_id in timed_out_rows:
+            try:
+                send_push_message(
+                    user_id,
+                    (
+                        f"【自動キャンセル】番号 {reservation_id} は呼出から{CALL_TIMEOUT_MINUTES}分経過したため"
+                        "タイムアウトでキャンセルされました。"
+                    ),
+                )
+            except Exception:
+                app.logger.exception("Failed to send timeout message for reservation %s", reservation_id)
+        return len(timed_out_rows)
     except Exception:
         app.logger.exception("Failed to expire called reservations")
         return 0
@@ -327,7 +350,7 @@ def process_queued_calls(now=None):
     failed_ids = []
     for res_id, user_id in auto_rows:
         try:
-            send_push_message(user_id, f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！")
+            send_push_message(user_id, build_call_message(res_id))
             sent_ids.append(res_id)
         except Exception:
             failed_ids.append(res_id)
@@ -1788,7 +1811,7 @@ def admin_call(res_id):
             conn.commit()
 
     try:
-        send_push_message(user_id, f"【順番が来ました】番号 {res_id} 番の方、会場へお越しください！")
+        send_push_message(user_id, build_call_message(res_id))
     except Exception:
         app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
         with get_connection() as rollback_conn:

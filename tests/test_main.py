@@ -661,9 +661,11 @@ def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypa
 
 
 def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
+    sent_messages = []
+
     class FakeCursor:
         def __init__(self):
-            self.rowcount = 3
+            self._rows = [(10, "U-1"), (11, "U-2"), (12, "U-3")]
 
         def __enter__(self):
             return self
@@ -674,9 +676,13 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
         def execute(self, query, params=None):
             assert "UPDATE reservations" in query
             assert "called_at <=" in query
+            assert "RETURNING id, user_id" in query
             assert params[0] == app_module.STATUS_CANCELLED
             assert params[1] == app_module.STATUS_CALLED
             assert params[2] == app_module.CALL_TIMEOUT_MINUTES
+
+        def fetchall(self):
+            return self._rows
 
     class FakeConnection:
         def __enter__(self):
@@ -692,7 +698,11 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, text: sent_messages.append((user_id, text)))
     assert app_module.expire_called_reservations() == 3
+    assert len(sent_messages) == 3
+    assert sent_messages[0][0] == "U-1"
+    assert "自動キャンセル" in sent_messages[0][1]
 
 
 def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
