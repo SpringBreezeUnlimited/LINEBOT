@@ -16,9 +16,7 @@
             <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
             <a href="/admin/types" class="btn btn-outline-light btn-sm">種類管理</a>
             <a href="/admin/history" class="btn btn-outline-light btn-sm" aria-label="過去ログ" title="過去ログ">
-                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
-                    <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1.25A5.75 5.75 0 1 1 8 13.75 5.75 5.75 0 0 1 8 2.25zm.5 2.25a.5.5 0 0 0-1 0v3.19L4.65 9.34a.5.5 0 1 0 .7.7l3.02-3.02a.5.5 0 0 0 .13-.34V4.5z"/>
-                </svg>
+                <img src="{{ url_for('static', filename='img/history_fill.svg') }}" alt="" aria-hidden="true" class="nav-icon">
                 <span class="visually-hidden">過去ログ</span>
             </a>
             <form method="POST" action="/logout" class="mb-0">

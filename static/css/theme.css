@@ -109,3 +109,12 @@ html[data-theme="dark"] .version-toggle {
     white-space: nowrap;
     border: 0;
 }
+
+.nav-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    vertical-align: middle;
+    flex: 0 0 auto;
+    object-fit: contain;
+}
