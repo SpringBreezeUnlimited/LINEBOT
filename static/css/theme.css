@@ -118,3 +118,26 @@ html[data-theme="dark"] .version-toggle {
     flex: 0 0 auto;
     object-fit: contain;
 }
+
+.site-footer {
+    margin-top: var(--space-6);
+    padding: 0 0 var(--space-4);
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.site-footer-inner {
+    width: min(100% - 32px, 1200px);
+    margin: 0 auto;
+}
+
+@media (max-width: 760px) {
+    .site-footer {
+        padding-bottom: var(--space-3);
+    }
+
+    .site-footer-inner {
+        width: calc(100% - 24px);
+    }
+}
