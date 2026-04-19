@@ -690,12 +690,12 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
         def execute(self, query, params=None):
             queries.append((query, params))
             if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True)
+                self._last = (1, "相談", True, 7)
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "INSERT INTO reservations (user_id, message, type_id)" in query:
                 self._last = (10,)
-            elif "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = %s" in query:
+            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
                 self._last = (2,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -721,7 +721,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda now=None: {"message": "現在の目安待ち時間: 6分", "estimated_seconds": 360},
+        lambda now=None, owner_admin_id=None: {"message": "現在の目安待ち時間: 6分", "estimated_seconds": 360},
     )
 
     sent_texts = []

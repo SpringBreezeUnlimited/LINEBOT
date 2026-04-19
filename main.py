@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.53"
-APP_RELEASED_AT = "2026-04-18 03:35 JST"
+APP_VERSION = "v1.0.54"
+APP_RELEASED_AT = "2026-04-19 00:20 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -241,6 +241,21 @@ def calculate_wait_time_minutes(people_ahead: int) -> int:
     return max(0, math.ceil(ahead * 0.5 + 2))
 
 
+def count_waiting_people_ahead_by_owner(cur, reservation_id: int, owner_admin_id: int) -> int:
+    cur.execute(
+        """
+            SELECT COUNT(*)
+            FROM reservations r
+            JOIN reservation_types t ON r.type_id = t.id
+            WHERE r.status = %s
+              AND r.id < %s
+              AND t.owner_admin_id = %s
+        """,
+        (STATUS_WAITING, reservation_id, owner_admin_id),
+    )
+    return int(cur.fetchone()[0] or 0)
+
+
 def should_run_call_batch(now=None) -> bool:
     current = now or time.localtime()
     return current.tm_min % 5 == 0
@@ -330,7 +345,7 @@ def process_queued_calls(now=None):
     }
 
 
-def refresh_wait_time_estimate(now=None):
+def refresh_wait_time_estimate(now=None, owner_admin_id=None):
     # 目安待ち時間は「前に並んでいる人数 × 0.5 + 2分」で算出し、整数分で保存する。
     current_dt = datetime.now(JST) if now is None else now
     minute_label = current_dt.strftime("%m-%d %H:%M")
@@ -344,18 +359,31 @@ def refresh_wait_time_estimate(now=None):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s", (STATUS_WAITING,))
-                waiting_count = int(cur.fetchone()[0] or 0)
+                if owner_admin_id is None:
+                    cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s", (STATUS_WAITING,))
+                    waiting_count = int(cur.fetchone()[0] or 0)
+                else:
+                    cur.execute(
+                        """
+                            SELECT COUNT(*)
+                            FROM reservations r
+                            JOIN reservation_types t ON r.type_id = t.id
+                            WHERE r.status = %s AND t.owner_admin_id = %s
+                        """,
+                        (STATUS_WAITING, owner_admin_id),
+                    )
+                    waiting_count = int(cur.fetchone()[0] or 0)
         estimated_minutes = calculate_wait_time_minutes(waiting_count)
         estimated_seconds = estimated_minutes * 60
-        set_settings(
-            {
-                "last_wait_time_run_at": minute_label,
-                "last_wait_time_estimated_seconds": str(estimated_seconds),
-                "last_wait_time_waiting_count": str(waiting_count),
-                "last_wait_time_avg_service_seconds": "0",
-            }
-        )
+        if owner_admin_id is None:
+            set_settings(
+                {
+                    "last_wait_time_run_at": minute_label,
+                    "last_wait_time_estimated_seconds": str(estimated_seconds),
+                    "last_wait_time_waiting_count": str(waiting_count),
+                    "last_wait_time_avg_service_seconds": "0",
+                }
+            )
         return {
             "run_at": minute_label,
             "waiting_count": waiting_count,
@@ -1859,7 +1887,10 @@ def process_reservation(event, user_id, user_message):
                         )
                         send_reply_message(event.reply_token, reply)
                         return
-                    cur.execute("SELECT id, name, accepting FROM reservation_types WHERE name = %s", (requested_type_name,))
+                    cur.execute(
+                        "SELECT id, name, accepting, owner_admin_id FROM reservation_types WHERE name = %s",
+                        (requested_type_name,),
+                    )
                     type_row = cur.fetchone()
                     if not type_row:
                         names = get_accepting_type_names(cur)
@@ -1869,13 +1900,17 @@ def process_reservation(event, user_id, user_message):
                             reply = "予約の種類がまだ登録されていません。管理画面で追加してください。"
                         send_reply_message(event.reply_token, reply)
                         return
-                    type_id, type_name, type_accepting = type_row
+                    type_id, type_name, type_accepting, type_owner_admin_id = type_row
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
                             reply = f"「{type_name}」の新規受付は停止中です。\n利用可能: " + " / ".join(names)
                         else:
                             reply = f"「{type_name}」の新規受付は停止中です。"
+                        send_reply_message(event.reply_token, reply)
+                        return
+                    if type_owner_admin_id is None:
+                        reply = "この種類は管理者に割り当てられていないため予約できません。管理者へお問い合わせください。"
                         send_reply_message(event.reply_token, reply)
                         return
                 else:
@@ -1889,7 +1924,7 @@ def process_reservation(event, user_id, user_message):
 
                 cur.execute(
                     """
-                        SELECT r.id, r.status, r.type_id, t.name
+                        SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
@@ -1899,14 +1934,15 @@ def process_reservation(event, user_id, user_message):
                 )
                 existing = cur.fetchone()
                 if existing:
-                    res_id, status, existing_type_id, existing_type_name = existing
+                    res_id, status, existing_type_id, existing_type_name, existing_owner_admin_id = existing
                     if status == STATUS_WAITING:
-                        if existing_type_id is not None:
-                            cur.execute(
-                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = %s",
-                                (STATUS_WAITING, res_id, existing_type_id),
+                        if existing_owner_admin_id is not None:
+                            waiting_people_ahead = count_waiting_people_ahead_by_owner(
+                                cur,
+                                reservation_id=res_id,
+                                owner_admin_id=existing_owner_admin_id,
                             )
-                            reply = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {cur.fetchone()[0]}人"
+                            reply = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, res_id))
                             reply = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
@@ -1924,15 +1960,18 @@ def process_reservation(event, user_id, user_message):
                     cur.execute("INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id", (user_id, "", type_id))
                     new_id = cur.fetchone()[0]
                     conn.commit()
-                    if type_id:
-                        cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s AND type_id = %s", (STATUS_WAITING, new_id, type_id))
-                        waiting_people_ahead = int(cur.fetchone()[0] or 0)
+                    if type_owner_admin_id:
+                        waiting_people_ahead = count_waiting_people_ahead_by_owner(
+                            cur,
+                            reservation_id=new_id,
+                            owner_admin_id=type_owner_admin_id,
+                        )
                         reply = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, new_id))
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
                         reply = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
-                    refresh_wait_time_estimate()
+                    refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
                     reply += f"\n現在の目安待ち時間: {estimated_minutes}分"
             elif normalized == 'キャンセル':
