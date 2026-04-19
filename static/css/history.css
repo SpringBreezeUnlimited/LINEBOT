@@ -173,7 +173,7 @@ select {
 .btn-outline-light {
     color: #fff;
     background: transparent;
-    border-color: rgba(255, 255, 255, 0.32);
+    border-color: transparent;
 }
 
 .btn-outline-light:hover {

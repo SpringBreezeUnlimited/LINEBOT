@@ -36,7 +36,9 @@ function applyTheme(theme) {
     document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
         const isDark = theme === 'dark';
         button.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-        button.textContent = isDark ? 'ライトモード' : 'ダークモード';
+        const iconPath = isDark ? '/static/img/luna.svg' : '/static/img/helios.svg';
+        const label = isDark ? 'ダーク' : 'ライト';
+        button.innerHTML = `<img src="${iconPath}" alt="" aria-hidden="true" class="theme-mode-icon"><span class="theme-mode-label">${label}</span>`;
         button.disabled = false;
     });
 }

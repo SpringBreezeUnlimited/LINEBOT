@@ -119,6 +119,25 @@ html[data-theme="dark"] .version-toggle {
     object-fit: contain;
 }
 
+.nav-icon-history {
+    width: 21px;
+    height: 21px;
+}
+
+.theme-mode-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    object-fit: contain;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.theme-mode-label {
+    display: inline-block;
+    vertical-align: middle;
+}
+
 .site-footer {
     margin-top: var(--space-6);
     padding: 0 0 var(--space-4);
