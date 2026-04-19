@@ -82,8 +82,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.70"
-APP_RELEASED_AT = "2026-04-19 05:05 JST"
+APP_VERSION = "v1.0.71"
+APP_RELEASED_AT = "2026-04-19 05:30 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -105,6 +105,7 @@ LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
 WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
+CALL_TIMEOUT_MINUTES = int(os.getenv("CALL_TIMEOUT_MINUTES", "15"))
 ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 
@@ -261,17 +262,43 @@ def should_run_call_batch(now=None) -> bool:
     return current.tm_min % 5 == 0
 
 
+def expire_called_reservations() -> int:
+    if CALL_TIMEOUT_MINUTES <= 0:
+        return 0
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        UPDATE reservations
+                        SET status = %s
+                        WHERE status = %s
+                          AND called_at IS NOT NULL
+                          AND called_at <= (CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute'))
+                    """,
+                    (STATUS_CANCELLED, STATUS_CALLED, CALL_TIMEOUT_MINUTES),
+                )
+                timed_out_count = cur.rowcount
+                conn.commit()
+                return timed_out_count
+    except Exception:
+        app.logger.exception("Failed to expire called reservations")
+        return 0
+
+
 def process_queued_calls(now=None):
     # 日本時間で現在時刻を取得
     current_dt = datetime.now(JST) if now is None else now
     current = current_dt.timetuple()
     minute_label = current_dt.strftime("%m-%d %H:%M")
+    timed_out_count = expire_called_reservations()
     latest_wait_time = refresh_wait_time_estimate(current_dt)
     if not should_run_call_batch(current):
         return {
             "processed": False,
             "reason": "not_due",
             "minute": minute_label,
+            "timed_out_count": timed_out_count,
             "sent_count": 0,
             "failed_count": 0,
             "wait_time": latest_wait_time,
@@ -336,6 +363,7 @@ def process_queued_calls(now=None):
         "processed": True,
         "reason": "ok",
         "minute": minute_label,
+        "timed_out_count": timed_out_count,
         "auto_call_count": auto_call_count,
         "auto_selected_count": len(auto_rows),
         "sent_count": len(sent_ids),

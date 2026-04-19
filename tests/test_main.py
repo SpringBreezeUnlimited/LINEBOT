@@ -660,8 +660,44 @@ def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypa
     assert app_module.should_run_call_batch() is True
 
 
+def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 3
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "UPDATE reservations" in query
+            assert "called_at <=" in query
+            assert params[0] == app_module.STATUS_CANCELLED
+            assert params[1] == app_module.STATUS_CALLED
+            assert params[2] == app_module.CALL_TIMEOUT_MINUTES
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    assert app_module.expire_called_reservations() == 3
+
+
 def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: False)
+    monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 2)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -671,6 +707,7 @@ def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     result = app_module.process_queued_calls(now=now)
     assert result["processed"] is False
     assert result["reason"] == "not_due"
+    assert result["timed_out_count"] == 2
     assert result["wait_time"]["estimated_seconds"] == 360
 
 
