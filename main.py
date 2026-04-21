@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.76"
+APP_VERSION = "v1.0.77"
 APP_RELEASED_AT = "2026-04-19 08:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -2088,7 +2088,7 @@ def process_reservation(event, user_id, user_message):
     if not normalized:
         send_reply_message(
             event.reply_token,
-            "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」と送信してください。",
+            "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」、待ち時間は「待ち時間」と送信してください。",
         )
         return
     if len(normalized) > MAX_USER_MESSAGE_CHARS:
@@ -2248,8 +2248,53 @@ def process_reservation(event, user_id, user_message):
                         )
                         conn.commit()
                         reply = f"到着を受け付けました。番号: {res_id} / スタッフが確認します。"
+            elif normalized == '待ち時間':
+                cur.execute(
+                    """
+                        SELECT r.id, r.status, t.name, t.owner_admin_id
+                        FROM reservations r
+                        LEFT JOIN reservation_types t ON r.type_id = t.id
+                        WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
+                        ORDER BY r.id DESC LIMIT 1
+                    """,
+                    (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
+                )
+                existing = cur.fetchone()
+                if not existing:
+                    reply = "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。"
+                else:
+                    res_id, status, type_name, owner_admin_id = existing
+                    if status != STATUS_WAITING:
+                        if status == STATUS_CALLED:
+                            reply = f"【呼出中】番号: {res_id} です。会場へお越しください。"
+                        else:
+                            reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
+                    else:
+                        if owner_admin_id is not None:
+                            waiting_people_ahead = count_waiting_people_ahead_by_owner(
+                                cur,
+                                reservation_id=res_id,
+                                owner_admin_id=owner_admin_id,
+                            )
+                        else:
+                            cur.execute(
+                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                                (STATUS_WAITING, res_id),
+                            )
+                            waiting_people_ahead = int(cur.fetchone()[0] or 0)
+                        estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
+                        if type_name:
+                            reply = (
+                                f"番号: {res_id} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
+                                f"\n現在の目安待ち時間: {estimated_minutes}分"
+                            )
+                        else:
+                            reply = (
+                                f"番号: {res_id} / あなたの前: {waiting_people_ahead}人"
+                                f"\n現在の目安待ち時間: {estimated_minutes}分"
+                            )
             else:
-                reply = "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」と送信してください。"
+                reply = "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」、待ち時間は「待ち時間」と送信してください。"
     send_reply_message(event.reply_token, reply)
 
 if __name__ == "__main__":

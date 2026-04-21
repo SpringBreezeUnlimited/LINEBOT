@@ -986,6 +986,101 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
     assert "受付時間外" in sent_texts[-1]
 
 
+def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "FROM reservations r" in query and "WHERE r.user_id = %s AND r.status IN" in query:
+                self._last = (12, app_module.STATUS_WAITING, "相談", 7)
+            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+                self._last = (3,)
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+
+    sent_texts = []
+    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+
+    event = SimpleNamespace(reply_token="reply-token")
+    app_module.process_reservation(event, "U-789", "待ち時間")
+
+    assert sent_texts
+    assert "あなたの前: 3人" in sent_texts[-1]
+    assert "現在の目安待ち時間: 4分" in sent_texts[-1]
+
+
+def test_process_reservation_wait_time_reply_without_active_reservation(app_module, monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "FROM reservations r" in query and "WHERE r.user_id = %s AND r.status IN" in query:
+                self._last = None
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+
+    sent_texts = []
+    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+
+    event = SimpleNamespace(reply_token="reply-token")
+    app_module.process_reservation(event, "U-999", "待ち時間")
+
+    assert sent_texts
+    assert "待ち時間を確認できる予約がありません" in sent_texts[-1]
+
+
 def test_admin_reservation_hours_updates_window(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 5)
