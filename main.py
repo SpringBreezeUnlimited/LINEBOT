@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.77"
+APP_VERSION = "v1.0.78"
 APP_RELEASED_AT = "2026-04-19 08:10 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -321,14 +321,23 @@ def is_minute_in_window(minute_of_day: int, start_minute: int, end_minute: int) 
     return minute_of_day >= start_minute or minute_of_day < end_minute
 
 
-def get_admin_reservation_window(admin_account_id: int):
+def get_admin_reservation_window(admin_account_id: int, cur=None):
+    if cur is not None:
+        cur.execute(
+            "SELECT reservation_start_minute, reservation_end_minute FROM admin_accounts WHERE id = %s",
+            (admin_account_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None, None
+        return row[0], row[1]
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
+        with conn.cursor() as local_cur:
+            local_cur.execute(
                 "SELECT reservation_start_minute, reservation_end_minute FROM admin_accounts WHERE id = %s",
                 (admin_account_id,),
             )
-            row = cur.fetchone()
+            row = local_cur.fetchone()
             if not row:
                 return None, None
             return row[0], row[1]
@@ -2184,12 +2193,16 @@ def process_reservation(event, user_id, user_message):
                         else:
                             reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
                 else:
-                    if type_owner_admin_id and not is_within_admin_reservation_window(type_owner_admin_id):
-                        start_minute, end_minute = get_admin_reservation_window(type_owner_admin_id)
-                        window_label = f"{format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)}"
-                        reply = f"「{type_name}」の予約受付時間は {window_label} です。現在は受付時間外です。"
-                        send_reply_message(event.reply_token, reply)
-                        return
+                    if type_owner_admin_id:
+                        start_minute, end_minute = get_admin_reservation_window(type_owner_admin_id, cur=cur)
+                        if start_minute is not None and end_minute is not None:
+                            current_dt = datetime.now(JST)
+                            current_minute = current_dt.hour * 60 + current_dt.minute
+                            if not is_minute_in_window(current_minute, int(start_minute), int(end_minute)):
+                                window_label = f"{format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)}"
+                                reply = f"「{type_name}」の予約受付時間は {window_label} です。現在は受付時間外です。"
+                                send_reply_message(event.reply_token, reply)
+                                return
                     cur.execute("INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id", (user_id, "", type_id))
                     new_id = cur.fetchone()[0]
                     conn.commit()

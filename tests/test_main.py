@@ -87,6 +87,29 @@ def test_is_minute_in_window_supports_overnight(app_module):
     assert app_module.is_minute_in_window(123, 500, 500) is True
 
 
+def test_get_admin_reservation_window_uses_existing_cursor(app_module, monkeypatch):
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def execute(self, query, params=None):
+            assert "FROM admin_accounts WHERE id = %s" in query
+            assert params == (7,)
+            self._last = (570, 1020)
+
+        def fetchone(self):
+            return self._last
+
+    monkeypatch.setattr(
+        app_module,
+        "get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("get_connection should not be used")),
+    )
+    start_minute, end_minute = app_module.get_admin_reservation_window(7, cur=FakeCursor())
+    assert start_minute == 570
+    assert end_minute == 1020
+
+
 def test_send_push_message_uses_retry_key(app_module, monkeypatch):
     captured = []
 
@@ -891,6 +914,8 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
                 self._last = (1, "相談", True, 7)
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
+            elif "FROM admin_accounts WHERE id = %s" in query:
+                self._last = (None, None)
             elif "INSERT INTO reservations (user_id, message, type_id)" in query:
                 self._last = (10,)
             elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
@@ -916,7 +941,6 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
-    monkeypatch.setattr(app_module, "is_within_admin_reservation_window", lambda _admin_id: True)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -951,6 +975,8 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
                 self._last = (1, "相談", True, 7)
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
+            elif "FROM admin_accounts WHERE id = %s" in query:
+                self._last = (570, 1020)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
 
@@ -972,8 +998,6 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
-    monkeypatch.setattr(app_module, "is_within_admin_reservation_window", lambda _admin_id: False)
-    monkeypatch.setattr(app_module, "get_admin_reservation_window", lambda _admin_id: (570, 1020))
 
     sent_texts = []
     monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
