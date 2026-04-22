@@ -157,6 +157,55 @@ def test_send_push_message_uses_retry_key(app_module, monkeypatch):
     assert captured == [("U1", "hello", "retry-key-1")]
 
 
+def test_get_connection_shared_does_not_reenter(app_module):
+    """Ensure request-scoped shared connection is not __enter__-ed multiple times."""
+    from flask import g
+
+    with app_module.app.test_request_context("/"):
+        called = {"enter": 0, "exit": 0}
+
+        class FakeConn:
+            closed = False
+
+            def __enter__(self):
+                called["enter"] += 1
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                called["exit"] += 1
+                return False
+
+            def cursor(self):
+                class C:
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, exc_type, exc, tb):
+                        return False
+
+                    def execute(self, *args, **kwargs):
+                        return None
+
+                    def fetchone(self):
+                        return None
+
+                return C()
+            def close(self):
+                self.closed = True
+
+        # install request-scoped connection object
+        g._db_connection = FakeConn()
+
+        # nested get_connection() should return the same underlying connection
+        # and must not call FakeConn.__enter__/__exit__ at all
+        with app_module.get_connection() as c1:
+            with app_module.get_connection() as c2:
+                assert c1 is c2
+
+        assert called["enter"] == 0
+        assert called["exit"] == 0
+
+
 def test_send_push_message_retries_with_same_key(app_module, monkeypatch):
     attempt_keys = []
 
