@@ -173,27 +173,15 @@ class ManagedConnection:
         return getattr(self._connection, name)
 
     def __enter__(self):
-        # For connections created per-call (close_on_exit=True) we want to
-        # participate in the connection's context manager (begin/commit/rollback).
-        # For request-scoped shared connections (close_on_exit=False) calling
-        # the underlying connection's __enter__ may raise when re-entered
-        # recursively (psycopg2 prevents this). Avoid calling it for shared
-        # connections and just return the raw connection object.
-        if self._close_on_exit:
-            return self._connection.__enter__()
+        self._connection.__enter__()
         return self._connection
 
     def __exit__(self, exc_type, exc, tb):
-        # Only invoke the underlying connection's __exit__ when we previously
-        # entered it (i.e. close_on_exit=True). For request-scoped shared
-        # connections, do not call __exit__ to avoid re-entrance issues.
-        if self._close_on_exit:
-            try:
-                return self._connection.__exit__(exc_type, exc, tb)
-            finally:
-                if not self._connection.closed:
-                    self._connection.close()
-        return False
+        try:
+            return self._connection.__exit__(exc_type, exc, tb)
+        finally:
+            if self._close_on_exit and not self._connection.closed:
+                self._connection.close()
 
 
 def create_connection():
