@@ -110,6 +110,26 @@ def test_get_admin_reservation_window_uses_existing_cursor(app_module, monkeypat
     assert end_minute == 1020
 
 
+def test_get_active_rows_uses_reservation_owner_fallback(app_module):
+    calls = []
+
+    class FakeCursor:
+        def execute(self, query, params=None):
+            calls.append((query, params))
+
+        def fetchall(self):
+            return []
+
+    cur = FakeCursor()
+    rows = app_module.get_active_rows(cur, owner_admin_id=9, current_type_id=None, sort_by="id", sort_order="asc")
+
+    assert rows == []
+    assert calls
+    query, params = calls[0]
+    assert "COALESCE(r.owner_admin_id, t.owner_admin_id) = %s" in query
+    assert params[-1] == 9
+
+
 def test_send_push_message_uses_retry_key(app_module, monkeypatch):
     captured = []
 
@@ -916,7 +936,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
                 self._last = (None, None)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "INSERT INTO reservations (user_id, message, type_id, owner_admin_id)" in query:
                 self._last = (10,)
             elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
                 self._last = (2,)
