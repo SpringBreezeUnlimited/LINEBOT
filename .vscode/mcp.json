@@ -1,0 +1,13 @@
+{
+	"servers": {
+		"notion": {
+			"type": "http",
+			"url": "https://mcp.notion.com/mcp"
+		},
+		"my-mcp-server-055e8516": {
+			"url": " https://mcp.notion.com/mcp",
+			"type": "http"
+		}
+	},
+	"inputs": []
+}
