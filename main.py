@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.80"
+APP_VERSION = "v1.0.81"
 APP_RELEASED_AT = "2026-04-24 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -380,7 +380,7 @@ def should_run_call_batch(now=None) -> bool:
 def build_call_message(reservation_id: int, called_at=None) -> str:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
-    timeout_label = timeout_at.strftime("%m-%d %H:%M")
+    timeout_label = timeout_at.strftime("%H:%M")
     return (
         f"【順番が来ました】番号 {reservation_id} 番の方、会場へお越しください！"
         f"\n{CALL_TIMEOUT_MINUTES}分以内（{timeout_label}まで）に「到着」と送信してください。"

@@ -795,7 +795,7 @@ def test_build_call_message_includes_timeout_minutes_and_deadline(app_module):
     message = app_module.build_call_message(15, called_at=called_at)
     assert "番号 15" in message
     assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in message
-    assert "04-19 10:15" in message
+    assert "10:15" in message
     assert "自動でキャンセル" in message
 
 
