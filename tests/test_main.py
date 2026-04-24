@@ -1,3 +1,4 @@
+import csv
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -1147,3 +1148,85 @@ def test_admin_reservation_hours_updates_window(app_module, monkeypatch):
     assert "schedule_success" in response.headers["Location"]
     assert "/admin/types" in response.headers["Location"]
     assert any("UPDATE admin_accounts" in query for query, _ in calls)
+
+
+def test_admin_history_export_includes_extended_columns(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
+
+    queries = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = [
+                (
+                    12,
+                    "相談",
+                    app_module.STATUS_DONE,
+                    datetime(2026, 4, 20, 2, 15, tzinfo=ZoneInfo("UTC")),
+                    datetime(2026, 4, 20, 2, 25, tzinfo=ZoneInfo("UTC")),
+                    datetime(2026, 4, 20, 2, 40, tzinfo=ZoneInfo("UTC")),
+                    datetime(2026, 4, 20, 3, 0, tzinfo=ZoneInfo("UTC")),
+                    600,
+                    1500,
+                    2700,
+                    2100,
+                )
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+        def __iter__(self):
+            return iter(self._rows)
+
+    class FakeConnection:
+        def __init__(self):
+            self.closed = False
+
+        def cursor(self, name=None):
+            return FakeCursor()
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context("/admin/history/export.csv"):
+        response = app_module.admin_history_export()
+        text = response.get_data(as_text=True)
+
+    rows = list(csv.reader(text.splitlines()))
+    assert rows[0] == [
+        "番号",
+        "種類",
+        "状態",
+        "受付時刻",
+        "呼出時刻",
+        "到着時刻",
+        "完了時刻",
+        "受付から呼出",
+        "受付から到着",
+        "受付から完了",
+        "到着から完了",
+    ]
+    assert rows[1] == [
+        "12",
+        "相談",
+        app_module.STATUS_DONE,
+        "04-20 11:15",
+        "04-20 11:25",
+        "04-20 11:40",
+        "04-20 12:00",
+        "10分0秒",
+        "25分0秒",
+        "45分0秒",
+        "35分0秒",
+    ]
+    assert any("r.called_at" in query for query, _ in queries)

@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.81"
+APP_VERSION = "v1.0.82"
 APP_RELEASED_AT = "2026-04-24 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -1915,7 +1915,19 @@ def admin_history_export():
     def generate_csv():
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["番号", "種類", "状態", "受付時刻", "到着時刻", "完了時刻", "到着から完了"])
+        writer.writerow([
+            "番号",
+            "種類",
+            "状態",
+            "受付時刻",
+            "呼出時刻",
+            "到着時刻",
+            "完了時刻",
+            "受付から呼出",
+            "受付から到着",
+            "受付から完了",
+            "到着から完了",
+        ])
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
@@ -1932,8 +1944,12 @@ def admin_history_export():
                             COALESCE(t.name, ''),
                             r.status,
                             r.created_at AT TIME ZONE 'Asia/Tokyo',
+                            r.called_at AT TIME ZONE 'Asia/Tokyo',
                             r.arrived_at AT TIME ZONE 'Asia/Tokyo',
                             r.completed_at AT TIME ZONE 'Asia/Tokyo',
+                            EXTRACT(EPOCH FROM (r.called_at - r.created_at)) AS call_duration_seconds,
+                            EXTRACT(EPOCH FROM (r.arrived_at - r.created_at)) AS arrival_wait_seconds,
+                            EXTRACT(EPOCH FROM (r.completed_at - r.created_at)) AS completion_wait_seconds,
                             EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
@@ -1950,7 +1966,11 @@ def admin_history_export():
                         format_dt(row[3]),
                         format_dt(row[4]),
                         format_dt(row[5]),
-                        format_duration_from_seconds(row[6]) or "-",
+                        format_dt(row[6]),
+                        format_duration_from_seconds(row[7]) or "-",
+                        format_duration_from_seconds(row[8]) or "-",
+                        format_duration_from_seconds(row[9]) or "-",
+                        format_duration_from_seconds(row[10]) or "-",
                     ])
                     yield output.getvalue()
                     output.seek(0)
