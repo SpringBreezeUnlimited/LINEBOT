@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.82"
+APP_VERSION = "v1.0.83"
 APP_RELEASED_AT = "2026-04-24 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -616,6 +616,10 @@ def ensure_reservations_table():
             cur.execute("""
                 ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS status TEXT
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS type_id INTEGER
             """)
             cur.execute("""
                 ALTER TABLE reservations

@@ -46,6 +46,43 @@ def test_normalize_db_url_invalid_raises(app_module):
         app_module.normalize_db_url("not-a-url")
 
 
+def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    app_module.ensure_reservations_table()
+
+    normalized_queries = [" ".join(query.split()) for query, _ in queries]
+    assert any(
+        "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS type_id INTEGER" in query
+        for query in normalized_queries
+    )
+
+
 def test_format_duration_from_seconds(app_module):
     assert app_module.format_duration_from_seconds(None) == ""
     assert app_module.format_duration_from_seconds(5) == "5秒"
@@ -961,6 +998,15 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
 
 
 def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch):
+    class FixedDateTime:
+        @staticmethod
+        def now(tz=None):
+            # 08:00 JSTに固定して、09:30〜17:00の受付時間外を再現する
+            value = datetime(2026, 4, 20, 8, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+            return value if tz is None else value.astimezone(tz)
+
+    monkeypatch.setattr(app_module, "datetime", FixedDateTime)
+
     class FakeCursor:
         def __init__(self):
             self._last = None
@@ -1230,3 +1276,118 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "35分0秒",
     ]
     assert any("r.called_at" in query for query, _ in queries)
+
+
+def test_admin_history_export_requires_login(client):
+    response = client.get("/admin/history/export.csv")
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+def test_admin_history_export_null_values_are_formatted_safely(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = [
+                (
+                    99,
+                    "",
+                    app_module.STATUS_CANCELLED,
+                    datetime(2026, 4, 21, 0, 0, tzinfo=ZoneInfo("UTC")),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, _query, _params=None):
+            return None
+
+        def __iter__(self):
+            return iter(self._rows)
+
+    class FakeConnection:
+        def __init__(self):
+            self.closed = False
+
+        def cursor(self, name=None):
+            return FakeCursor()
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context("/admin/history/export.csv"):
+        response = app_module.admin_history_export()
+        text = response.get_data(as_text=True)
+
+    rows = list(csv.reader(text.splitlines()))
+    assert rows[1] == [
+        "99",
+        "",
+        app_module.STATUS_CANCELLED,
+        "04-21 09:00",
+        "",
+        "",
+        "",
+        "-",
+        "-",
+        "-",
+        "-",
+    ]
+
+
+def test_admin_history_export_invalid_query_params_fall_back_to_defaults(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
+
+    calls = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+
+        def __iter__(self):
+            return iter([])
+
+    class FakeConnection:
+        def __init__(self):
+            self.closed = False
+
+        def cursor(self, name=None):
+            return FakeCursor()
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/history/export.csv?sort_by=unknown&sort_order=sideways&type_id=abc"
+    ):
+        response = app_module.admin_history_export()
+        _ = response.get_data(as_text=True)
+
+    assert calls
+    query, params = calls[0]
+    assert "ORDER BY r.id DESC, r.id DESC" in query
+    assert params == [app_module.STATUS_DONE, app_module.STATUS_CANCELLED, app_module.STATUS_ARRIVED, 7]
