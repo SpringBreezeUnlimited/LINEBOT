@@ -83,8 +83,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.84"
-APP_RELEASED_AT = "2026-04-26 00:00 JST"
+APP_VERSION = "v1.0.85"
+APP_RELEASED_AT = "2026-04-30 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -993,6 +993,9 @@ def security_preflight():
 @app.before_request
 def initialize_database_once():
     if request.endpoint == "static":
+        return
+    if request.path == "/login" and request.method == "GET":
+        # ログイン画面の表示だけはDB初期化なしで通す。POST時や他画面では従来どおり初期化する。
         return
     ensure_database_schema()
 
