@@ -28,12 +28,15 @@
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const cams = devices.filter((d) => d.kind === "videoinput");
+            console.log("Available cameras:", cams.length, cams.map(c => ({ label: c.label, id: c.deviceId })));
+            
             cameraSelect.innerHTML = "";
             if (cams.length === 0) {
                 const opt = document.createElement("option");
                 opt.textContent = "カメラが見つかりません";
                 cameraSelect.appendChild(opt);
                 startBtn.disabled = true;
+                console.warn("No cameras found");
                 return;
             }
             cams.forEach((cam, i) => {
@@ -50,7 +53,7 @@
         } catch (err) {
             // Permissions not granted yet — labels are unavailable until getUserMedia is called.
             // Hide the selector silently; it will be rebuilt after the first startCamera() call.
-            console.debug("enumerateDevices before permission grant:", err);
+            console.debug("enumerateDevices before permission grant:", err.name, err.message);
             cameraWrap.hidden = true;
         }
     }
@@ -59,25 +62,52 @@
         stopCamera();
         showError(null);
 
-        const deviceId = cameraSelect.value;
-        const videoConstraints = deviceId
-            ? { deviceId: { exact: deviceId } }
-            : { facingMode: { ideal: "environment" } };
+        // Check if running over secure context (HTTPS or localhost)
+        if (!window.isSecureContext && !location.hostname.match(/^(localhost|127\.0\.0\.1)$/)) {
+            showError("カメラは HTTPS接続（またはlocalhost）でのみ利用できます。");
+            return;
+        }
 
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
-        } catch (err) {
+        const deviceId = cameraSelect.value;
+        
+        // Try with specific device first, then fallback to general video constraints
+        const constraintsList = [];
+        if (deviceId) {
+            constraintsList.push({ video: { deviceId: { exact: deviceId } }, audio: false });
+        }
+        constraintsList.push({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        constraintsList.push({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+        constraintsList.push({ video: true, audio: false }); // Most permissive fallback
+
+        let lastError = null;
+        for (const constraints of constraintsList) {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                console.log("getUserMedia successful with constraints:", constraints);
+                break; // Success
+            } catch (err) {
+                lastError = err;
+                console.debug("getUserMedia failed with constraints:", constraints, err.name);
+            }
+        }
+
+        if (stream && lastError === null) {
+            // Stream obtained successfully - continue below
+        } else {
+            // All attempts failed
             let msg;
-            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-                msg = "カメラへのアクセスが拒否されました。ブラウザ設定でカメラの権限を許可してください。";
-            } else if (err.name === "NotFoundError") {
+            if (lastError.name === "NotAllowedError" || lastError.name === "PermissionDeniedError") {
+                msg = "カメラへのアクセスが拒否されました。ブラウザ設定でカメラの権限を許可してください。\n\n【許可方法】\nChrome/Edge：アドレスバーの鍵マーク → サイト設定 → カメラ → 許可\nSafari：設定 → プライバシー → カメラ → このウェブサイトを許可\nFirefox：設定 → プライバシー → カメラ → このサイトを許可";
+            } else if (lastError.name === "NotFoundError") {
                 msg = "カメラが見つかりません。デバイスにカメラが接続されているか確認してください。";
-            } else if (err.name === "NotReadableError") {
+            } else if (lastError.name === "NotReadableError") {
                 msg = "カメラが使用中です。他のアプリケーション（Zoom等）を終了してから試してください。";
-            } else if (err.name === "SecurityError") {
-                msg = "セキュリティエラーです。HTTPSで接続してください。";
+            } else if (lastError.name === "SecurityError") {
+                msg = "セキュリティエラーです。HTTPS接続またはlocalhostで接続してください。";
+            } else if (lastError.name === "TypeError") {
+                msg = "カメラデバイスが利用できません。ブラウザの設定を確認してください。";
             } else {
-                msg = `カメラを起動できませんでした: ${err.message}`;
+                msg = `カメラを起動できませんでした: ${lastError.name} - ${lastError.message}`;
             }
             showError(msg);
             return;
@@ -260,6 +290,23 @@
         showError("このブラウザはカメラアクセス (MediaDevices API) に対応していません。最新のブラウザをお使いください。");
         startBtn.disabled = true;
     } else {
+        // Log available capabilities
+        const isSecure = window.isSecureContext;
+        const isLocalhost = location.hostname.match(/^(localhost|127\.0\.0\.1)$/);
+        const protocol = location.protocol;
+        console.log("QR Reader Init:", {
+            isSecureContext: isSecure,
+            isLocalhost: Boolean(isLocalhost),
+            protocol: protocol,
+            hostname: location.hostname,
+            mediaDevicesAvailable: Boolean(navigator.mediaDevices),
+            getUserMediaAvailable: Boolean(navigator.mediaDevices.getUserMedia),
+        });
+        
+        if (!isSecure && !isLocalhost) {
+            console.warn("⚠️ Not running over HTTPS or localhost. Camera access may not be available.");
+        }
+        
         buildCameraList();
     }
 })();

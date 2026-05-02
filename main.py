@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.86"
+APP_VERSION = "v1.0.87"
 APP_RELEASED_AT = "2026-05-02 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
