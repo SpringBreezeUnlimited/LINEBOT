@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}QRコードリーダー{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/qr-reader.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="card">
+        <div class="card-body">
+            <h1 class="page-title">📷 QRコードリーダー</h1>
+            <p class="page-subtitle">カメラでQRコードをかざすと自動的に読み取ります</p>
+
+            <!-- camera selector (hidden when only 1 camera) -->
+            <div class="camera-select-wrap" id="camera-select-wrap" hidden>
+                <label for="camera-select">カメラを選択</label>
+                <select class="form-select" id="camera-select">
+                    <option>読み込み中...</option>
+                </select>
+            </div>
+
+            <!-- video viewer -->
+            <div class="viewer-wrap">
+                <video id="qr-video" playsinline muted></video>
+                <svg id="qr-overlay" aria-hidden="true"></svg>
+                <div class="placeholder-msg" id="qr-placeholder">
+                    「カメラ開始」ボタンを押して<br>QRコードをかざしてください
+                </div>
+            </div>
+
+            <!-- controls -->
+            <div class="controls">
+                <button class="btn btn-primary" id="btn-start" type="button">
+                    カメラ開始
+                </button>
+                <button class="btn btn-outline-secondary" id="btn-stop" type="button" disabled>
+                    停止
+                </button>
+            </div>
+
+            <!-- error -->
+            <div class="error-msg" id="error-msg" hidden></div>
+
+            <!-- result -->
+            <div class="result-box" id="result-box" hidden>
+                <div class="result-label">
+                    読み取り結果 <span class="badge-ok">OK</span>
+                </div>
+                <div class="result-content">
+                    <div class="result-text" id="result-text"></div>
+                    <button class="btn-copy" id="btn-copy" type="button" data-value="">コピー</button>
+                </div>
+            </div>
+
+            <!-- history -->
+            <div class="result-history" id="result-history" hidden>
+                <h3>読み取り履歴（最新10件）</h3>
+                <ul class="history-list" id="history-list"></ul>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- jsQR: QR code decoder (MIT License) -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<script src="{{ url_for('static', filename='js/qr-reader.js') }}" defer></script>
+{% endblock %}
