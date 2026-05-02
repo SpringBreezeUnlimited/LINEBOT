@@ -69,9 +69,13 @@
         } catch (err) {
             let msg;
             if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-                msg = "カメラへのアクセスが拒否されました。ブラウザの設定でカメラを許可してください。";
+                msg = "カメラへのアクセスが拒否されました。ブラウザ設定でカメラの権限を許可してください。";
             } else if (err.name === "NotFoundError") {
                 msg = "カメラが見つかりません。デバイスにカメラが接続されているか確認してください。";
+            } else if (err.name === "NotReadableError") {
+                msg = "カメラが使用中です。他のアプリケーション（Zoom等）を終了してから試してください。";
+            } else if (err.name === "SecurityError") {
+                msg = "セキュリティエラーです。HTTPSで接続してください。";
             } else {
                 msg = `カメラを起動できませんでした: ${err.message}`;
             }
