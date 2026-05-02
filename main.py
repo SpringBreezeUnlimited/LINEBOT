@@ -1091,6 +1091,11 @@ def is_webhook_rate_limited(ip: str) -> bool:
 def index():
     return redirect(url_for("login"))
 
+
+@app.route("/qr")
+def qr_reader():
+    return render_template("qr_reader.html")
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
