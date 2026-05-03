@@ -101,26 +101,6 @@ input {
     pointer-events: none;
 }
 
-.placeholder-msg {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-size: 0.95rem;
-    text-align: center;
-    padding: 16px;
-    background: rgba(0, 0, 0, 0.6);
-}
-
-.placeholder-msg small {
-    font-size: 0.85em;
-    opacity: 0.8;
-    display: block;
-    margin-top: 6px;
-}
-
 /* ── controls ── */
 .controls {
     display: flex;

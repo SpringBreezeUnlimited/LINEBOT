@@ -4,7 +4,6 @@
 
     const video = document.getElementById("qr-video");
     const overlay = document.getElementById("qr-overlay");
-    const placeholder = document.getElementById("qr-placeholder");
     const startBtn = document.getElementById("btn-start");
     const stopBtn = document.getElementById("btn-stop");
     const resultBox = document.getElementById("result-box");
@@ -135,7 +134,6 @@
         video.srcObject = stream;
         await video.play();
 
-        placeholder.hidden = true;
         stopBtn.disabled = false;
         startBtn.disabled = true;
         cameraSelect.disabled = true;
@@ -161,7 +159,6 @@
         }
         video.srcObject = null;
         clearOverlay();
-        placeholder.hidden = false;
         startBtn.disabled = false;
         stopBtn.disabled = true;
         cameraSelect.disabled = false;
