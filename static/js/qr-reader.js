@@ -22,6 +22,8 @@
     let ctx = null;
     let lastCode = null;
     const history = [];
+    let frameCount = 0;
+    const SCAN_INTERVAL = 3; // Scan QR every 3 frames to reduce CPU load
 
     // Build camera list
     async function buildCameraList() {
@@ -164,26 +166,31 @@
         stopBtn.disabled = true;
         cameraSelect.disabled = false;
         lastCode = null;
+        frameCount = 0; // Reset frame counter
     }
 
     function scanLoop() {
         if (!stream) return;
         if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                inversionAttempts: "dontInvert",
-            });
-            if (code) {
-                drawOverlay(code.location, canvas.width, canvas.height);
-                if (code.data !== lastCode) {
-                    lastCode = code.data;
-                    showResult(code.data);
+            frameCount++;
+            // Only perform expensive QR scan every SCAN_INTERVAL frames
+            if (frameCount % SCAN_INTERVAL === 0) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+                if (code) {
+                    drawOverlay(code.location, canvas.width, canvas.height);
+                    if (code.data !== lastCode) {
+                        lastCode = code.data;
+                        showResult(code.data);
+                    }
+                } else {
+                    clearOverlay();
                 }
-            } else {
-                clearOverlay();
             }
         }
         rafId = requestAnimationFrame(scanLoop);
