@@ -114,6 +114,13 @@ input {
     background: rgba(0, 0, 0, 0.6);
 }
 
+.placeholder-msg small {
+    font-size: 0.85em;
+    opacity: 0.8;
+    display: block;
+    margin-top: 6px;
+}
+
 /* ── controls ── */
 .controls {
     display: flex;

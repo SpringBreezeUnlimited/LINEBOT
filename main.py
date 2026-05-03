@@ -1012,7 +1012,7 @@ def csrf_protect():
 def apply_security_headers(response):
     csp = (
         "default-src 'self'; "
-        "script-src 'self'; "
+        "script-src 'self' https://cdn.jsdelivr.net; "
         "style-src 'self' https://cdn.jsdelivr.net; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
@@ -1024,7 +1024,8 @@ def apply_security_headers(response):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    # Allow camera and microphone for same-origin pages (required for getUserMedia)
+    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
     forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
     if FORCE_HTTPS and (request.is_secure or forwarded_proto == "https"):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
