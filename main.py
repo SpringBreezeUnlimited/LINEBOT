@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.88"
+APP_VERSION = "v1.0.89"
 APP_RELEASED_AT = "2026-05-03 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -1015,7 +1015,7 @@ def apply_security_headers(response):
         "script-src 'self' https://cdn.jsdelivr.net; "
         "style-src 'self' https://cdn.jsdelivr.net; "
         "img-src 'self' data:; "
-        "connect-src 'self'; "
+        "connect-src 'self' https://cdn.jsdelivr.net; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
