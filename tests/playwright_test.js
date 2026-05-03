@@ -11,7 +11,9 @@ async function run() {
   // Give server a moment to start
   await new Promise((r) => setTimeout(r, 800));
 
-  const browser = await chromium.launch({ headless: true, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+  const headless = process.env.HEADLESS !== 'false';
+  const launchArgs = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
+  const browser = await chromium.launch({ headless, args: launchArgs });
   const context = await browser.newContext();
 
   try {
