@@ -68,6 +68,21 @@
             return;
         }
 
+        // First, check and request permission using Permissions API if available
+        if (navigator.permissions && navigator.permissions.query) {
+            try {
+                const cameraPermission = await navigator.permissions.query({ name: "camera" });
+                console.log("Camera permission status:", cameraPermission.state);
+                
+                if (cameraPermission.state === "denied") {
+                    showError("カメラへのアクセスが拒否されました。ブラウザ設定でカメラの権限を許可してください。\n\n【許可方法】\nChrome/Edge：アドレスバーの鍵マーク → サイト設定 → カメラ → 許可\nSafari：設定 → プライバシー → カメラ → このウェブサイトを許可\nFirefox：設定 → プライバシー → カメラ → このサイトを許可");
+                    return;
+                }
+            } catch (err) {
+                console.warn("Permissions API not fully supported:", err);
+            }
+        }
+
         const deviceId = cameraSelect.value;
         
         // Try with specific device first, then fallback to general video constraints
@@ -82,16 +97,17 @@
         let lastError = null;
         for (const constraints of constraintsList) {
             try {
+                console.log("Attempting getUserMedia with constraints:", constraints);
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
-                console.log("getUserMedia successful with constraints:", constraints);
+                console.log("✓ getUserMedia successful!");
                 break; // Success
             } catch (err) {
                 lastError = err;
-                console.debug("getUserMedia failed with constraints:", constraints, err.name);
+                console.debug("getUserMedia failed:", err.name, "-", err.message);
             }
         }
 
-        if (stream && lastError === null) {
+        if (stream && !lastError) {
             // Stream obtained successfully - continue below
         } else {
             // All attempts failed
@@ -110,6 +126,7 @@
                 msg = `カメラを起動できませんでした: ${lastError.name} - ${lastError.message}`;
             }
             showError(msg);
+            console.error("Camera access failed:", msg);
             return;
         }
 
@@ -294,7 +311,8 @@
         const isSecure = window.isSecureContext;
         const isLocalhost = location.hostname.match(/^(localhost|127\.0\.0\.1)$/);
         const protocol = location.protocol;
-        console.log("QR Reader Init:", {
+        
+        console.log("🎥 QR Reader Initialization:", {
             isSecureContext: isSecure,
             isLocalhost: Boolean(isLocalhost),
             protocol: protocol,
@@ -304,7 +322,33 @@
         });
         
         if (!isSecure && !isLocalhost) {
-            console.warn("⚠️ Not running over HTTPS or localhost. Camera access may not be available.");
+            console.warn("⚠️ WARNING: Not running over HTTPS or localhost. Camera access may not be available.");
+            console.warn("   Current URL:", window.location.href);
+        }
+        
+        // Check camera permission status if Permissions API is available
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: "camera" })
+                .then(permission => {
+                    console.log("📷 Camera permission state:", permission.state);
+                    if (permission.state === "prompt") {
+                        console.log("   → Permission will be requested when camera is started");
+                    } else if (permission.state === "granted") {
+                        console.log("   → Camera permission is already granted ✓");
+                    } else if (permission.state === "denied") {
+                        console.warn("   → Camera permission is DENIED. User must allow it in settings.");
+                    }
+                    
+                    // Listen for changes
+                    permission.addEventListener("change", () => {
+                        console.log("📷 Camera permission changed:", permission.state);
+                    });
+                })
+                .catch(err => {
+                    console.debug("Could not query camera permission:", err.name);
+                });
+        } else {
+            console.debug("Permissions API not available on this browser");
         }
         
         buildCameraList();
