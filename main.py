@@ -2274,7 +2274,7 @@ def process_reservation(event, user_id, user_message):
             elif normalized == '到着':
                 cur.execute(
                     """
-                        SELECT id, status FROM reservations
+                        SELECT id, status, arrived_at FROM reservations
                         WHERE user_id = %s AND status IN (%s, %s, %s)
                         ORDER BY id DESC LIMIT 1
                     """,
@@ -2284,10 +2284,17 @@ def process_reservation(event, user_id, user_message):
                 if not existing:
                     reply = "到着の対象となる予約がありません。"
                 else:
-                    res_id, status = existing
+                    res_id, status, arrived_at = existing
                     if status == STATUS_WAITING:
                         reply = "まだ呼出されていません。呼出後に「到着」と送信してください。"
+                    elif status == STATUS_ARRIVED:
+                        ts = format_dt(arrived_at)
+                        if ts:
+                            reply = f"既に到着済みです。番号: {res_id} / 到着時刻: {ts}"
+                        else:
+                            reply = f"既に到着済みです。番号: {res_id}"
                     else:
+                        # 状態が called の場合のみ到着時刻を設定する（再送による上書きを防止）
                         cur.execute(
                             "UPDATE reservations SET status = %s, arrived_at = CURRENT_TIMESTAMP WHERE id = %s",
                             (STATUS_ARRIVED, res_id),
