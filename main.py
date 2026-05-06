@@ -83,8 +83,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.91"
-APP_RELEASED_AT = "2026-05-03 00:00 JST"
+APP_VERSION = "v1.0.92"
+APP_RELEASED_AT = "2026-05-06 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1361,7 +1361,7 @@ def get_active_rows(cur, owner_admin_id: int, current_type_id=None, sort_by="id"
     order_by = order_map[sort_by]
     cur.execute(
         f"""
-            SELECT r.id, r.status, t.id, t.name, r.created_at AT TIME ZONE 'Asia/Tokyo'
+            SELECT r.id, r.status, t.id, t.name, r.created_at
             FROM reservations r
             LEFT JOIN reservation_types t ON r.type_id = t.id
             {where}
@@ -1396,7 +1396,7 @@ def admin_login_logs_page():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at AT TIME ZONE 'Asia/Tokyo'
+                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at
                     FROM admin_login_logs
                     ORDER BY logged_in_at DESC, id DESC
                     LIMIT 500
@@ -1410,7 +1410,7 @@ def admin_login_logs_page():
             ]
             cur.execute(
                 """
-                    SELECT id, login_id, role, active, created_at AT TIME ZONE 'Asia/Tokyo'
+                    SELECT id, login_id, role, active, created_at
                     FROM admin_accounts
                     ORDER BY id ASC
                 """
@@ -1856,9 +1856,9 @@ def admin_history():
                     r.status,
                     t.name,
                     t.id,
-                    r.created_at AT TIME ZONE 'Asia/Tokyo',
-                    r.arrived_at AT TIME ZONE 'Asia/Tokyo',
-                    r.completed_at AT TIME ZONE 'Asia/Tokyo',
+                    r.created_at,
+                    r.arrived_at,
+                    r.completed_at,
                     EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
@@ -1956,10 +1956,10 @@ def admin_history_export():
                             r.id,
                             COALESCE(t.name, ''),
                             r.status,
-                            r.created_at AT TIME ZONE 'Asia/Tokyo',
-                            r.called_at AT TIME ZONE 'Asia/Tokyo',
-                            r.arrived_at AT TIME ZONE 'Asia/Tokyo',
-                            r.completed_at AT TIME ZONE 'Asia/Tokyo',
+                            r.created_at,
+                            r.called_at,
+                            r.arrived_at,
+                            r.completed_at,
                             EXTRACT(EPOCH FROM (r.called_at - r.created_at)) AS call_duration_seconds,
                             EXTRACT(EPOCH FROM (r.arrived_at - r.created_at)) AS arrival_wait_seconds,
                             EXTRACT(EPOCH FROM (r.completed_at - r.created_at)) AS completion_wait_seconds,
