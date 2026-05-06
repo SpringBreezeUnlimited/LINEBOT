@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.92"
+APP_VERSION = "v1.0.93"
 APP_RELEASED_AT = "2026-05-06 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -657,6 +657,13 @@ def ensure_reservations_table():
                 CREATE INDEX IF NOT EXISTS idx_reservations_status_created_at_id
                 ON reservations (status, created_at DESC, id DESC)
             """)
+            cur.execute(
+                """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active
+                    ON reservations (user_id)
+                    WHERE status IN ('waiting', 'called', 'arrived')
+                """
+            )
             conn.commit()
 
 
@@ -2117,6 +2124,10 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+    except Exception:
+        # ハンドラー内の一時的な失敗で5xxを返すとLINEが再送し、二重処理につながるため200で吸収する。
+        app.logger.exception("Failed to process LINE webhook event")
+        return 'OK'
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessageContent)
@@ -2236,8 +2247,54 @@ def process_reservation(event, user_id, user_message):
                                 reply = f"「{type_name}」の予約受付時間は {window_label} です。現在は受付時間外です。"
                                 send_reply_message(event.reply_token, reply)
                                 return
-                    cur.execute("INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id", (user_id, "", type_id))
-                    new_id = cur.fetchone()[0]
+                    try:
+                        cur.execute(
+                            "INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id",
+                            (user_id, "", type_id),
+                        )
+                        new_id = cur.fetchone()[0]
+                    except psycopg2.IntegrityError:
+                        conn.rollback()
+                        cur.execute(
+                            """
+                                SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                                FROM reservations r
+                                LEFT JOIN reservation_types t ON r.type_id = t.id
+                                WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
+                                ORDER BY r.id DESC LIMIT 1
+                            """,
+                            (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
+                        )
+                        existing_after_conflict = cur.fetchone()
+                        if existing_after_conflict:
+                            res_id, status, _existing_type_id, existing_type_name, existing_owner_admin_id = existing_after_conflict
+                            if status == STATUS_WAITING:
+                                if existing_owner_admin_id is not None:
+                                    waiting_people_ahead = count_waiting_people_ahead_by_owner(
+                                        cur,
+                                        reservation_id=res_id,
+                                        owner_admin_id=existing_owner_admin_id,
+                                    )
+                                    reply = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                else:
+                                    cur.execute(
+                                        "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                                        (STATUS_WAITING, res_id),
+                                    )
+                                    reply = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                            elif status == STATUS_CALLED:
+                                if existing_type_name:
+                                    reply = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                                else:
+                                    reply = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                            else:
+                                if existing_type_name:
+                                    reply = f"到着受付済みです。番号: {res_id} / 種類: {existing_type_name} / スタッフが確認します。"
+                                else:
+                                    reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
+                            send_reply_message(event.reply_token, reply)
+                            return
+                        raise
                     conn.commit()
                     if type_owner_admin_id:
                         waiting_people_ahead = count_waiting_people_ahead_by_owner(
@@ -2268,6 +2325,7 @@ def process_reservation(event, user_id, user_message):
                 )
                 cancelled = cur.fetchone()
                 if cancelled:
+                    conn.commit()
                     reply = f"予約番号 {cancelled[0]} をキャンセルしました。"
                 else:
                     reply = "キャンセル対象の予約はありません。"

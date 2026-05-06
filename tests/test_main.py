@@ -81,6 +81,10 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
         "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS type_id INTEGER" in query
         for query in normalized_queries
     )
+    assert any(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active ON reservations (user_id) WHERE status IN ('waiting', 'called', 'arrived')" in query
+        for query in normalized_queries
+    )
 
 
 def test_format_duration_from_seconds(app_module):
@@ -823,6 +827,26 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch):
     assert response.get_data(as_text=True) == "OK"
 
 
+def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
+
+    class FailingHandler:
+        @staticmethod
+        def handle(_body, _signature):
+            raise RuntimeError("temporary downstream failure")
+
+    monkeypatch.setattr(app_module, "handler", FailingHandler())
+
+    response = client.post(
+        "/callback",
+        data="{}",
+        headers={"X-Line-Signature": "sig"},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "OK"
+
+
 def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypatch):
     monkeypatch.setattr(app_module.time, "localtime", lambda: SimpleNamespace(tm_min=15))
     assert app_module.should_run_call_batch() is True
@@ -1150,6 +1174,55 @@ def test_process_reservation_wait_time_reply_without_active_reservation(app_modu
 
     assert sent_texts
     assert "待ち時間を確認できる予約がありません" in sent_texts[-1]
+
+
+def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypatch):
+    commits = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "UPDATE reservations SET status = %s" in query and "RETURNING id" in query:
+                self._last = (42,)
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            commits.append(True)
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+
+    sent_texts = []
+    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+
+    event = SimpleNamespace(reply_token="reply-token")
+    app_module.process_reservation(event, "U-cancel", "キャンセル")
+
+    assert sent_texts
+    assert "予約番号 42 をキャンセルしました。" in sent_texts[-1]
+    assert commits
 
 
 def test_admin_reservation_hours_updates_window(app_module, monkeypatch):
