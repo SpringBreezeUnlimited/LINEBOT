@@ -2,6 +2,12 @@ import importlib
 import os
 import re
 import sys
+from pathlib import Path
+
+# プロジェクトルートをPythonパスに追加（main.pyがimportできるようにする）
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pytest
 from werkzeug.security import generate_password_hash
