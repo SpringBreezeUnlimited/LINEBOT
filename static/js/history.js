@@ -37,13 +37,21 @@ function compareHistoryValues(left, right, sortOrder) {
 }
 
 function getHistoryStatusMarkup(status) {
+    const span = document.createElement('span');
+    span.className = 'badge';
     if (status === 'done') {
-        return '<span class="badge bg-primary">確認完了</span>';
+        span.classList.add('bg-primary');
+        span.textContent = '確認完了';
+        return span;
     }
     if (status === 'cancelled') {
-        return '<span class="badge bg-secondary">キャンセル</span>';
+        span.classList.add('bg-secondary');
+        span.textContent = 'キャンセル';
+        return span;
     }
-    return '<span class="badge bg-success">到着済み</span>';
+    span.classList.add('bg-success');
+    span.textContent = '到着済み';
+    return span;
 }
 
 function applyHistoryFilters(rows) {
@@ -79,13 +87,29 @@ function renderHistoryRows() {
 
     applyHistoryFilters(historyRowsCache).forEach((row) => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${row.id || ''}</td>
-            <td>${row.created_at || '-'}</td>
-            <td>${row.type || '-'}</td>
-            <td>${getHistoryStatusMarkup(row.status)}</td>
-            <td>${row.service_duration_label || '-'}</td>
-        `;
+
+        const tdId = document.createElement('td');
+        tdId.textContent = row.id || '';
+
+        const tdCreated = document.createElement('td');
+        tdCreated.textContent = row.created_at || '-';
+
+        const tdType = document.createElement('td');
+        tdType.textContent = row.type || '-';
+
+        const tdStatus = document.createElement('td');
+        const statusElem = getHistoryStatusMarkup(row.status);
+        tdStatus.appendChild(statusElem);
+
+        const tdDuration = document.createElement('td');
+        tdDuration.textContent = row.service_duration_label || '-';
+
+        tr.appendChild(tdId);
+        tr.appendChild(tdCreated);
+        tr.appendChild(tdType);
+        tr.appendChild(tdStatus);
+        tr.appendChild(tdDuration);
+
         tbody.appendChild(tr);
     });
 

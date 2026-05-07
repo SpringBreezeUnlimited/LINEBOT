@@ -34,6 +34,10 @@
 - If WAF is used, tune detection rules and verify false positives/negatives.
 - Subscribe to vulnerability advisories for Flask, line-bot-sdk, psycopg2, gunicorn.
 
+## Developer environment
+
+- 開発環境の Python 実行環境（ローカル `.venv` 等）にインストールされるツール類も脆弱性の原因になり得ます。例えば `pip` には定期的に重要なセキュリティ修正が入るため、開発者は環境内の `pip` を `26.1` 以上に更新してください（例: `python -m pip install --upgrade pip`）。
+
 ## Notes
 - `ADMIN_PASSWORD` (plain-text) is deprecated; use `ADMIN_PASSWORD_HASH` only.
 - `ALLOWED_HOSTS` should include only real hostnames used in production.

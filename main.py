@@ -449,17 +449,24 @@ def process_queued_calls(now=None):
         with conn.cursor() as cur:
             auto_rows = []
             if auto_call_count > 0:
+                # 先に該当行を確保して状態を更新しておくことで、並行実行や手動呼出しとの競合で重複通知が送られるのを防ぐ
                 cur.execute(
                     """
-                        SELECT r.id, r.user_id
-                        FROM reservations r
-                        WHERE r.status = %s
-                        ORDER BY r.id ASC
-                        LIMIT %s
+                        UPDATE reservations
+                        SET status = %s, called_at = CURRENT_TIMESTAMP
+                        WHERE id IN (
+                            SELECT id FROM reservations
+                            WHERE status = %s
+                            ORDER BY id ASC
+                            FOR UPDATE SKIP LOCKED
+                            LIMIT %s
+                        )
+                        RETURNING id, user_id
                     """,
-                    (STATUS_WAITING, auto_call_count),
+                    (STATUS_CALLED, STATUS_WAITING, auto_call_count),
                 )
                 auto_rows = cur.fetchall()
+                conn.commit()
 
     sent_ids = []
     failed_ids = []
@@ -471,14 +478,7 @@ def process_queued_calls(now=None):
             failed_ids.append(res_id)
             app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
 
-    if sent_ids:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP WHERE id = ANY(%s) AND status = %s",
-                    (STATUS_CALLED, sent_ids, STATUS_WAITING),
-                )
-                conn.commit()
+    # 選択時点で状態を既に更新しているため、ここで再度更新する必要はない
 
     previous_summary = runtime_settings["latest_auto_call"]
     settings_to_save = {
