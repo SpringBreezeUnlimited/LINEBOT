@@ -1,4 +1,19 @@
 const themeStorageKey = 'espresso-theme';
+const themeToggleButtons = Array.from(document.querySelectorAll('[data-theme-toggle]'));
+
+function createThemeToggleContent(button, iconPath, label) {
+    const img = document.createElement('img');
+    img.src = iconPath;
+    img.alt = '';
+    img.setAttribute('aria-hidden', 'true');
+    img.className = 'theme-mode-icon';
+
+    const text = document.createElement('span');
+    text.className = 'theme-mode-label';
+    text.textContent = label;
+
+    button.replaceChildren(img, text);
+}
 
 function readStoredTheme() {
     try {
@@ -33,14 +48,14 @@ function getPreferredTheme() {
 
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+    themeToggleButtons.forEach((button) => {
         const isDark = theme === 'dark';
         button.setAttribute('aria-pressed', isDark ? 'true' : 'false');
         const darkIconPath = button.dataset.themeToggleDarkIcon || '/static/img/luna.svg';
         const lightIconPath = button.dataset.themeToggleLightIcon || '/static/img/helios.svg';
         const iconPath = isDark ? darkIconPath : lightIconPath;
         const label = isDark ? 'ダーク' : 'ライト';
-        button.innerHTML = `<img src="${iconPath}" alt="" aria-hidden="true" class="theme-mode-icon"><span class="theme-mode-label">${label}</span>`;
+        createThemeToggleContent(button, iconPath, label);
         button.disabled = false;
     });
 }
@@ -48,7 +63,7 @@ function applyTheme(theme) {
 function initializeThemeToggle() {
     const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
     applyTheme(getPreferredTheme());
-    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+    themeToggleButtons.forEach((button) => {
         button.addEventListener('click', () => {
             const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
             const nextTheme = current === 'dark' ? 'light' : 'dark';
