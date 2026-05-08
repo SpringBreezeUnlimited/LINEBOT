@@ -118,7 +118,7 @@ function buildStatusCell(row) {
         badge.textContent = '呼出中';
     } else {
         badge.className = 'badge bg-success';
-        badge.textContent = '到着済み';
+        badge.textContent = '確認完了';
     }
     td.appendChild(badge);
     return td;
@@ -139,11 +139,6 @@ function buildActionCell(row) {
         form.appendChild(button);
         td.appendChild(form);
     } else if (row.status === 'called') {
-        const span = document.createElement('span');
-        span.className = 'text-muted small';
-        span.textContent = '到着待ち';
-        td.appendChild(span);
-    } else {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = `/admin/finish/${row.id}`;
@@ -155,6 +150,11 @@ function buildActionCell(row) {
         form.appendChild(createCsrfInput());
         form.appendChild(button);
         td.appendChild(form);
+    } else {
+        const span = document.createElement('span');
+        span.className = 'text-muted small';
+        span.textContent = '確認完了';
+        td.appendChild(span);
     }
     return td;
 }

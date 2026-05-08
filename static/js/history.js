@@ -50,7 +50,7 @@ function getHistoryStatusMarkup(status) {
         return span;
     }
     span.classList.add('bg-success');
-    span.textContent = '到着済み';
+    span.textContent = '呼出中';
     return span;
 }
 

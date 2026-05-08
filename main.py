@@ -83,8 +83,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.93"
-APP_RELEASED_AT = "2026-05-06 00:00 JST"
+APP_VERSION = "v1.0.95"
+APP_RELEASED_AT = "2026-05-08 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -138,7 +138,6 @@ handler = WebhookHandler(CHANNEL_SECRET)
 
 STATUS_WAITING = "waiting"
 STATUS_CALLED = "called"
-STATUS_ARRIVED = "arrived"
 STATUS_DONE = "done"
 STATUS_CANCELLED = "cancelled"
 
@@ -383,7 +382,7 @@ def build_call_message(reservation_id: int, called_at=None) -> str:
     timeout_label = timeout_at.strftime("%H:%M")
     return (
         f"【順番が来ました】番号 {reservation_id} 番の方、会場へお越しください！"
-        f"\n{CALL_TIMEOUT_MINUTES}分以内（{timeout_label}まで）に「到着」と送信してください。"
+        f"\n{CALL_TIMEOUT_MINUTES}分以内（{timeout_label}まで）にお越しください。"
         "\n時間を過ぎると自動でキャンセルされます。"
     )
 
@@ -631,10 +630,6 @@ def ensure_reservations_table():
             """)
             cur.execute("""
                 ALTER TABLE reservations
-                ADD COLUMN IF NOT EXISTS arrived_at TIMESTAMP
-            """)
-            cur.execute("""
-                ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP
             """)
             cur.execute("""
@@ -661,7 +656,7 @@ def ensure_reservations_table():
                 """
                     CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active
                     ON reservations (user_id)
-                    WHERE status IN ('waiting', 'called', 'arrived')
+                    WHERE status IN ('waiting', 'called')
                 """
             )
             conn.commit()
@@ -1339,12 +1334,12 @@ def fetch_type_counts(cur, owner_admin_id: int):
             SELECT t.name, COUNT(*)
             FROM reservations r
             JOIN reservation_types t ON r.type_id = t.id
-            WHERE r.status IN (%s, %s, %s)
+                        WHERE r.status IN (%s, %s)
               AND t.owner_admin_id = %s
             GROUP BY t.name
             ORDER BY COUNT(*) DESC, t.name ASC
         """,
-        (STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED, owner_admin_id),
+        (STATUS_WAITING, STATUS_CALLED, owner_admin_id),
     )
     return cur.fetchall()
 
@@ -1354,8 +1349,8 @@ def serialize_type_counts(rows):
 
 
 def get_active_rows(cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"):
-    params = [STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED]
-    where = "WHERE r.status IN (%s, %s, %s) AND t.owner_admin_id = %s"
+    params = [STATUS_WAITING, STATUS_CALLED]
+    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
     params.append(owner_admin_id)
     if current_type_id is not None:
         where += " AND r.type_id = %s"
@@ -1842,10 +1837,8 @@ def admin_history():
                 sort_by = "id"
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
-            params = []
-            where = "WHERE r.status IN (%s, %s, %s) AND t.owner_admin_id = %s"
-            params.extend([STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED])
-            params.append(current_admin_account_id)
+            params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
+            where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
@@ -1854,7 +1847,7 @@ def admin_history():
                 "status": "r.status",
                 "type": "t.name",
                 "created_at": "r.created_at",
-                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
+                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.called_at)))"
             }
             order_by = order_map[sort_by]
             cur.execute(f"""
@@ -1864,9 +1857,9 @@ def admin_history():
                     t.name,
                     t.id,
                     r.created_at,
-                    r.arrived_at,
+                    r.called_at,
                     r.completed_at,
-                    EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
+                    EXTRACT(EPOCH FROM (r.completed_at - r.called_at)) AS service_duration_seconds
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
@@ -1918,9 +1911,8 @@ def admin_history_export():
     if sort_order not in ("asc", "desc"):
         sort_order = "desc"
 
-    params = [STATUS_DONE, STATUS_CANCELLED, STATUS_ARRIVED]
-    where = "WHERE r.status IN (%s, %s, %s) AND t.owner_admin_id = %s"
-    params.append(current_admin_account_id)
+    params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
+    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
@@ -1929,7 +1921,7 @@ def admin_history_export():
         "status": "r.status",
         "type": "t.name",
         "created_at": "r.created_at",
-        "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)))"
+        "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.called_at)))"
     }
 
     def generate_csv():
@@ -1941,12 +1933,10 @@ def admin_history_export():
             "状態",
             "受付時刻",
             "呼出時刻",
-            "到着時刻",
             "完了時刻",
             "受付から呼出",
-            "受付から到着",
             "受付から完了",
-            "到着から完了",
+            "呼出から完了",
         ])
         yield output.getvalue()
         output.seek(0)
@@ -1965,12 +1955,10 @@ def admin_history_export():
                             r.status,
                             r.created_at,
                             r.called_at,
-                            r.arrived_at,
                             r.completed_at,
                             EXTRACT(EPOCH FROM (r.called_at - r.created_at)) AS call_duration_seconds,
-                            EXTRACT(EPOCH FROM (r.arrived_at - r.created_at)) AS arrival_wait_seconds,
                             EXTRACT(EPOCH FROM (r.completed_at - r.created_at)) AS completion_wait_seconds,
-                            EXTRACT(EPOCH FROM (r.completed_at - r.arrived_at)) AS service_duration_seconds
+                            EXTRACT(EPOCH FROM (r.completed_at - r.called_at)) AS service_duration_seconds
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         {where}
@@ -1986,11 +1974,9 @@ def admin_history_export():
                         format_dt(row[3]),
                         format_dt(row[4]),
                         format_dt(row[5]),
-                        format_dt(row[6]),
+                        format_duration_from_seconds(row[6]) or "-",
                         format_duration_from_seconds(row[7]) or "-",
                         format_duration_from_seconds(row[8]) or "-",
-                        format_duration_from_seconds(row[9]) or "-",
-                        format_duration_from_seconds(row[10]) or "-",
                     ])
                     yield output.getvalue()
                     output.seek(0)
@@ -2071,7 +2057,7 @@ def admin_finish(res_id):
                       )
                     RETURNING id
                 """,
-                (STATUS_DONE, res_id, STATUS_ARRIVED, current_admin_account_id),
+                (STATUS_DONE, res_id, STATUS_CALLED, current_admin_account_id),
             )
             if not cur.fetchone():
                 abort(404)
@@ -2141,7 +2127,7 @@ def process_reservation(event, user_id, user_message):
     if not normalized:
         send_reply_message(
             event.reply_token,
-            "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」、待ち時間は「待ち時間」と送信してください。",
+            "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。",
         )
         return
     if len(normalized) > MAX_USER_MESSAGE_CHARS:
@@ -2207,10 +2193,10 @@ def process_reservation(event, user_id, user_message):
                         SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
-                        WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
+                        WHERE r.user_id = %s AND r.status IN (%s, %s)
                         ORDER BY r.id DESC LIMIT 1
                     """,
-                    (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED)
+                    (user_id, STATUS_WAITING, STATUS_CALLED)
                 )
                 existing = cur.fetchone()
                 if existing:
@@ -2231,11 +2217,6 @@ def process_reservation(event, user_id, user_message):
                             reply = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
                         else:
                             reply = f"【呼出中】番号: {res_id} 会場へお越しください！"
-                    else:
-                        if existing_type_name:
-                            reply = f"到着受付済みです。番号: {res_id} / 種類: {existing_type_name} / スタッフが確認します。"
-                        else:
-                            reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
                 else:
                     if type_owner_admin_id:
                         start_minute, end_minute = get_admin_reservation_window(type_owner_admin_id, cur=cur)
@@ -2260,10 +2241,10 @@ def process_reservation(event, user_id, user_message):
                                 SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
                                 FROM reservations r
                                 LEFT JOIN reservation_types t ON r.type_id = t.id
-                                WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
+                                WHERE r.user_id = %s AND r.status IN (%s, %s)
                                 ORDER BY r.id DESC LIMIT 1
                             """,
-                            (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
+                            (user_id, STATUS_WAITING, STATUS_CALLED),
                         )
                         existing_after_conflict = cur.fetchone()
                         if existing_after_conflict:
@@ -2287,11 +2268,6 @@ def process_reservation(event, user_id, user_message):
                                     reply = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
                                 else:
                                     reply = f"【呼出中】番号: {res_id} 会場へお越しください！"
-                            else:
-                                if existing_type_name:
-                                    reply = f"到着受付済みです。番号: {res_id} / 種類: {existing_type_name} / スタッフが確認します。"
-                                else:
-                                    reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
                             send_reply_message(event.reply_token, reply)
                             return
                         raise
@@ -2316,12 +2292,12 @@ def process_reservation(event, user_id, user_message):
                         UPDATE reservations SET status = %s
                         WHERE id = (
                             SELECT id FROM reservations
-                            WHERE user_id = %s AND status IN (%s, %s, %s)
+                            WHERE user_id = %s AND status IN (%s, %s)
                             ORDER BY id DESC LIMIT 1
                         )
                         RETURNING id
                     """,
-                    (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED)
+                    (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED)
                 )
                 cancelled = cur.fetchone()
                 if cancelled:
@@ -2329,58 +2305,23 @@ def process_reservation(event, user_id, user_message):
                     reply = f"予約番号 {cancelled[0]} をキャンセルしました。"
                 else:
                     reply = "キャンセル対象の予約はありません。"
-            elif normalized == '到着':
-                cur.execute(
-                    """
-                        SELECT id, status, arrived_at FROM reservations
-                        WHERE user_id = %s AND status IN (%s, %s, %s)
-                        ORDER BY id DESC LIMIT 1
-                    """,
-                    (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED)
-                )
-                existing = cur.fetchone()
-                if not existing:
-                    reply = "到着の対象となる予約がありません。"
-                else:
-                    res_id, status, arrived_at = existing
-                    if status == STATUS_WAITING:
-                        reply = "まだ呼出されていません。呼出後に「到着」と送信してください。"
-                    elif status == STATUS_ARRIVED:
-                        ts = format_dt(arrived_at)
-                        if ts:
-                            reply = f"既に到着済みです。番号: {res_id} / 到着時刻: {ts}"
-                        else:
-                            reply = f"既に到着済みです。番号: {res_id}"
-                    else:
-                        # 状態が called の場合のみ到着時刻を設定する（再送による上書きを防止）
-                        cur.execute(
-                            "UPDATE reservations SET status = %s, arrived_at = CURRENT_TIMESTAMP WHERE id = %s",
-                            (STATUS_ARRIVED, res_id),
-                        )
-                        conn.commit()
-                        reply = f"到着を受け付けました。番号: {res_id} / スタッフが確認します。"
             elif normalized == '待ち時間':
                 cur.execute(
                     """
                         SELECT r.id, r.status, t.name, t.owner_admin_id
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
-                        WHERE r.user_id = %s AND r.status IN (%s, %s, %s)
+                        WHERE r.user_id = %s AND r.status IN (%s, %s)
                         ORDER BY r.id DESC LIMIT 1
                     """,
-                    (user_id, STATUS_WAITING, STATUS_CALLED, STATUS_ARRIVED),
+                    (user_id, STATUS_WAITING, STATUS_CALLED),
                 )
                 existing = cur.fetchone()
                 if not existing:
                     reply = "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。"
                 else:
                     res_id, status, type_name, owner_admin_id = existing
-                    if status != STATUS_WAITING:
-                        if status == STATUS_CALLED:
-                            reply = f"【呼出中】番号: {res_id} です。会場へお越しください。"
-                        else:
-                            reply = f"到着受付済みです。番号: {res_id} / スタッフが確認します。"
-                    else:
+                    if status == STATUS_WAITING:
                         if owner_admin_id is not None:
                             waiting_people_ahead = count_waiting_people_ahead_by_owner(
                                 cur,
@@ -2404,8 +2345,10 @@ def process_reservation(event, user_id, user_message):
                                 f"番号: {res_id} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
+                    else:
+                        reply = f"【呼出中】番号: {res_id} です。会場へお越しください。"
             else:
-                reply = "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、到着は「到着」、待ち時間は「待ち時間」と送信してください。"
+                reply = "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。"
     send_reply_message(event.reply_token, reply)
 
 if __name__ == "__main__":

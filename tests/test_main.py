@@ -82,7 +82,7 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
         for query in normalized_queries
     )
     assert any(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active ON reservations (user_id) WHERE status IN ('waiting', 'called', 'arrived')" in query
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active ON reservations (user_id) WHERE status IN ('waiting', 'called')" in query
         for query in normalized_queries
     )
 
@@ -1284,12 +1284,10 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
                     app_module.STATUS_DONE,
                     datetime(2026, 4, 20, 2, 15, tzinfo=ZoneInfo("UTC")),
                     datetime(2026, 4, 20, 2, 25, tzinfo=ZoneInfo("UTC")),
-                    datetime(2026, 4, 20, 2, 40, tzinfo=ZoneInfo("UTC")),
                     datetime(2026, 4, 20, 3, 0, tzinfo=ZoneInfo("UTC")),
                     600,
-                    1500,
-                    2700,
-                    2100,
+                        2700,
+                        2100,
                 )
             ]
 
@@ -1328,12 +1326,10 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "状態",
         "受付時刻",
         "呼出時刻",
-        "到着時刻",
         "完了時刻",
         "受付から呼出",
-        "受付から到着",
         "受付から完了",
-        "到着から完了",
+        "呼出から完了",
     ]
     assert rows[1] == [
         "12",
@@ -1341,10 +1337,8 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         app_module.STATUS_DONE,
         "04-20 11:15",
         "04-20 11:25",
-        "04-20 11:40",
         "04-20 12:00",
         "10分0秒",
-        "25分0秒",
         "45分0秒",
         "35分0秒",
     ]
@@ -1415,8 +1409,6 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
         "04-21 09:00",
         "",
         "",
-        "",
-        "-",
         "-",
         "-",
         "-",
@@ -1463,4 +1455,4 @@ def test_admin_history_export_invalid_query_params_fall_back_to_defaults(app_mod
     assert calls
     query, params = calls[0]
     assert "ORDER BY r.id DESC, r.id DESC" in query
-    assert params == [app_module.STATUS_DONE, app_module.STATUS_CANCELLED, app_module.STATUS_ARRIVED, 7]
+    assert params == [app_module.STATUS_DONE, app_module.STATUS_CANCELLED, 7]

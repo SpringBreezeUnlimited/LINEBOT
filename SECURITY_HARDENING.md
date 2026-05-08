@@ -21,7 +21,7 @@
 - Input validation for reservation type names and message length limits.
 - Admin state-transition validation:
   - `call` only from `waiting`
-  - `finish` only from `arrived`
+  - `finish` only from `called`
 
 ## Required operational controls (outside app code)
 - Always terminate TLS with valid certificates and disable insecure protocols/ciphers.
