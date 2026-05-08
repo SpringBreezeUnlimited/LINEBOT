@@ -118,6 +118,7 @@
             <a
                 href="{{ url_for('admin_history', page=page - 1, type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}"
                 class="btn btn-secondary"
+                data-history-page="{{ page - 1 }}"
             >
                 前へ
             </a>
@@ -127,6 +128,7 @@
             <a
                 href="{{ url_for('admin_history', page=page + 1, type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}"
                 class="btn btn-secondary"
+                data-history-page="{{ page + 1 }}"
             >
                 次へ
             </a>

@@ -361,10 +361,9 @@ def count_waiting_people_ahead_by_owner(cur, reservation_id: int, owner_admin_id
         """
             SELECT COUNT(*)
             FROM reservations r
-            JOIN reservation_types t ON r.type_id = t.id
             WHERE r.status = %s
               AND r.id < %s
-              AND t.owner_admin_id = %s
+              AND r.owner_admin_id = %s
         """,
         (STATUS_WAITING, reservation_id, owner_admin_id),
     )
@@ -423,6 +422,26 @@ def expire_called_reservations() -> int:
         return 0
 
 
+def rollback_failed_auto_calls(reservation_ids):
+    if not reservation_ids:
+        return
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        UPDATE reservations
+                        SET status = %s, called_at = NULL
+                        WHERE status = %s
+                          AND id = ANY(%s)
+                    """,
+                    (STATUS_WAITING, STATUS_CALLED, list(reservation_ids)),
+                )
+                conn.commit()
+    except Exception:
+        app.logger.exception("Failed to rollback auto call reservations")
+
+
 def process_queued_calls(now=None):
     # 日本時間で現在時刻を取得
     current_dt = datetime.now(JST) if now is None else now
@@ -476,6 +495,8 @@ def process_queued_calls(now=None):
         except Exception:
             failed_ids.append(res_id)
             app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
+
+    rollback_failed_auto_calls(failed_ids)
 
     # 選択時点で状態を既に更新しているため、ここで再度更新する必要はない
 
@@ -532,8 +553,7 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
                         """
                             SELECT COUNT(*)
                             FROM reservations r
-                            JOIN reservation_types t ON r.type_id = t.id
-                            WHERE r.status = %s AND t.owner_admin_id = %s
+                            WHERE r.status = %s AND r.owner_admin_id = %s
                         """,
                         (STATUS_WAITING, owner_admin_id),
                     )
@@ -622,6 +642,10 @@ def ensure_reservations_table():
             """)
             cur.execute("""
                 ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS owner_admin_id INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             """)
             cur.execute("""
@@ -647,6 +671,10 @@ def ensure_reservations_table():
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_reservations_status_type_id_id
                 ON reservations (status, type_id, id)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_owner_status_id
+                ON reservations (owner_admin_id, status, id)
             """)
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_reservations_status_created_at_id
@@ -1162,6 +1190,15 @@ def ensure_types_table():
                     "UPDATE reservation_types SET owner_admin_id = %s WHERE owner_admin_id IS NULL",
                     (admin_row[0],),
                 )
+            cur.execute(
+                """
+                    UPDATE reservations r
+                    SET owner_admin_id = t.owner_admin_id
+                    FROM reservation_types t
+                    WHERE r.owner_admin_id IS NULL
+                      AND r.type_id = t.id
+                """
+            )
             conn.commit()
 
 def ensure_settings_table():
@@ -1331,13 +1368,13 @@ def serialize_active_rows(rows):
 def fetch_type_counts(cur, owner_admin_id: int):
     cur.execute(
         """
-            SELECT t.name, COUNT(*)
+            SELECT COALESCE(t.name, '未設定') AS type_name, COUNT(*)
             FROM reservations r
-            JOIN reservation_types t ON r.type_id = t.id
-                        WHERE r.status IN (%s, %s)
-              AND t.owner_admin_id = %s
-            GROUP BY t.name
-            ORDER BY COUNT(*) DESC, t.name ASC
+            LEFT JOIN reservation_types t ON r.type_id = t.id
+            WHERE r.status IN (%s, %s)
+              AND r.owner_admin_id = %s
+            GROUP BY type_name
+            ORDER BY COUNT(*) DESC, type_name ASC
         """,
         (STATUS_WAITING, STATUS_CALLED, owner_admin_id),
     )
@@ -1350,7 +1387,7 @@ def serialize_type_counts(rows):
 
 def get_active_rows(cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"):
     params = [STATUS_WAITING, STATUS_CALLED]
-    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+    where = "WHERE r.status IN (%s, %s) AND r.owner_admin_id = %s"
     params.append(owner_admin_id)
     if current_type_id is not None:
         where += " AND r.type_id = %s"
@@ -1838,7 +1875,7 @@ def admin_history():
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
             params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-            where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+            where = "WHERE r.status IN (%s, %s) AND r.owner_admin_id = %s"
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
@@ -1912,7 +1949,7 @@ def admin_history_export():
         sort_order = "desc"
 
     params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+    where = "WHERE r.status IN (%s, %s) AND r.owner_admin_id = %s"
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
@@ -2008,9 +2045,7 @@ def admin_call(res_id):
                     SET status = %s, called_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                       AND status = %s
-                      AND type_id IN (
-                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
-                      )
+                      AND owner_admin_id = %s
                     RETURNING user_id
                 """,
                 (STATUS_CALLED, res_id, STATUS_WAITING, current_admin_account_id),
@@ -2052,9 +2087,7 @@ def admin_finish(res_id):
                     SET status = %s, completed_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                       AND status = %s
-                      AND type_id IN (
-                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
-                      )
+                      AND owner_admin_id = %s
                     RETURNING id
                 """,
                 (STATUS_DONE, res_id, STATUS_CALLED, current_admin_account_id),
@@ -2190,7 +2223,7 @@ def process_reservation(event, user_id, user_message):
 
                 cur.execute(
                     """
-                        SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                        SELECT r.id, r.status, r.type_id, t.name, r.owner_admin_id
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -2230,15 +2263,19 @@ def process_reservation(event, user_id, user_message):
                                 return
                     try:
                         cur.execute(
-                            "INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id",
-                            (user_id, "", type_id),
+                            """
+                                INSERT INTO reservations (user_id, message, type_id, owner_admin_id)
+                                VALUES (%s, %s, %s, %s)
+                                RETURNING id
+                            """,
+                            (user_id, "", type_id, type_owner_admin_id),
                         )
                         new_id = cur.fetchone()[0]
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         cur.execute(
                             """
-                                SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                                SELECT r.id, r.status, r.type_id, t.name, r.owner_admin_id
                                 FROM reservations r
                                 LEFT JOIN reservation_types t ON r.type_id = t.id
                                 WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -2308,7 +2345,7 @@ def process_reservation(event, user_id, user_message):
             elif normalized == '待ち時間':
                 cur.execute(
                     """
-                        SELECT r.id, r.status, t.name, t.owner_admin_id
+                        SELECT r.id, r.status, t.name, r.owner_admin_id
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
