@@ -978,9 +978,9 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
                 self._last = (None, None)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "INSERT INTO reservations (user_id, message, type_id, owner_admin_id)" in query:
                 self._last = (10,)
-            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+            elif "FROM reservations r" in query and "r.id < %s" in query and "owner_admin_id" in query:
                 self._last = (2,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -1095,7 +1095,7 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
         def execute(self, query, params=None):
             if "FROM reservations r" in query and "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = (12, app_module.STATUS_WAITING, "相談", 7)
-            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+            elif "FROM reservations r" in query and "r.id < %s" in query and "owner_admin_id" in query:
                 self._last = (3,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
