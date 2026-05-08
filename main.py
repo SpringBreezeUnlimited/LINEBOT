@@ -1373,8 +1373,8 @@ def fetch_type_counts(cur, owner_admin_id: int):
             LEFT JOIN reservation_types t ON r.type_id = t.id
             WHERE r.status IN (%s, %s)
               AND r.owner_admin_id = %s
-            GROUP BY type_name
-            ORDER BY COUNT(*) DESC, type_name ASC
+            GROUP BY COALESCE(t.name, '未設定')
+            ORDER BY COUNT(*) DESC, COALESCE(t.name, '未設定') ASC
         """,
         (STATUS_WAITING, STATUS_CALLED, owner_admin_id),
     )

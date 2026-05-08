@@ -122,10 +122,10 @@ function updateHistoryPaginationLinks(params) {
     const links = document.querySelectorAll('a[data-history-page]');
     if (!links.length) return;
     links.forEach((link) => {
-        const page = link.dataset.historyPage;
-        if (!page) return;
+        const page = Number.parseInt(link.dataset.historyPage || '', 10);
+        if (!Number.isFinite(page)) return;
         const nextParams = new URLSearchParams(params.toString());
-        nextParams.set('page', page);
+        nextParams.set('page', String(page));
         link.href = `/admin/history?${nextParams.toString()}`;
     });
 }
