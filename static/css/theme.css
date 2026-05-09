@@ -203,3 +203,21 @@ html[data-theme="dark"] .site-footer a {
     letter-spacing: 0.02em;
 }
 
+.responsive-label-full {
+    display: inline;
+}
+
+.responsive-label-short {
+    display: none;
+}
+
+@media (max-width: 576px) {
+    .responsive-label-full {
+        display: none;
+    }
+
+    .responsive-label-short {
+        display: inline;
+    }
+}
+

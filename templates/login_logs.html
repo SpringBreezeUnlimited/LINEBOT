@@ -9,7 +9,10 @@
 {% block navbar %}
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
-        <span class="navbar-brand">Espresso ログイン履歴</span>
+        <span class="navbar-brand">
+            <span class="responsive-label-full">Espresso ログイン履歴</span>
+            <span class="responsive-label-short">ログイン履歴</span>
+        </span>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
             <form method="POST" action="/logout" class="mb-0">
