@@ -30,6 +30,11 @@ html[data-theme="dark"] body {
         var(--color-bg);
 }
 
+html {
+    /* スクロールバー有無でレイアウトが左右に揺れないようにする */
+    scrollbar-gutter: stable both-edges;
+}
+
 html[data-theme="dark"] .form-control,
 html[data-theme="dark"] .form-select {
     color: var(--color-text);
@@ -184,6 +189,8 @@ html[data-theme="dark"] .site-footer a {
 }
 
 .navbar .container {
+    width: min(100% - 32px, 1200px);
+    margin: 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
