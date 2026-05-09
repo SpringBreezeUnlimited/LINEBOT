@@ -173,3 +173,26 @@ html[data-theme="dark"] .site-footer a {
         width: calc(100% - 24px);
     }
 }
+
+/* 共通ヘッダースタイル: テンプレートごとの差分を統一するためにここで定義します */
+.navbar {
+    margin-bottom: var(--space-6);
+    padding: var(--space-4) 0;
+    color: #fff;
+    background: var(--color-nav);
+    box-shadow: var(--shadow-1);
+}
+
+.navbar .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.navbar-brand {
+    font-size: 1.125rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
