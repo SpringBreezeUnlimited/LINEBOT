@@ -536,10 +536,6 @@ select {
 }
 
 @media (min-width: 760px) {
-    .col-sm-6 {
-        width: calc(50% - 8px);
-    }
-
     .flex-sm-row {
         flex-direction: row;
     }
