@@ -1984,7 +1984,7 @@ def admin_history_export():
         finally:
             connection.close()
 
-    filename = f"espresso-history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"history-{time.strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
         stream_with_context(generate_csv()),
         mimetype="text/csv; charset=utf-8",

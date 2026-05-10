@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}ログイン - Espresso{% endblock %}
+{% block title %}ログイン{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
@@ -20,7 +20,7 @@
     <div class="card shadow">
         <div class="card-body">
             <h3 class="text-center mb-4">
-                <span class="responsive-label-full">Espresso 管理者ログイン</span>
+                <span class="responsive-label-full">管理者ログイン</span>
                 <span class="responsive-label-short">管理者ログイン</span>
             </h3>
             {% if error %}
