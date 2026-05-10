@@ -222,13 +222,13 @@ html[data-theme="dark"] .site-footer a {
 }
 
 body.sidebar-layout {
-    padding-left: 280px;
+    padding-left: 240px;
 }
 
 body.sidebar-layout .navbar {
     position: fixed;
     inset: 0 auto 0 0;
-    width: 280px;
+    width: 240px;
     margin-bottom: 0;
     padding: var(--space-5) var(--space-4);
     z-index: 1030;
