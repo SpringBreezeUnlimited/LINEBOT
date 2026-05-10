@@ -1,0 +1,82 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: 管理パネル
+      - generic [ref=e5]:
+        - button "ライト" [ref=e6] [cursor=pointer]:
+          - img [ref=e7]
+          - generic [ref=e8]: ライト
+        - link "種類" [ref=e9] [cursor=pointer]:
+          - /url: /admin/types
+          - img [ref=e10]
+          - generic [ref=e11]: 種類
+        - link "過去ログ" [ref=e12] [cursor=pointer]:
+          - /url: /admin/history
+          - img [ref=e13]
+          - generic [ref=e14]: ログ
+          - generic [ref=e15]: 過去ログ
+        - button "ログアウト" [ref=e17] [cursor=pointer]
+        - link "お問い合わせ" [ref=e18] [cursor=pointer]:
+          - /url: https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform
+  - generic [ref=e19]:
+    - generic [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - generic [ref=e24]: 種類で絞り込み
+          - combobox [ref=e25]:
+            - option "すべて" [selected]
+        - generic [ref=e26]:
+          - generic [ref=e27]: 並べ替え
+          - combobox [ref=e28]:
+            - option "番号" [selected]
+            - option "状態"
+            - option "種類"
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: 新規受付
+          - button "受付中（停止する）" [ref=e33] [cursor=pointer]
+        - generic [ref=e34]:
+          - generic [ref=e35]: 5分ごとの自動呼出人数
+          - generic [ref=e36]:
+            - spinbutton [ref=e37]: "0"
+            - button "保存" [ref=e38] [cursor=pointer]
+          - paragraph [ref=e39]: 0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。
+      - generic [ref=e40]:
+        - generic [ref=e41]:
+          - generic [ref=e42]: 待機数（種類別）
+          - generic [ref=e44]: "sano: 1"
+        - generic [ref=e45]:
+          - generic [ref=e46]: 前回の自動呼出
+          - generic [ref=e47]: "前回: 05-08 20:00 / 選択 0人 / 呼出 0人 / 失敗 0人"
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]: リスト最終更新
+        - generic [ref=e51]: 05/10 22:40:09
+      - table [ref=e53]:
+        - rowgroup [ref=e54]:
+          - row "番号 受付時刻 種類 状態 操作" [ref=e55]:
+            - columnheader "番号" [ref=e56]
+            - columnheader "受付時刻" [ref=e57]
+            - columnheader "種類" [ref=e58]
+            - columnheader "状態" [ref=e59]
+            - columnheader "操作" [ref=e60]
+        - rowgroup [ref=e61]:
+          - row "1 05-10 21:46 sano 待機中 呼出" [ref=e62]:
+            - cell "1" [ref=e63]
+            - cell "05-10 21:46" [ref=e64]
+            - cell "sano" [ref=e65]
+            - cell "待機中" [ref=e66]:
+              - generic [ref=e67]: 待機中
+            - cell "呼出" [ref=e68]:
+              - button "呼出" [ref=e70] [cursor=pointer]
+    - link "リストを更新" [ref=e72] [cursor=pointer]:
+      - /url: /admin
+    - button "バージョン非表示" [expanded] [ref=e73] [cursor=pointer]
+    - generic [ref=e74]:
+      - generic [ref=e75]: "Version: v1.0.100"
+      - generic [ref=e76]: "Released: 2026-05-09 00:00 JST"
+  - contentinfo [ref=e77]:
+    - generic [ref=e79]:
+      - link "「イラストレーション・アイコン素材」（デジタル庁）" [ref=e80] [cursor=pointer]:
+        - /url: https://www.digital.go.jp/policies/servicedesign/designsystem/Illustration_Icons
+      - text: を元に、アイコン素材を独自に編集して提供しています。

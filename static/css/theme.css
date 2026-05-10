@@ -269,6 +269,15 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
         padding-bottom: var(--space-3);
     }
 
+    body.sidebar-layout {
+        padding-left: 150px !important;
+    }
+
+    body.sidebar-layout .navbar {
+        width: 150px !important;
+        padding: var(--space-4) var(--space-3);
+    }
+
     body.sidebar-layout .sidebar-nav-actions {
         gap: var(--space-1);
     }
