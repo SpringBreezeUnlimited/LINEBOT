@@ -6,6 +6,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/types.css') }}">
 {% endblock %}
 
+{% block body_class %}bg-light sidebar-layout{% endblock %}
+
 {% block navbar %}
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
@@ -13,7 +15,7 @@
             <span class="responsive-label-full">Espresso 予約種類管理</span>
             <span class="responsive-label-short">予約種類管理</span>
         </span>
-        <div class="d-flex gap-2">
+        <div class="sidebar-nav-actions d-flex gap-2">
             <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
             <a href="/admin" class="btn btn-outline-light btn-sm">管理画面</a>
             <a href="/admin/history" class="btn btn-outline-light btn-sm" aria-label="過去ログ" title="過去ログ">

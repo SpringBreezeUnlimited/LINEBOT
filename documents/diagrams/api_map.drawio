@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-10T00:00:00.000Z" agent="GitHubCopilot/1.0">
+  <diagram id="api-1" name="API Map">
+    <mxGraphModel dx="1200" dy="800">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="p1" value="POST /callback\n署名検証、イベント処理" style="rounded=1;fillColor=#FFE6CC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="p2" value="GET /admin/data\n管理一覧 JSON" style="rounded=1;fillColor=#E6F7FF;" vertex="1" parent="1">
+          <mxGeometry x="300" y="40" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="p3" value="POST /admin/call/<res_id>\n呼出処理" style="rounded=1;fillColor=#F0E6FF;" vertex="1" parent="1">
+          <mxGeometry x="560" y="40" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="p4" value="POST /tasks/process-call-queue\nバッチ呼出" style="rounded=1;fillColor=#FFF2E6;" vertex="1" parent="1">
+          <mxGeometry x="300" y="160" width="220" height="80" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

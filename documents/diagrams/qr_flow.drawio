@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-10T00:00:00.000Z" agent="GitHubCopilot/1.0">
+  <diagram id="qr-1" name="QR Flow">
+    <mxGraphModel dx="1000" dy="600">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="s1" value="カメラ/画像" style="rounded=1;fillColor=#FFF2CC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2" value="QR デコーダ" style="rounded=1;fillColor=#E2F0CB;" vertex="1" parent="1">
+          <mxGeometry x="220" y="60" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3" value="予約検索" style="rounded=1;fillColor=#D9E1F2;" vertex="1" parent="1">
+          <mxGeometry x="400" y="60" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="s4" value="結果表示 / 履歴" style="rounded=1;fillColor=#FFD1DC;" vertex="1" parent="1">
+          <mxGeometry x="580" y="60" width="160" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="s1" target="s2" style="endArrow=block;"/>
+        <mxCell id="e2" edge="1" parent="1" source="s2" target="s3" style="endArrow=block;"/>
+        <mxCell id="e3" edge="1" parent="1" source="s3" target="s4" style="endArrow=block;"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

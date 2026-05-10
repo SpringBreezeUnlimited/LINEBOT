@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-10T00:00:00.000Z" agent="GitHubCopilot/1.0">
+  <diagram id="seq-1" name="Reservation Sequence">
+    <mxGraphModel dx="1200" dy="600">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="a1" value="User (LINE)" style="rounded=1;fillColor=#ffffff;strokeColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="120" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2" value="LINE Platform" style="rounded=1;fillColor=#F7DF1E;" vertex="1" parent="1">
+          <mxGeometry x="220" y="40" width="140" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3" value="Webhook (Flask)" style="rounded=1;fillColor=#9FD3C7;" vertex="1" parent="1">
+          <mxGeometry x="420" y="40" width="160" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="a4" value="DB / Notifications" style="rounded=1;fillColor=#FFD1DC;" vertex="1" parent="1">
+          <mxGeometry x="620" y="40" width="160" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1" edge="1" parent="1" source="a1" target="a2" style="endArrow=block;"/>
+        <mxCell id="l2" edge="1" parent="1" source="a2" target="a3" style="endArrow=block;"/>
+        <mxCell id="l3" edge="1" parent="1" source="a3" target="a4" style="endArrow=block;"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

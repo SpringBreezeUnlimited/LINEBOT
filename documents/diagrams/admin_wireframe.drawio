@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-10T00:00:00.000Z" agent="GitHubCopilot/1.0">
+  <diagram id="wf-1" name="Admin Wireframe">
+    <mxGraphModel dx="1200" dy="800">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hdr" value="Header: ロゴ | 管理者メニュー" style="rounded=1;fillColor=#F2F2F2;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="880" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="nav" value="サイドナビ: 種類 / 履歴 / ログ" style="rounded=1;fillColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="20" y="80" width="180" height="560" as="geometry"/>
+        </mxCell>
+        <mxCell id="main" value="メイン: 予約一覧（テーブル）\nフィルタ/自動呼出ボタン" style="rounded=1;fillColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="220" y="80" width="680" height="560" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

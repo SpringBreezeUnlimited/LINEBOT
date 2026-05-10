@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-10T00:00:00.000Z" agent="GitHubCopilot/1.0">
+  <diagram id="er-1" name="DB ER">
+    <mxGraphModel dx="1200" dy="800">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="t1" value="reservations\nid, user_id, message, status, type_id, created_at" style="rounded=0;fillColor=#FFF2CC;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="260" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="t2" value="reservation_types\nid, name, owner_admin_id, accepting" style="rounded=0;fillColor=#E2F0CB;" vertex="1" parent="1">
+          <mxGeometry x="360" y="40" width="260" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="t3" value="admin_accounts\nid, login_id, password_hash, role, active" style="rounded=0;fillColor=#D9E1F2;" vertex="1" parent="1">
+          <mxGeometry x="200" y="200" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="t1" target="t2" style="endArrow=block;"/>
+        <mxCell id="e2" edge="1" parent="1" source="t1" target="t3" style="endArrow=block;dashed=1;"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
