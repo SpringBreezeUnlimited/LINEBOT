@@ -477,7 +477,20 @@ def process_queued_calls(now=None):
             failed_ids.append(res_id)
             app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
 
-    # 選択時点で状態を既に更新しているため、ここで再度更新する必要はない
+    if failed_ids:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        UPDATE reservations
+                        SET status = %s, called_at = NULL
+                        WHERE id = ANY(%s) AND status = %s
+                    """,
+                    (STATUS_WAITING, failed_ids, STATUS_CALLED),
+                )
+                conn.commit()
+
+    # 送信成功分は選択時点で状態を既に更新しているため、ここで再度更新する必要はない
 
     previous_summary = runtime_settings["latest_auto_call"]
     settings_to_save = {

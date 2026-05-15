@@ -957,6 +957,89 @@ def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     assert result["wait_time"]["estimated_seconds"] == 360
 
 
+def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatch):
+    executed = []
+    commits = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            normalized_query = " ".join(query.split())
+            executed.append((normalized_query, params))
+            if "RETURNING id, user_id" in normalized_query:
+                self._rows = [(10, "U-ok"), (11, "U-fail")]
+            else:
+                self._rows = []
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            commits.append(True)
+
+    def fake_send_push(user_id, _text):
+        if user_id == "U-fail":
+            raise RuntimeError("push failed")
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
+    monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 0)
+    monkeypatch.setattr(
+        app_module,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {"message": "現在の目安待ち時間: 2分", "estimated_seconds": 120},
+    )
+    monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 2,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    saved_settings = {}
+    monkeypatch.setattr(app_module, "set_settings", lambda values: saved_settings.update(values))
+    monkeypatch.setattr(app_module, "send_push_message", fake_send_push)
+
+    now = datetime(2026, 4, 16, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    result = app_module.process_queued_calls(now=now)
+
+    assert result["sent_count"] == 1
+    assert result["failed_count"] == 1
+    assert result["failed_ids"] == [11]
+    rollback_queries = [item for item in executed if "called_at = NULL" in item[0]]
+    assert rollback_queries == [(
+        "UPDATE reservations SET status = %s, called_at = NULL WHERE id = ANY(%s) AND status = %s",
+        (app_module.STATUS_WAITING, [11], app_module.STATUS_CALLED),
+    )]
+    assert saved_settings["last_auto_call_failed_count"] == "1"
+    assert len(commits) == 2
+
+
 def test_process_reservation_new_booking_replies_with_latest_wait_time(app_module, monkeypatch):
     queries = []
 
