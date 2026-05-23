@@ -92,10 +92,6 @@ html[data-theme="dark"] .call-notification {
     border-color: #2f674a;
 }
 
-html[data-theme="dark"] .version-toggle {
-    background: var(--color-surface-subtle);
-}
-
 .theme-toggle-wrap {
     position: fixed;
     top: 12px;

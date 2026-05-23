@@ -158,15 +158,6 @@
         </div>
     </div>
 </div>
-<button
-    type="button"
-    class="btn btn-outline-secondary btn-sm version-toggle"
-    data-version-toggle
-    aria-controls="version-badge"
-    aria-expanded="true"
->
-    バージョン非表示
-</button>
 <div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded shadow-sm small version-badge">
     <div>Version: v{{ app_version }}</div>
 </div>
@@ -174,5 +165,4 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
-<script src="{{ url_for('static', filename='js/version-badge-toggle.js') }}" defer></script>
 {% endblock %}

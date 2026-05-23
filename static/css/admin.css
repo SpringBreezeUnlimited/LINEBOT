@@ -500,24 +500,6 @@ select {
     font-weight: 700;
 }
 
-.version-toggle {
-    position: fixed;
-    right: var(--space-4);
-    bottom: 88px;
-    z-index: 1030;
-    background: #fff;
-    transition: opacity 0.18s ease, bottom 0.18s ease, transform 0.18s ease;
-}
-
-.version-toggle-hidden {
-    bottom: var(--space-4);
-    opacity: 0.56;
-}
-
-.version-toggle-hidden:hover {
-    opacity: 0.88;
-}
-
 .auto-call-form {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -577,11 +559,6 @@ select {
         margin: var(--space-4);
     }
 
-    .version-toggle {
-        bottom: 0;
-        margin: 0 var(--space-4) var(--space-4);
-    }
-
     .list-meta {
         justify-content: flex-start;
         padding-right: var(--space-4);
@@ -600,10 +577,6 @@ select {
         white-space: normal;
     }
 
-    .version-toggle {
-        position: static;
-        margin: 0 var(--space-4) var(--space-4);
-    }
 }
 
 @media (max-width: 480px) {
