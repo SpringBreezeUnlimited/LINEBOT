@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}LINE予約{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/liff-reserve.css') }}">
+{% endblock %}
+
+{% block body_attrs %}data-liff-id="{{ liff_id }}"{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="card">
+        <div class="card-body">
+            <h1 class="page-title">LINE予約</h1>
+            <p class="page-subtitle">予約・キャンセル・待ち時間の確認ができます。</p>
+
+            <div class="status-banner alert-info" id="liff-status">LIFFを初期化しています...</div>
+
+            <div class="status-panel">
+                <div class="status-title">現在の予約</div>
+                <div class="status-value" id="reservation-status">読み込み中...</div>
+                <div class="status-meta" id="reservation-meta"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="type-select" class="form-label">予約の種類</label>
+                <select id="type-select" class="form-select" disabled>
+                    <option value="">読み込み中...</option>
+                </select>
+            </div>
+
+            <div class="button-row">
+                <button type="button" class="btn btn-primary" id="reserve-button" disabled>予約する</button>
+                <button type="button" class="btn btn-outline-secondary" id="refresh-button" disabled>待ち時間を更新</button>
+                <button type="button" class="btn btn-danger" id="cancel-button" disabled>キャンセル</button>
+            </div>
+
+            <div class="notice alert-info" id="liff-notice" hidden></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="{{ url_for('static', filename='js/liff-reserve.js') }}" defer></script>
+{% endblock %}
