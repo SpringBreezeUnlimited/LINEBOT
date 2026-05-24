@@ -1,14 +1,11 @@
 import csv
 import io
-import json
 import math
 import os
 import re
 import secrets
 import time
 import uuid
-import urllib.error
-import urllib.request
 from datetime import timedelta, datetime, timezone
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -86,13 +83,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-LIFF_ID = (os.getenv("LIFF_ID") or "").strip()
-LIFF_CHANNEL_ID = (os.getenv("LIFF_CHANNEL_ID") or "").strip()
-LIFF_VERIFY_TIMEOUT_SECONDS = parse_int_env("LIFF_VERIFY_TIMEOUT_SECONDS", 5, 1, 15)
-LIFF_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
-
-APP_VERSION = "1.0.103"
-APP_RELEASED_AT = "2026-05-24 00:00 JST"
+APP_VERSION = "1.0.102"
+APP_RELEASED_AT = "2026-05-09 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -328,53 +320,6 @@ def is_minute_in_window(minute_of_day: int, start_minute: int, end_minute: int) 
     return minute_of_day >= start_minute or minute_of_day < end_minute
 
 
-def extract_liff_id_token():
-    auth_header = (request.headers.get("Authorization") or "").strip()
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:].strip()
-    header_token = (request.headers.get("X-LIFF-ID-Token") or "").strip()
-    if header_token:
-        return header_token
-    payload = request.get_json(silent=True) or {}
-    return (payload.get("id_token") or payload.get("idToken") or "").strip()
-
-
-def verify_liff_id_token(id_token: str):
-    if not id_token or not LIFF_CHANNEL_ID:
-        return None
-    payload = urlencode({"id_token": id_token, "client_id": LIFF_CHANNEL_ID}).encode("utf-8")
-    request_obj = urllib.request.Request(LIFF_VERIFY_URL, data=payload, method="POST")
-    request_obj.add_header("Content-Type", "application/x-www-form-urlencoded")
-    try:
-        with urllib.request.urlopen(request_obj, timeout=LIFF_VERIFY_TIMEOUT_SECONDS) as response:
-            body = response.read().decode("utf-8")
-    except (urllib.error.HTTPError, urllib.error.URLError) as error:
-        app.logger.warning("LIFF token verification failed: %s", error)
-        return None
-    try:
-        verified = json.loads(body)
-    except json.JSONDecodeError:
-        app.logger.warning("LIFF token verification returned invalid JSON")
-        return None
-    if verified.get("iss") != "https://access.line.me":
-        return None
-    aud = verified.get("aud")
-    if isinstance(aud, list):
-        if LIFF_CHANNEL_ID not in aud:
-            return None
-    elif aud != LIFF_CHANNEL_ID:
-        return None
-    subject = (verified.get("sub") or "").strip()
-    return subject or None
-
-
-def get_liff_user_id():
-    token = extract_liff_id_token()
-    if not token:
-        return None
-    return verify_liff_id_token(token)
-
-
 def get_admin_reservation_window(admin_account_id: int, cur=None):
     if cur is not None:
         cur.execute(
@@ -424,61 +369,6 @@ def count_waiting_people_ahead_by_owner(cur, reservation_id: int, owner_admin_id
         (STATUS_WAITING, reservation_id, owner_admin_id),
     )
     return int(cur.fetchone()[0] or 0)
-
-
-def fetch_latest_active_reservation(cur, user_id: str):
-    cur.execute(
-        """
-            SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
-            FROM reservations r
-            LEFT JOIN reservation_types t ON r.type_id = t.id
-            WHERE r.user_id = %s AND r.status IN (%s, %s)
-            ORDER BY r.id DESC
-            LIMIT 1
-        """,
-        (user_id, STATUS_WAITING, STATUS_CALLED),
-    )
-    return cur.fetchone()
-
-
-def build_waiting_summary(cur, reservation_id: int, owner_admin_id: int | None):
-    if owner_admin_id is not None:
-        waiting_people_ahead = count_waiting_people_ahead_by_owner(
-            cur,
-            reservation_id=reservation_id,
-            owner_admin_id=owner_admin_id,
-        )
-    else:
-        cur.execute(
-            "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
-            (STATUS_WAITING, reservation_id),
-        )
-        waiting_people_ahead = int(cur.fetchone()[0] or 0)
-    estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
-    return waiting_people_ahead, estimated_minutes
-
-
-def build_reservation_summary(cur, row):
-    if not row:
-        return None
-    reservation_id, status, type_id, type_name, owner_admin_id = row
-    summary = {
-        "id": reservation_id,
-        "status": status,
-        "type_id": type_id,
-        "type_name": type_name or "",
-    }
-    if status == STATUS_WAITING:
-        waiting_people_ahead, estimated_minutes = build_waiting_summary(
-            cur,
-            reservation_id=reservation_id,
-            owner_admin_id=owner_admin_id,
-        )
-        summary.update({
-            "waiting_people_ahead": waiting_people_ahead,
-            "estimated_minutes": estimated_minutes,
-        })
-    return summary
 
 
 def should_run_call_batch(now=None) -> bool:
@@ -1137,10 +1027,10 @@ def csrf_protect():
 def apply_security_headers(response):
     csp = (
         "default-src 'self'; "
-        "script-src 'self' https://cdn.jsdelivr.net https://static.line-scdn.net; "
+        "script-src 'self' https://cdn.jsdelivr.net; "
         "style-src 'self' https://cdn.jsdelivr.net; "
         "img-src 'self' data:; "
-        "connect-src 'self' https://cdn.jsdelivr.net https://api.line.me; "
+        "connect-src 'self' https://cdn.jsdelivr.net; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
@@ -1221,186 +1111,6 @@ def index():
 @app.route("/qr")
 def qr_reader():
     return render_template("qr_reader.html")
-
-
-@app.route("/liff")
-def liff_entry():
-    return redirect(url_for("liff_reserve"))
-
-
-@app.route("/liff/reserve")
-def liff_reserve():
-    return render_template(
-        "liff_reserve.html",
-        liff_id=LIFF_ID,
-        csrf_token=get_csrf_token(),
-    )
-
-
-def liff_unauthorized_response():
-    return jsonify({"error": "unauthorized"}), 401
-
-
-def liff_unavailable_response():
-    return jsonify({"error": "liff_not_configured"}), 503
-
-
-@app.route("/liff/api/types")
-def liff_types():
-    if not LIFF_CHANNEL_ID:
-        return liff_unavailable_response()
-    user_id = get_liff_user_id()
-    if not user_id:
-        return liff_unauthorized_response()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC"
-            )
-            types = [{"id": row[0], "name": row[1]} for row in cur.fetchall()]
-    return jsonify({
-        "accepting_new": is_accepting_new(),
-        "types": types,
-    })
-
-
-@app.route("/liff/api/summary")
-def liff_summary():
-    if not LIFF_CHANNEL_ID:
-        return liff_unavailable_response()
-    user_id = get_liff_user_id()
-    if not user_id:
-        return liff_unauthorized_response()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            summary = build_reservation_summary(cur, fetch_latest_active_reservation(cur, user_id))
-    return jsonify({
-        "accepting_new": is_accepting_new(),
-        "reservation": summary,
-    })
-
-
-@app.route("/liff/api/reservations", methods=["POST"])
-def liff_create_reservation():
-    if not LIFF_CHANNEL_ID:
-        return liff_unavailable_response()
-    user_id = get_liff_user_id()
-    if not user_id:
-        return liff_unauthorized_response()
-    payload = request.get_json(silent=True) or {}
-    raw_type_id = str(payload.get("type_id") or payload.get("typeId") or "").strip()
-    if not raw_type_id.isdigit():
-        return jsonify({"error": "予約の種類を選択してください。"}), 400
-    if not is_accepting_new():
-        return jsonify({"error": "現在、新規の予約受付は停止中です。"}), 400
-    type_id = int(raw_type_id)
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            existing = fetch_latest_active_reservation(cur, user_id)
-            if existing:
-                summary = build_reservation_summary(cur, existing)
-                return jsonify({
-                    "accepting_new": is_accepting_new(),
-                    "reservation": summary,
-                    "message": "既に予約があります。",
-                })
-
-            cur.execute(
-                "SELECT id, name, accepting, owner_admin_id FROM reservation_types WHERE id = %s",
-                (type_id,),
-            )
-            type_row = cur.fetchone()
-            if not type_row:
-                return jsonify({"error": "指定した種類は存在しません。"}), 404
-            _type_id, type_name, type_accepting, type_owner_admin_id = type_row
-            if not type_accepting:
-                return jsonify({"error": f"{type_name} の新規受付は停止中です。"}), 400
-            if type_owner_admin_id is None:
-                return jsonify({"error": "この種類は管理者に割り当てられていないため予約できません。"}), 400
-
-            start_minute, end_minute = get_admin_reservation_window(type_owner_admin_id, cur=cur)
-            if start_minute is not None and end_minute is not None:
-                current_dt = datetime.now(JST)
-                current_minute = current_dt.hour * 60 + current_dt.minute
-                if not is_minute_in_window(current_minute, int(start_minute), int(end_minute)):
-                    window_label = f"{format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)}"
-                    return jsonify({
-                        "error": f"{type_name} の予約受付時間は {window_label} です。現在は受付時間外です。",
-                    }), 400
-
-            try:
-                cur.execute(
-                    "INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id",
-                    (user_id, "", type_id),
-                )
-                new_id = cur.fetchone()[0]
-                conn.commit()
-            except psycopg2.IntegrityError:
-                conn.rollback()
-                existing_after_conflict = fetch_latest_active_reservation(cur, user_id)
-                summary = build_reservation_summary(cur, existing_after_conflict)
-                return jsonify({
-                    "accepting_new": is_accepting_new(),
-                    "reservation": summary,
-                    "message": "既に予約があります。",
-                })
-
-    refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            waiting_people_ahead, estimated_minutes = build_waiting_summary(
-                cur,
-                reservation_id=new_id,
-                owner_admin_id=type_owner_admin_id,
-            )
-    summary = {
-        "id": new_id,
-        "status": STATUS_WAITING,
-        "type_id": type_id,
-        "type_name": type_name,
-        "waiting_people_ahead": waiting_people_ahead,
-        "estimated_minutes": estimated_minutes,
-    }
-    return jsonify({
-        "accepting_new": is_accepting_new(),
-        "reservation": summary,
-        "message": "予約を受け付けました。",
-    })
-
-
-@app.route("/liff/api/cancel", methods=["POST"])
-def liff_cancel_reservation():
-    if not LIFF_CHANNEL_ID:
-        return liff_unavailable_response()
-    user_id = get_liff_user_id()
-    if not user_id:
-        return liff_unauthorized_response()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            existing = fetch_latest_active_reservation(cur, user_id)
-            if not existing:
-                return jsonify({
-                    "accepting_new": is_accepting_new(),
-                    "reservation": None,
-                    "cancelled": False,
-                    "message": "キャンセル対象の予約はありません。",
-                })
-            reservation_id, _status, _type_id, _type_name, owner_admin_id = existing
-            cur.execute(
-                "UPDATE reservations SET status = %s WHERE id = %s",
-                (STATUS_CANCELLED, reservation_id),
-            )
-            conn.commit()
-
-    if owner_admin_id is not None:
-        refresh_wait_time_estimate(owner_admin_id=owner_admin_id)
-    return jsonify({
-        "accepting_new": is_accepting_new(),
-        "reservation": None,
-        "cancelled": True,
-        "message": f"予約番号 {reservation_id} をキャンセルしました。",
-    })
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
