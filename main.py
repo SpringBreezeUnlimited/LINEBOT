@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.109"
+APP_VERSION = "v1.0.110"
 APP_RELEASED_AT = "2026-05-25 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -448,21 +448,27 @@ def process_queued_calls(now=None):
         with conn.cursor() as cur:
             auto_rows = []
             if auto_call_count > 0:
-                # 先に該当行を確保して状態を更新しておくことで、並行実行や手動呼出しとの競合で重複通知が送られるのを防ぐ
+                # 先に該当行をロックして状態を更新しておくことで、並行実行や手動呼出しとの競合で重複通知が送られるのを防ぐ
                 cur.execute(
                     """
-                        UPDATE reservations
-                        SET status = %s, called_at = CURRENT_TIMESTAMP
-                        WHERE id IN (
-                            SELECT id FROM reservations
-                            WHERE status = %s
-                            ORDER BY id ASC
+                        WITH selected_rows AS (
+                            SELECT r.id, r.user_id
+                            FROM reservations r
+                            JOIN reservation_types t ON r.type_id = t.id
+                            WHERE r.status = %s
+                            ORDER BY r.id ASC
                             FOR UPDATE SKIP LOCKED
                             LIMIT %s
                         )
+                        UPDATE reservations
+                        SET status = %s, called_at = CURRENT_TIMESTAMP
+                        WHERE id IN (
+                            SELECT id FROM selected_rows
+                        )
+                          AND status = %s
                         RETURNING id, user_id
                     """,
-                    (STATUS_CALLED, STATUS_WAITING, auto_call_count),
+                    (STATUS_WAITING, auto_call_count, STATUS_CALLED, STATUS_WAITING),
                 )
                 auto_rows = cur.fetchall()
                 conn.commit()
@@ -1150,7 +1156,33 @@ def ensure_types_table():
             cur.execute("""
                 ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS type_id INTEGER
-                REFERENCES reservation_types(id) ON DELETE SET NULL
+            """)
+            cur.execute("""
+                UPDATE reservations r
+                SET type_id = NULL
+                WHERE r.type_id IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM reservation_types t
+                      WHERE t.id = r.type_id
+                  )
+            """)
+            cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'fk_reservations_type_id'
+                    ) THEN
+                        ALTER TABLE reservations
+                        ADD CONSTRAINT fk_reservations_type_id
+                        FOREIGN KEY (type_id)
+                        REFERENCES reservation_types(id)
+                        ON DELETE RESTRICT;
+                    END IF;
+                END
+                $$;
             """)
             cur.execute("""
                 ALTER TABLE reservation_types
@@ -1794,13 +1826,22 @@ def admin_types_delete(type_id):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
-                (type_id, current_admin_account_id),
-            )
-            if cur.rowcount == 0:
-                abort(403)
-            conn.commit()
+            try:
+                cur.execute(
+                    "DELETE FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                    (type_id, current_admin_account_id),
+                )
+                if cur.rowcount == 0:
+                    abort(403)
+                conn.commit()
+            except psycopg2.IntegrityError:
+                conn.rollback()
+                return redirect(
+                    url_for(
+                        "admin_types_page",
+                        type_error="この種類に紐づく予約があるため削除できません。",
+                    )
+                )
     return redirect(url_for("admin_types_page"))
 
 @app.route("/admin/types/toggle/<int:type_id>", methods=["POST"])

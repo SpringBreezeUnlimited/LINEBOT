@@ -87,6 +87,44 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
     )
 
 
+def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    app_module.ensure_types_table()
+
+    normalized_queries = [" ".join(query.split()) for query, _ in queries]
+    assert any("ADD CONSTRAINT fk_reservations_type_id" in query for query in normalized_queries)
+    assert any("ON DELETE RESTRICT" in query for query in normalized_queries)
+
+
 def test_format_duration_from_seconds(app_module):
     assert app_module.format_duration_from_seconds(None) == ""
     assert app_module.format_duration_from_seconds(5) == "5秒"
@@ -525,7 +563,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.109" in text
+    assert "Version: v1.0.110" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
@@ -562,7 +600,54 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin/types")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.109" in text
+    assert "Version: v1.0.110" in text
+
+
+def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    rollback_called = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "DELETE FROM reservation_types" in query:
+                raise app_module.psycopg2.IntegrityError("fk violation")
+
+        @property
+        def rowcount(self):
+            return 1
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def rollback(self):
+            rollback_called.append(True)
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context("/admin/types/delete/1", method="POST"):
+        response = app_module.admin_types_delete(1)
+
+    assert response.status_code == 302
+    assert "type_error=" in response.headers["Location"]
+    assert rollback_called == [True]
 
 
 def test_admin_accounts_create_requires_audit_auth(app_module):
@@ -679,6 +764,12 @@ def test_admin_accounts_bulk_create_success(app_module, monkeypatch):
 
         def fetchall(self):
             return self._rows
+
+        def fetchone(self):
+            return None
+
+        def fetchone(self):
+            return None
 
     class FakeConnection:
         def __enter__(self):
@@ -969,6 +1060,9 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
         def fetchall(self):
             return self._rows
 
+        def fetchone(self):
+            return None
+
     class FakeConnection:
         def __enter__(self):
             return self
@@ -1006,6 +1100,9 @@ def test_expire_called_reservations_ignores_push_failure(app_module, monkeypatch
 
         def fetchall(self):
             return self._rows
+
+        def fetchone(self):
+            return None
 
     class FakeConnection:
         def __enter__(self):
@@ -1066,6 +1163,9 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
         def fetchall(self):
             return self._rows
 
+        def fetchone(self):
+            return None
+
     class FakeConnection:
         def __enter__(self):
             return self
@@ -1122,6 +1222,82 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
     )]
     assert saved_settings["last_auto_call_failed_count"] == "1"
     assert len(commits) == 2
+
+
+def test_process_queued_calls_uses_skip_locked_and_total_limit(app_module, monkeypatch):
+    executed = []
+    sent_messages = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            normalized_query = " ".join(query.split())
+            executed.append((normalized_query, params))
+            if "RETURNING id, user_id" in normalized_query:
+                assert "FOR UPDATE SKIP LOCKED" in normalized_query
+                assert "AND status = %s" in normalized_query
+                self._rows = [(10, "U-total-1")]
+            else:
+                self._rows = []
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
+    monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 0)
+    monkeypatch.setattr(
+        app_module,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {"message": "現在の目安待ち時間: 2分", "estimated_seconds": 120},
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 1,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    monkeypatch.setattr(app_module, "set_settings", lambda _values: None)
+    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, text: sent_messages.append((user_id, text)))
+
+    now = datetime(2026, 4, 16, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    result = app_module.process_queued_calls(now=now)
+
+    assert result["sent_count"] == 1
+    assert result["failed_count"] == 0
+    assert result["auto_selected_count"] == 1
+    assert [item[0] for item in sent_messages] == ["U-total-1"]
 
 
 def test_process_reservation_new_booking_replies_with_latest_wait_time(app_module, monkeypatch):
