@@ -83,7 +83,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "1.0.105"
+APP_VERSION = "1.0.107"
 APP_RELEASED_AT = "2026-05-25 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -1107,10 +1107,6 @@ def is_webhook_rate_limited(ip: str) -> bool:
 def index():
     return redirect(url_for("login"))
 
-
-@app.route("/qr")
-def qr_reader():
-    return render_template("qr_reader.html")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():

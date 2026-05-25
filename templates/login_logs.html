@@ -16,7 +16,6 @@
             <span class="responsive-label-short">ログイン履歴</span>
         </span>
         <div class="sidebar-nav-actions d-flex gap-2">
-            <button type="button" class="btn btn-outline-light btn-sm" data-theme-toggle aria-pressed="false">テーマ切替</button>
             <form method="POST" action="/logout" class="mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
