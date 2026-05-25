@@ -67,20 +67,12 @@
         </div>
     </div>
     <div class="card shadow-sm">
-        <div class="card-body p-0">
-            <table class="table table-striped mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th>番号</th>
-                        <th>受付時刻</th>
-                        <th>種類</th>
-                        <th>状態</th>
-                        <th>呼出から完了</th>
-                    </tr>
-                </thead>
-                <tbody id="history-rows">
+        <div class="card-body p-0 history-card-shell">
+            <div class="history-scroll">
+                <div class="history-card-list" id="history-rows">
                     {% for row in rows %}
-                    <tr
+                    <article
+                        class="history-card"
                         data-id="{{ row[0] }}"
                         data-type-id="{{ row[3] or '' }}"
                         data-type="{{ row[2] or '' }}"
@@ -89,23 +81,39 @@
                         data-service-duration="{{ row[7] if row[7] is not none else '' }}"
                         data-service-duration-label="{{ format_duration(row[7]) if row[7] is not none else '-' }}"
                     >
-                        <td>{{ row[0] }}</td>
-                        <td>{{ row[4] if row[4] else '-' }}</td>
-                        <td>{{ row[2] or '-' }}</td>
-                        <td>
-                            {% if row[1] == 'done' %}
-                            <span class="badge bg-primary">確認完了</span>
-                            {% elif row[1] == 'cancelled' %}
-                            <span class="badge bg-secondary">キャンセル</span>
-                            {% else %}
-                            <span class="badge bg-success">呼出中</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ format_duration(row[7]) if row[7] is not none else '-' }}</td>
-                    </tr>
+                        <div class="history-card__header">
+                            <div>
+                                <div class="history-card__label">番号</div>
+                                <div class="history-card__value">{{ row[0] }}</div>
+                            </div>
+                            <div class="history-card__status">
+                                {% if row[1] == 'done' %}
+                                <span class="badge bg-primary">確認完了</span>
+                                {% elif row[1] == 'cancelled' %}
+                                <span class="badge bg-secondary">キャンセル</span>
+                                {% else %}
+                                <span class="badge bg-success">呼出中</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <dl class="history-card__meta">
+                            <div>
+                                <dt>受付時刻</dt>
+                                <dd>{{ row[4] if row[4] else '-' }}</dd>
+                            </div>
+                            <div>
+                                <dt>種類</dt>
+                                <dd>{{ row[2] or '-' }}</dd>
+                            </div>
+                            <div>
+                                <dt>呼出から完了</dt>
+                                <dd>{{ format_duration(row[7]) if row[7] is not none else '-' }}</dd>
+                            </div>
+                        </dl>
+                    </article>
                     {% endfor %}
-                </tbody>
-            </table>
+                </div>
+            </div>
         </div>
     </div>
     <div class="d-flex gap-2 justify-content-between align-items-center mt-4 history-pagination">

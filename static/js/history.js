@@ -1,4 +1,4 @@
-const historyRowsCache = Array.from(document.querySelectorAll('#history-rows tr')).map((row) => ({
+const historyRowsCache = Array.from(document.querySelectorAll('#history-rows .history-card')).map((row) => ({
     id: Number(row.dataset.id || '0'),
     type_id: row.dataset.typeId || '',
     type: row.dataset.type || '',
@@ -54,6 +54,62 @@ function getHistoryStatusMarkup(status) {
     return span;
 }
 
+function createHistoryCard(row) {
+    const card = document.createElement('article');
+    card.className = 'history-card';
+    card.dataset.id = String(row.id || '');
+    card.dataset.typeId = row.type_id || '';
+    card.dataset.type = row.type || '';
+    card.dataset.status = row.status || '';
+    card.dataset.createdAt = row.created_at || '';
+    card.dataset.serviceDuration = String(row.service_duration || '');
+    card.dataset.serviceDurationLabel = row.service_duration_label || '-';
+
+    const header = document.createElement('div');
+    header.className = 'history-card__header';
+
+    const identity = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'history-card__label';
+    label.textContent = '番号';
+    const value = document.createElement('div');
+    value.className = 'history-card__value';
+    value.textContent = row.id || '';
+    identity.appendChild(label);
+    identity.appendChild(value);
+
+    const statusWrap = document.createElement('div');
+    statusWrap.className = 'history-card__status';
+    statusWrap.appendChild(getHistoryStatusMarkup(row.status));
+
+    header.appendChild(identity);
+    header.appendChild(statusWrap);
+
+    const meta = document.createElement('dl');
+    meta.className = 'history-card__meta';
+
+    const fields = [
+        ['受付時刻', row.created_at || '-'],
+        ['種類', row.type || '-'],
+        ['呼出から完了', row.service_duration_label || '-'],
+    ];
+
+    fields.forEach(([term, description]) => {
+        const field = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = term;
+        const dd = document.createElement('dd');
+        dd.textContent = description;
+        field.appendChild(dt);
+        field.appendChild(dd);
+        meta.appendChild(field);
+    });
+
+    card.appendChild(header);
+    card.appendChild(meta);
+    return card;
+}
+
 function applyHistoryFilters(rows) {
     const { typeId, sortBy, sortOrder } = getHistoryFilters();
     const filtered = rows.filter((row) => {
@@ -81,36 +137,12 @@ function applyHistoryFilters(rows) {
 }
 
 function renderHistoryRows() {
-    const tbody = document.getElementById('history-rows');
-    if (!tbody) return;
-    tbody.textContent = '';
+    const cardList = document.getElementById('history-rows');
+    if (!cardList) return;
+    cardList.textContent = '';
 
     applyHistoryFilters(historyRowsCache).forEach((row) => {
-        const tr = document.createElement('tr');
-
-        const tdId = document.createElement('td');
-        tdId.textContent = row.id || '';
-
-        const tdCreated = document.createElement('td');
-        tdCreated.textContent = row.created_at || '-';
-
-        const tdType = document.createElement('td');
-        tdType.textContent = row.type || '-';
-
-        const tdStatus = document.createElement('td');
-        const statusElem = getHistoryStatusMarkup(row.status);
-        tdStatus.appendChild(statusElem);
-
-        const tdDuration = document.createElement('td');
-        tdDuration.textContent = row.service_duration_label || '-';
-
-        tr.appendChild(tdId);
-        tr.appendChild(tdCreated);
-        tr.appendChild(tdType);
-        tr.appendChild(tdStatus);
-        tr.appendChild(tdDuration);
-
-        tbody.appendChild(tr);
+        cardList.appendChild(createHistoryCard(row));
     });
 
     const params = getHistoryQueryParams();
