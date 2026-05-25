@@ -481,6 +481,90 @@ def test_login_post_rate_limited(client, csrf_token, app_module, monkeypatch):
     assert response.status_code == 429
 
 
+def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "get_runtime_settings", lambda: {
+        "accepting_new": True,
+        "auto_call_count": 0,
+        "last_auto_call": {},
+        "latest_auto_call": {},
+    })
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            normalized_query = " ".join(query.split())
+            if normalized_query.startswith("SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"):
+                self._rows = []
+            elif normalized_query.startswith("SELECT") and "FROM reservations" in normalized_query:
+                self._rows = []
+            else:
+                self._rows = []
+
+        def fetchall(self):
+            return getattr(self, "_rows", [])
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    response = client.get("/admin")
+    assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    assert "Version: v1.0.109" in text
+
+
+def test_types_page_shows_version_badge(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "get_admin_reservation_window", lambda _admin_id: (None, None))
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self._rows = []
+
+        def fetchall(self):
+            return []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    response = client.get("/admin/types")
+    assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    assert "Version: v1.0.109" in text
+
+
 def test_admin_accounts_create_requires_audit_auth(app_module):
     with app_module.app.test_request_context(
         "/admin/admin-accounts",
