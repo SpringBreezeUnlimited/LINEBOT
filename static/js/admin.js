@@ -6,7 +6,7 @@ const adminRefreshIntervalMs = Number.isFinite(configuredRefreshIntervalMs)
     : 15000;
 
 function parseInitialRowsFromDom() {
-    return Array.from(document.querySelectorAll('#active-rows tr')).map((row) => ({
+    return Array.from(document.querySelectorAll('#active-rows .admin-reservation-card')).map((row) => ({
         id: Number(row.dataset.id || '0'),
         created_at: row.dataset.createdAt || '',
         type: row.dataset.type || '',
@@ -125,7 +125,8 @@ function buildStatusCell(row) {
 }
 
 function buildActionCell(row) {
-    const td = document.createElement('td');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'admin-reservation-card__actions';
     if (row.status === 'waiting') {
         const form = document.createElement('form');
         form.method = 'POST';
@@ -137,7 +138,7 @@ function buildActionCell(row) {
         button.textContent = '呼出';
         form.appendChild(createCsrfInput());
         form.appendChild(button);
-        td.appendChild(form);
+        wrapper.appendChild(form);
     } else if (row.status === 'called') {
         const form = document.createElement('form');
         form.method = 'POST';
@@ -149,30 +150,68 @@ function buildActionCell(row) {
         button.textContent = '確認完了';
         form.appendChild(createCsrfInput());
         form.appendChild(button);
-        td.appendChild(form);
+        wrapper.appendChild(form);
     } else {
         const span = document.createElement('span');
         span.className = 'text-muted small';
         span.textContent = '確認完了';
-        td.appendChild(span);
+        wrapper.appendChild(span);
     }
-    return td;
+    return wrapper;
 }
 
 function buildRow(row) {
-    const tr = document.createElement('tr');
-    const tdId = document.createElement('td');
-    tdId.textContent = row.id ?? '';
-    const tdCreatedAt = document.createElement('td');
-    tdCreatedAt.textContent = row.created_at || '-';
-    const tdType = document.createElement('td');
-    tdType.textContent = row.type || '-';
-    tr.appendChild(tdId);
-    tr.appendChild(tdCreatedAt);
-    tr.appendChild(tdType);
-    tr.appendChild(buildStatusCell(row));
-    tr.appendChild(buildActionCell(row));
-    return tr;
+    const card = document.createElement('article');
+    card.className = 'admin-reservation-card';
+    card.dataset.id = String(row.id ?? '');
+    card.dataset.createdAt = row.created_at || '';
+    card.dataset.type = row.type || '';
+    card.dataset.typeId = row.type_id || '';
+    card.dataset.status = row.status || '';
+
+    const header = document.createElement('div');
+    header.className = 'admin-reservation-card__header';
+
+    const identity = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'admin-reservation-card__label';
+    label.textContent = '番号';
+    const value = document.createElement('div');
+    value.className = 'admin-reservation-card__value';
+    value.textContent = row.id ?? '';
+    identity.appendChild(label);
+    identity.appendChild(value);
+
+    const statusWrap = document.createElement('div');
+    statusWrap.className = 'admin-reservation-card__status';
+    statusWrap.appendChild(buildStatusCell(row).firstChild);
+
+    header.appendChild(identity);
+    header.appendChild(statusWrap);
+
+    const meta = document.createElement('dl');
+    meta.className = 'admin-reservation-card__meta';
+
+    const fields = [
+        ['受付時刻', row.created_at || '-'],
+        ['種類', row.type || '-'],
+    ];
+
+    fields.forEach(([term, description]) => {
+        const field = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = term;
+        const dd = document.createElement('dd');
+        dd.textContent = description;
+        field.appendChild(dt);
+        field.appendChild(dd);
+        meta.appendChild(field);
+    });
+
+    card.appendChild(header);
+    card.appendChild(meta);
+    card.appendChild(buildActionCell(row));
+    return card;
 }
 
 function renderTypeCounts(counts = typeCountsCache) {
@@ -221,11 +260,11 @@ function showAutoCallNotification(summary) {
 }
 
 function renderActiveRows() {
-    const tbody = document.getElementById('active-rows');
-    if (!tbody) return;
-    tbody.textContent = '';
+    const cardList = document.getElementById('active-rows');
+    if (!cardList) return;
+    cardList.textContent = '';
     applyClientFilters(activeRowsCache).forEach((row) => {
-        tbody.appendChild(buildRow(row));
+        cardList.appendChild(buildRow(row));
     });
     window.history.replaceState({}, '', '/admin' + getQueryParams());
 }

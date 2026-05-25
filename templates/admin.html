@@ -131,39 +131,44 @@
             <span class="list-meta-label">リスト最終更新</span>
             <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
         </div>
-        <div class="card-body p-0">
-            <table class="table table-striped mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th>番号</th>
-                        <th>受付時刻</th>
-                        <th>種類</th>
-                        <th>状態</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody id="active-rows">
+        <div class="card-body p-0 admin-card-shell">
+            <div class="admin-scroll">
+                <div class="admin-card-list" id="active-rows">
                     {% for row in rows %}
-                    <tr
+                    <article
+                        class="admin-reservation-card"
                         data-id="{{ row.id }}"
                         data-created-at="{{ row.created_at if row.created_at else '' }}"
                         data-type="{{ row.type or '' }}"
                         data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
                         data-status="{{ row.status }}"
                     >
-                        <td>{{ row.id }}</td>
-                        <td>{{ row.created_at if row.created_at else '-' }}</td>
-                        <td>{{ row.type or '-' }}</td>
-                        <td>
-                            {% if row.status == 'waiting' %}
-                            <span class="badge bg-warning text-dark">待機中</span>
-                            {% elif row.status == 'called' %}
-                            <span class="badge bg-info">呼出中</span>
-                            {% else %}
-                            <span class="badge bg-success">確認完了</span>
-                            {% endif %}
-                        </td>
-                        <td>
+                        <div class="admin-reservation-card__header">
+                            <div>
+                                <div class="admin-reservation-card__label">番号</div>
+                                <div class="admin-reservation-card__value">{{ row.id }}</div>
+                            </div>
+                            <div class="admin-reservation-card__status">
+                                {% if row.status == 'waiting' %}
+                                <span class="badge bg-warning text-dark">待機中</span>
+                                {% elif row.status == 'called' %}
+                                <span class="badge bg-info">呼出中</span>
+                                {% else %}
+                                <span class="badge bg-success">確認完了</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <dl class="admin-reservation-card__meta">
+                            <div>
+                                <dt>受付時刻</dt>
+                                <dd>{{ row.created_at if row.created_at else '-' }}</dd>
+                            </div>
+                            <div>
+                                <dt>種類</dt>
+                                <dd>{{ row.type or '-' }}</dd>
+                            </div>
+                        </dl>
+                        <div class="admin-reservation-card__actions">
                             {% if row.status == 'waiting' %}
                             <form method="POST" action="/admin/call/{{ row.id }}" class="d-inline">
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
@@ -177,11 +182,11 @@
                             {% else %}
                             <span class="text-muted small">確認完了</span>
                             {% endif %}
-                        </td>
-                    </tr>
+                        </div>
+                    </article>
                     {% endfor %}
-                </tbody>
-            </table>
+                </div>
+            </div>
         </div>
     </div>
     <div class="text-center mt-4">

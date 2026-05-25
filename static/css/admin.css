@@ -127,6 +127,99 @@ select {
     padding: var(--space-5);
 }
 
+.admin-card-shell {
+    overflow: hidden;
+}
+
+.admin-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: var(--space-5);
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+}
+
+.admin-card-list {
+    display: flex;
+    gap: var(--space-4);
+    min-width: max-content;
+}
+
+.admin-reservation-card {
+    flex: 0 0 240px;
+    min-height: 240px;
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-1);
+    scroll-snap-align: start;
+}
+
+.admin-reservation-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.admin-reservation-card__label {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--color-secondary);
+}
+
+.admin-reservation-card__value {
+    margin-top: 2px;
+    font-size: 1.875rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--color-nav);
+}
+
+.admin-reservation-card__status {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.admin-reservation-card__meta {
+    margin: var(--space-4) 0 0;
+    display: grid;
+    gap: var(--space-3);
+}
+
+.admin-reservation-card__meta div {
+    display: grid;
+    gap: 2px;
+}
+
+.admin-reservation-card__meta dt {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--color-text-muted);
+}
+
+.admin-reservation-card__meta dd {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--color-text);
+    word-break: break-word;
+}
+
+.admin-reservation-card__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+
 .row {
     display: flex;
     flex-wrap: wrap;
@@ -545,13 +638,13 @@ select {
         justify-content: flex-end;
     }
 
-    .card-body.p-0 {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+    .admin-scroll {
+        padding: var(--space-4);
     }
 
-    .table {
-        min-width: 680px;
+    .admin-reservation-card {
+        flex-basis: 210px;
+        min-height: 210px;
     }
 
     .position-fixed.version-badge {
