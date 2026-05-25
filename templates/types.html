@@ -112,49 +112,63 @@
     <div class="card shadow-sm">
         <div class="card-body">
             <h5 class="card-title">登録済みの種類</h5>
-            <ul class="list-group">
-                {% for t in types %}
-                <li class="list-group-item">
-                    <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                    <span>{{ t[1] }}</span>
-                    <div class="d-flex gap-2">
-                        {% if t[2] %}
-                        <form
-                            method="POST"
-                            action="/admin/types/toggle/{{ t[0] }}"
-                            class="d-inline"
-                            data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
-                        >
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-sm btn-success">受付中</button>
-                        </form>
+            <div class="types-card-shell">
+                <div class="types-scroll">
+                    <div class="types-card-list">
+                        {% for t in types %}
+                        <article class="types-card">
+                            <div class="types-card__header">
+                                <div>
+                                    <div class="types-card__label">種類</div>
+                                    <div class="types-card__value">{{ t[1] }}</div>
+                                </div>
+                                <div class="types-card__status">
+                                    {% if t[2] %}
+                                    <span class="badge bg-success">受付中</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">受付停止中</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="types-card__actions">
+                                {% if t[2] %}
+                                <form
+                                    method="POST"
+                                    action="/admin/types/toggle/{{ t[0] }}"
+                                    class="d-inline"
+                                    data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
+                                >
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-success">受付中</button>
+                                </form>
+                                {% else %}
+                                <form
+                                    method="POST"
+                                    action="/admin/types/toggle/{{ t[0] }}"
+                                    class="d-inline"
+                                    data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
+                                >
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
+                                </form>
+                                {% endif %}
+                                <form
+                                    method="POST"
+                                    action="/admin/types/delete/{{ t[0] }}"
+                                    class="d-inline"
+                                    data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
+                                >
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
+                                </form>
+                            </div>
+                        </article>
                         {% else %}
-                        <form
-                            method="POST"
-                            action="/admin/types/toggle/{{ t[0] }}"
-                            class="d-inline"
-                            data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
-                        >
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
-                        </form>
-                        {% endif %}
-                        <form
-                            method="POST"
-                            action="/admin/types/delete/{{ t[0] }}"
-                            class="d-inline"
-                            data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
-                        >
-                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                            <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
-                        </form>
+                        <div class="types-empty">登録されている種類はありません。</div>
+                        {% endfor %}
                     </div>
-                    </div>
-                </li>
-                {% else %}
-                <li class="list-group-item text-muted">登録されている種類はありません。</li>
-                {% endfor %}
-            </ul>
+                </div>
+            </div>
         </div>
     </div>
 </div>
