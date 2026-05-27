@@ -19,6 +19,14 @@ from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMes
 from linebot.v3.webhooks import MessageEvent, TextMessageContent # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash # type: ignore
+from flex_templates import (
+    reservation_confirmation,
+    call_notification,
+    wait_time_status,
+    cancel_notification,
+    auto_cancel_notification,
+)
+from flex_templates import bubble_from_title_and_text
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -228,10 +236,17 @@ def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: Pu
 
 def send_push_message(user_id: str, text: str, retry_key: str | None = None):
     stable_retry_key = retry_key or str(uuid.uuid4())
-    payload = PushMessageRequest(
-        to=user_id,
-        messages=[TextMessage(text=text)],
-    )
+    # If caller provided a dict (Flex payload), send as-is; otherwise send TextMessage
+    if isinstance(text, dict):
+        payload = PushMessageRequest(
+            to=user_id,
+            messages=[text],
+        )
+    else:
+        payload = PushMessageRequest(
+            to=user_id,
+            messages=[TextMessage(text=text)],
+        )
     for attempt in range(1, LINE_PUSH_MAX_RETRIES + 1):
         try:
             with ApiClient(MESSAGING_CONFIGURATION) as api_client:
@@ -259,13 +274,32 @@ def send_push_message(user_id: str, text: str, retry_key: str | None = None):
 
 
 def send_reply_message(reply_token: str, text: str):
-    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-        MessagingApi(api_client).reply_message(
-            ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=text)],
+    # Support sending Flex dicts as well as plain text. For plain text, try to send as Flex bubble
+    try:
+        if isinstance(text, dict):
+            payload = ReplyMessageRequest(reply_token=reply_token, messages=[text])
+            with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+                MessagingApi(api_client).reply_message(payload)
+            return
+
+        # Plain text: attempt to send as a generic Flex bubble first
+        # derive a short title from the first line or beginning of the text
+        title = text.splitlines()[0][:40] if isinstance(text, str) and text.strip() else "通知"
+        flex = bubble_from_title_and_text(title, text)
+        try:
+            with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[flex]))
+            return
+        except Exception:
+            # fall through to plain text fallback
+            pass
+
+        with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+            MessagingApi(api_client).reply_message(
+                ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=text)])
             )
-        )
+    except Exception:
+        app.logger.exception("Failed to send reply message")
 
 
 def format_dt(value):
@@ -408,13 +442,8 @@ def expire_called_reservations() -> int:
                 conn.commit()
         for reservation_id, user_id in timed_out_rows:
             try:
-                send_push_message(
-                    user_id,
-                    (
-                        f"【自動キャンセル】番号 {reservation_id} は呼出から{CALL_TIMEOUT_MINUTES}分経過したため"
-                        "タイムアウトでキャンセルされました。"
-                    ),
-                )
+                flex = auto_cancel_notification(reservation_id)
+                send_push_message(user_id, flex)
             except Exception:
                 app.logger.exception("Failed to send timeout message for reservation %s", reservation_id)
         return len(timed_out_rows)
@@ -477,7 +506,10 @@ def process_queued_calls(now=None):
     failed_ids = []
     for res_id, user_id in auto_rows:
         try:
-            send_push_message(user_id, build_call_message(res_id))
+            # Build Flex call notification; alt text will be used as fallback when needed
+            timeout_at = (datetime.now(JST) + timedelta(minutes=CALL_TIMEOUT_MINUTES)).strftime("%H:%M")
+            flex = call_notification(res_id, timeout_at, CALL_TIMEOUT_MINUTES)
+            send_push_message(user_id, flex)
             sent_ids.append(res_id)
         except Exception:
             failed_ids.append(res_id)
