@@ -34,7 +34,10 @@ def reservation_confirmation(res_id: int, type_name: str | None, waiting: int, e
 
 def call_notification(res_id: int, timeout_label: str, call_minutes: int) -> Dict:
     title = "呼出中"
-    body_text = f"番号: {res_id}\n{call_minutes}分以内（{timeout_label}まで）にお越しください。"
+    body_text = (
+        f"番号: {res_id}\n{call_minutes}分以内（{timeout_label}まで）にお越しください。"
+        "\n時間を過ぎると自動でキャンセルされます。"
+    )
     return bubble_from_title_and_text(title, body_text)
 
 

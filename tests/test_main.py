@@ -7,6 +7,15 @@ import pytest
 from werkzeug.exceptions import Forbidden
 
 
+def flex_message_text(message):
+    assert message["type"] == "flex"
+    header = message["contents"]["header"]["contents"]
+    body = message["contents"]["body"]["contents"]
+    title = header[0]["text"] if header else ""
+    body_text = "\n".join(item["text"] for item in body if item.get("type") == "text")
+    return f"{title}\n{body_text}".strip()
+
+
 def test_parse_bool_env_true_false_default(app_module, monkeypatch):
     monkeypatch.setenv("TEST_BOOL", "true")
     assert app_module.parse_bool_env("TEST_BOOL", False) is True
@@ -563,7 +572,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.110" in text
+    assert "Version: v1.0.111" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
@@ -600,7 +609,7 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin/types")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.110" in text
+    assert "Version: v1.0.111" in text
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
@@ -1030,10 +1039,12 @@ def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypa
 def test_build_call_message_includes_timeout_minutes_and_deadline(app_module):
     called_at = datetime(2026, 4, 19, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
     message = app_module.build_call_message(15, called_at=called_at)
-    assert "番号 15" in message
-    assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in message
-    assert "10:15" in message
-    assert "自動でキャンセル" in message
+    text = flex_message_text(message)
+    assert "呼出中" in text
+    assert "番号: 15" in text
+    assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in text
+    assert "10:15" in text
+    assert "自動でキャンセル" in text
 
 
 def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
@@ -1077,11 +1088,11 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, text: sent_messages.append((user_id, text)))
+    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, message: sent_messages.append((user_id, message)))
     assert app_module.expire_called_reservations() == 3
     assert len(sent_messages) == 3
     assert sent_messages[0][0] == "U-1"
-    assert "自動キャンセル" in sent_messages[0][1]
+    assert "自動キャンセル" in flex_message_text(sent_messages[0][1])
 
 
 def test_expire_called_reservations_ignores_push_failure(app_module, monkeypatch):
@@ -1354,7 +1365,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
 
     sent_texts = []
 
-    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-123", "予約 相談")
@@ -1414,7 +1425,7 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-456", "予約 相談")
@@ -1463,7 +1474,7 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-789", "待ち時間")
@@ -1510,7 +1521,7 @@ def test_process_reservation_wait_time_reply_without_active_reservation(app_modu
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-999", "待ち時間")
@@ -1558,7 +1569,7 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_reply_message", lambda _reply_token, text: sent_texts.append(text))
+    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-cancel", "キャンセル")

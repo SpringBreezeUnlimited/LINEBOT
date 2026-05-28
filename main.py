@@ -91,8 +91,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.110"
-APP_RELEASED_AT = "2026-05-25 00:00 JST"
+APP_VERSION = "v1.0.111"
+APP_RELEASED_AT = "2026-05-28 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -234,18 +234,17 @@ def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: Pu
         return messaging_api.push_message(request_payload)
 
 
-def send_push_message(user_id: str, text: str, retry_key: str | None = None):
+def send_push_message(user_id: str, message: str | dict, retry_key: str | None = None):
     stable_retry_key = retry_key or str(uuid.uuid4())
-    # If caller provided a dict (Flex payload), send as-is; otherwise send TextMessage
-    if isinstance(text, dict):
+    if isinstance(message, dict):
         payload = PushMessageRequest(
             to=user_id,
-            messages=[text],
+            messages=[message],
         )
     else:
         payload = PushMessageRequest(
             to=user_id,
-            messages=[TextMessage(text=text)],
+            messages=[TextMessage(text=message)],
         )
     for attempt in range(1, LINE_PUSH_MAX_RETRIES + 1):
         try:
@@ -273,33 +272,24 @@ def send_push_message(user_id: str, text: str, retry_key: str | None = None):
             time.sleep(delay_seconds)
 
 
-def send_reply_message(reply_token: str, text: str):
-    # Support sending Flex dicts as well as plain text. For plain text, try to send as Flex bubble
+def send_reply_message(reply_token: str, message: str | dict):
     try:
-        if isinstance(text, dict):
-            payload = ReplyMessageRequest(reply_token=reply_token, messages=[text])
+        if isinstance(message, dict):
+            payload = ReplyMessageRequest(reply_token=reply_token, messages=[message])
             with ApiClient(MESSAGING_CONFIGURATION) as api_client:
                 MessagingApi(api_client).reply_message(payload)
             return
 
-        # Plain text: attempt to send as a generic Flex bubble first
-        # derive a short title from the first line or beginning of the text
-        title = text.splitlines()[0][:40] if isinstance(text, str) and text.strip() else "通知"
-        flex = bubble_from_title_and_text(title, text)
-        try:
-            with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-                MessagingApi(api_client).reply_message(ReplyMessageRequest(reply_token=reply_token, messages=[flex]))
-            return
-        except Exception:
-            # fall through to plain text fallback
-            pass
-
         with ApiClient(MESSAGING_CONFIGURATION) as api_client:
             MessagingApi(api_client).reply_message(
-                ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=text)])
+                ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=message)])
             )
     except Exception:
         app.logger.exception("Failed to send reply message")
+
+
+def send_flex_notice(reply_token: str, title: str, body: str):
+    send_reply_message(reply_token, bubble_from_title_and_text(title, body))
 
 
 def format_dt(value):
@@ -410,15 +400,11 @@ def should_run_call_batch(now=None) -> bool:
     return current.tm_min % 5 == 0
 
 
-def build_call_message(reservation_id: int, called_at=None) -> str:
+def build_call_message(reservation_id: int, called_at=None) -> dict:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
     timeout_label = timeout_at.strftime("%H:%M")
-    return (
-        f"【順番が来ました】番号 {reservation_id} 番の方、会場へお越しください！"
-        f"\n{CALL_TIMEOUT_MINUTES}分以内（{timeout_label}まで）にお越しください。"
-        "\n時間を過ぎると自動でキャンセルされます。"
-    )
+    return call_notification(reservation_id, timeout_label, CALL_TIMEOUT_MINUTES)
 
 
 def expire_called_reservations() -> int:
@@ -2207,13 +2193,18 @@ def handle_message(event):
 def process_reservation(event, user_id, user_message):
     normalized = user_message.strip()
     if not normalized:
-        send_reply_message(
+        send_flex_notice(
             event.reply_token,
+            "ご案内",
             "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。",
         )
         return
     if len(normalized) > MAX_USER_MESSAGE_CHARS:
-        send_reply_message(event.reply_token, f"メッセージは{MAX_USER_MESSAGE_CHARS}文字以内で送信してください。")
+        send_flex_notice(
+            event.reply_token,
+            "エラー",
+            f"メッセージは{MAX_USER_MESSAGE_CHARS}文字以内で送信してください。",
+        )
         return
 
     accepting_new = is_accepting_new()
@@ -2221,19 +2212,18 @@ def process_reservation(event, user_id, user_message):
         with conn.cursor() as cur:
             if normalized.startswith('予約'):
                 if not accepting_new:
-                    reply = "現在、新規の予約受付は停止中です。"
-                    send_reply_message(event.reply_token, reply)
+                    send_flex_notice(event.reply_token, "予約停止中", "現在、新規の予約受付は停止中です。")
                     return
                 requested_type_name = normalize_type_name(normalized[2:])
                 type_id = None
                 type_name = None
                 if requested_type_name:
                     if not validate_type_name(requested_type_name):
-                        reply = (
-                            f"種類名は1〜{MAX_TYPE_NAME_LENGTH}文字で指定してください。"
-                            "\n例: 予約 相談"
+                        send_flex_notice(
+                            event.reply_token,
+                            "種類名エラー",
+                            f"種類名は1〜{MAX_TYPE_NAME_LENGTH}文字で指定してください。\n例: 予約 相談",
                         )
-                        send_reply_message(event.reply_token, reply)
                         return
                     cur.execute(
                         "SELECT id, name, accepting, owner_admin_id FROM reservation_types WHERE name = %s",
@@ -2243,31 +2233,34 @@ def process_reservation(event, user_id, user_message):
                     if not type_row:
                         names = get_accepting_type_names(cur)
                         if names:
-                            reply = f"指定した種類「{requested_type_name}」は存在しません。\n利用可能: " + " / ".join(names)
+                            body = f"指定した種類「{requested_type_name}」は存在しません。\n利用可能: " + " / ".join(names)
                         else:
-                            reply = "予約の種類がまだ登録されていません。管理画面で追加してください。"
-                        send_reply_message(event.reply_token, reply)
+                            body = "予約の種類がまだ登録されていません。管理画面で追加してください。"
+                        send_flex_notice(event.reply_token, "種類がありません", body)
                         return
                     type_id, type_name, type_accepting, type_owner_admin_id = type_row
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
-                            reply = f"「{type_name}」の新規受付は停止中です。\n利用可能: " + " / ".join(names)
+                            body = f"「{type_name}」の新規受付は停止中です。\n利用可能: " + " / ".join(names)
                         else:
-                            reply = f"「{type_name}」の新規受付は停止中です。"
-                        send_reply_message(event.reply_token, reply)
+                            body = f"「{type_name}」の新規受付は停止中です。"
+                        send_flex_notice(event.reply_token, "受付停止", body)
                         return
                     if type_owner_admin_id is None:
-                        reply = "この種類は管理者に割り当てられていないため予約できません。管理者へお問い合わせください。"
-                        send_reply_message(event.reply_token, reply)
+                        send_flex_notice(
+                            event.reply_token,
+                            "受付不可",
+                            "この種類は管理者に割り当てられていないため予約できません。管理者へお問い合わせください。",
+                        )
                         return
                 else:
                     names = get_accepting_type_names(cur)
                     if names:
-                        reply = "予約の種類を指定してください。\n利用可能: " + " / ".join(names) + "\n例: 予約 相談"
+                        body = "予約の種類を指定してください。\n利用可能: " + " / ".join(names) + "\n例: 予約 相談"
                     else:
-                        reply = "現在受付可能な予約の種類がありません。管理画面で受付を再開してください。"
-                    send_reply_message(event.reply_token, reply)
+                        body = "現在受付可能な予約の種類がありません。管理画面で受付を再開してください。"
+                    send_flex_notice(event.reply_token, "種類を指定してください", body)
                     return
 
                 cur.execute(
@@ -2290,15 +2283,17 @@ def process_reservation(event, user_id, user_message):
                                 reservation_id=res_id,
                                 owner_admin_id=existing_owner_admin_id,
                             )
-                            reply = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                            body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, res_id))
-                            reply = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                            body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
-                            reply = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                            body = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
                         else:
-                            reply = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                            body = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                    send_flex_notice(event.reply_token, "予約状況", body)
+                    return
                 else:
                     if type_owner_admin_id:
                         start_minute, end_minute = get_admin_reservation_window(type_owner_admin_id, cur=cur)
@@ -2307,8 +2302,11 @@ def process_reservation(event, user_id, user_message):
                             current_minute = current_dt.hour * 60 + current_dt.minute
                             if not is_minute_in_window(current_minute, int(start_minute), int(end_minute)):
                                 window_label = f"{format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)}"
-                                reply = f"「{type_name}」の予約受付時間は {window_label} です。現在は受付時間外です。"
-                                send_reply_message(event.reply_token, reply)
+                                send_flex_notice(
+                                    event.reply_token,
+                                    "受付時間外",
+                                    f"「{type_name}」の予約受付時間は {window_label} です。現在は受付時間外です。",
+                                )
                                 return
                     try:
                         cur.execute(
@@ -2338,19 +2336,19 @@ def process_reservation(event, user_id, user_message):
                                         reservation_id=res_id,
                                         owner_admin_id=existing_owner_admin_id,
                                     )
-                                    reply = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                    body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
                                     cur.execute(
                                         "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                         (STATUS_WAITING, res_id),
                                     )
-                                    reply = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                                    body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
                             elif status == STATUS_CALLED:
                                 if existing_type_name:
-                                    reply = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
                                 else:
-                                    reply = f"【呼出中】番号: {res_id} 会場へお越しください！"
-                            send_reply_message(event.reply_token, reply)
+                                    body = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                            send_flex_notice(event.reply_token, "予約状況", body)
                             return
                         raise
                     conn.commit()
@@ -2360,14 +2358,16 @@ def process_reservation(event, user_id, user_message):
                             reservation_id=new_id,
                             owner_admin_id=type_owner_admin_id,
                         )
-                        reply = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, new_id))
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
-                        reply = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
-                    reply += f"\n現在の目安待ち時間: {estimated_minutes}分"
+                    body += f"\n現在の目安待ち時間: {estimated_minutes}分"
+                    send_flex_notice(event.reply_token, "受付完了", body)
+                    return
             elif normalized == 'キャンセル':
                 cur.execute(
                     """
@@ -2384,9 +2384,10 @@ def process_reservation(event, user_id, user_message):
                 cancelled = cur.fetchone()
                 if cancelled:
                     conn.commit()
-                    reply = f"予約番号 {cancelled[0]} をキャンセルしました。"
+                    send_flex_notice(event.reply_token, "キャンセル完了", f"予約番号 {cancelled[0]} をキャンセルしました。")
                 else:
-                    reply = "キャンセル対象の予約はありません。"
+                    send_flex_notice(event.reply_token, "キャンセル", "キャンセル対象の予約はありません。")
+                return
             elif normalized == '待ち時間':
                 cur.execute(
                     """
@@ -2400,7 +2401,11 @@ def process_reservation(event, user_id, user_message):
                 )
                 existing = cur.fetchone()
                 if not existing:
-                    reply = "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。"
+                    send_flex_notice(
+                        event.reply_token,
+                        "待ち時間",
+                        "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。",
+                    )
                 else:
                     res_id, status, type_name, owner_admin_id = existing
                     if status == STATUS_WAITING:
@@ -2418,20 +2423,25 @@ def process_reservation(event, user_id, user_message):
                             waiting_people_ahead = int(cur.fetchone()[0] or 0)
                         estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
                         if type_name:
-                            reply = (
+                            body = (
                                 f"番号: {res_id} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         else:
-                            reply = (
+                            body = (
                                 f"番号: {res_id} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
+                        send_flex_notice(event.reply_token, "待ち時間", body)
                     else:
-                        reply = f"【呼出中】番号: {res_id} です。会場へお越しください。"
+                        send_flex_notice(event.reply_token, "呼出中", f"【呼出中】番号: {res_id} です。会場へお越しください。")
+                return
             else:
-                reply = "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。"
-    send_reply_message(event.reply_token, reply)
+                send_flex_notice(
+                    event.reply_token,
+                    "ご案内",
+                    "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。",
+                )
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
