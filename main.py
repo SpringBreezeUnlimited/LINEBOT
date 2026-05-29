@@ -242,18 +242,9 @@ def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: Pu
 
 def build_line_message(message: str | dict):
     if isinstance(message, dict):
-        mtype = message.get("type")
-        if mtype == "flex":
+        if message.get("type") == "flex":
             return build_flex_message(message)
-        if mtype == "text":
-            # Ensure text is a string
-            text_val = message.get("text")
-            return TextMessage(text=str(text_val) if text_val is not None else "")
-        # Unknown dict shape: convert to readable text to avoid sending raw python dicts
-        try:
-            return TextMessage(text=str(message))
-        except Exception:
-            return TextMessage(text="(invalid message)")
+        return message
     return TextMessage(text=message)
 
 
