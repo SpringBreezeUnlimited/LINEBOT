@@ -185,15 +185,12 @@ class ManagedConnection:
         return getattr(self._connection, name)
 
     def __enter__(self):
-        self._connection.__enter__()
         return self._connection
 
     def __exit__(self, exc_type, exc, tb):
-        try:
-            return self._connection.__exit__(exc_type, exc, tb)
-        finally:
-            if self._close_on_exit and not self._connection.closed:
-                self._connection.close()
+        if self._close_on_exit and not self._connection.closed:
+            self._connection.close()
+        return False
 
 
 def create_connection():
