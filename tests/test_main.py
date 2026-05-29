@@ -572,7 +572,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.111" in text
+    assert "Version: v1.0.112" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
@@ -609,7 +609,7 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin/types")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.111" in text
+    assert "Version: v1.0.112" in text
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):

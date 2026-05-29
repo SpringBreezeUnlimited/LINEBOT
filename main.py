@@ -371,7 +371,7 @@ def send_reply_message(reply_token: str, message: str | dict):
         with ApiClient(MESSAGING_CONFIGURATION) as api_client:
             MessagingApi(api_client).reply_message(payload)
     except Exception:
-        app.logger.exception("Failed to send reply message")
+        app.logger.exception("Failed to send reply message reply_token=%s", reply_token)
 
 
 def send_flex_notice(reply_token: str, title: str, body: str):
@@ -520,7 +520,7 @@ def expire_called_reservations() -> int:
                 app.logger.exception("Failed to send timeout message for reservation %s user_id=%s", reservation_id, user_id)
         return len(timed_out_rows)
     except Exception:
-        app.logger.exception("Failed to expire called reservations")
+        app.logger.exception("Failed to expire called reservations CALL_TIMEOUT_MINUTES=%s", CALL_TIMEOUT_MINUTES)
         return 0
 
 
@@ -680,7 +680,7 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
             "message": f"現在の目安待ち時間: {estimated_minutes}分",
         }
     except Exception:
-        app.logger.exception("Failed to refresh wait time estimate")
+        app.logger.exception("Failed to refresh wait time estimate owner_admin_id=%s", owner_admin_id)
         return default_result
 
 
@@ -968,7 +968,7 @@ def authenticate_admin_account(login_id: str, candidate: str):
                     "role": row[3],
                 }
     except Exception:
-        app.logger.exception("Failed to authenticate admin account")
+        app.logger.exception("Failed to authenticate admin account login_id=%s", normalized_login_id)
         return None
 
 
@@ -1173,7 +1173,7 @@ def is_login_rate_limited(ip: str) -> bool:
                 )
                 return cur.fetchone()[0] >= LOGIN_MAX_ATTEMPTS
     except Exception:
-        app.logger.exception("Failed to check login rate limit for %s", ip)
+        app.logger.exception("Failed to check login rate limit for ip=%s", ip)
         return False
 
 def record_login_failure(ip: str):
@@ -1186,7 +1186,7 @@ def record_login_failure(ip: str):
                 )
                 conn.commit()
     except Exception:
-        app.logger.exception("Failed to record login failure for %s", ip)
+        app.logger.exception("Failed to record login failure for ip=%s", ip)
 
 
 def is_webhook_rate_limited(ip: str) -> bool:
@@ -1208,7 +1208,7 @@ def is_webhook_rate_limited(ip: str) -> bool:
                 conn.commit()
                 return False
     except Exception:
-        app.logger.exception("Failed to check webhook rate limit for %s", ip)
+        app.logger.exception("Failed to check webhook rate limit for ip=%s", ip)
         return False
 
 # --- ルーティング ---
@@ -2276,7 +2276,12 @@ def callback():
         abort(400)
     except Exception:
         # ハンドラー内の一時的な失敗で5xxを返すとLINEが再送し、二重処理につながるため200で吸収する。
-        app.logger.exception("Failed to process LINE webhook event")
+        app.logger.exception(
+            "Failed to process LINE webhook event ip=%s signature=%s body_len=%s",
+            ip,
+            (signature or "")[:64],
+            len(body) if body is not None else 0,
+        )
         return 'OK'
     return 'OK'
 
