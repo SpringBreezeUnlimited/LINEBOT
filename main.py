@@ -94,7 +94,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.113"
+APP_VERSION = "v1.0.112"
 APP_RELEASED_AT = "2026-05-29 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -2438,16 +2438,15 @@ def process_reservation(event, user_id, user_message):
                             reservation_id=new_id,
                             owner_admin_id=type_owner_admin_id,
                         )
+                        body = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, new_id))
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
+                        body = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
-                    send_flex_notice(
-                        event.reply_token,
-                        "受付完了",
-                        reservation_confirmation(new_id, type_name, waiting_people_ahead, estimated_minutes),
-                    )
+                    body += f"\n現在の目安待ち時間: {estimated_minutes}分"
+                    send_flex_notice(event.reply_token, "受付完了", body)
                     return
             elif normalized == 'キャンセル':
                 cur.execute(
