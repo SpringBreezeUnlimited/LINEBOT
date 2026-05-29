@@ -15,7 +15,10 @@ import psycopg2 # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context # type: ignore
 from linebot.v3 import WebhookHandler # type: ignore
 from linebot.v3.exceptions import InvalidSignatureError # type: ignore
-from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage # type: ignore
+from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage, FlexMessage # type: ignore
+from linebot.v3.messaging.models.flex_box import FlexBox # type: ignore
+from linebot.v3.messaging.models.flex_bubble import FlexBubble # type: ignore
+from linebot.v3.messaging.models.flex_text import FlexText # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash # type: ignore
@@ -91,8 +94,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.111"
-APP_RELEASED_AT = "2026-05-28 00:00 JST"
+APP_VERSION = "v1.0.112"
+APP_RELEASED_AT = "2026-05-29 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -180,15 +183,18 @@ class ManagedConnection:
         return getattr(self._connection, name)
 
     def __enter__(self):
-        self._connection.__enter__()
+        if self._close_on_exit:
+            self._connection.__enter__()
         return self._connection
 
     def __exit__(self, exc_type, exc, tb):
-        try:
-            return self._connection.__exit__(exc_type, exc, tb)
-        finally:
-            if self._close_on_exit and not self._connection.closed:
-                self._connection.close()
+        if self._close_on_exit:
+            try:
+                return self._connection.__exit__(exc_type, exc, tb)
+            finally:
+                if not self._connection.closed:
+                    self._connection.close()
+        return False
 
 
 def create_connection():
@@ -234,18 +240,99 @@ def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: Pu
         return messaging_api.push_message(request_payload)
 
 
+def build_line_message(message: str | dict):
+    if isinstance(message, dict):
+        if message.get("type") == "flex":
+            return build_flex_message(message)
+        return message
+    return TextMessage(text=message)
+
+
+def build_flex_component(component):
+    if isinstance(component, (FlexBubble, FlexBox, FlexText)):
+        return component
+    if not isinstance(component, dict):
+        return component
+    component_type = component.get("type")
+    if component_type == "text":
+        return FlexText(
+            text=component.get("text") or "",
+            flex=component.get("flex"),
+            size=component.get("size"),
+            align=component.get("align"),
+            gravity=component.get("gravity"),
+            color=component.get("color"),
+            weight=component.get("weight"),
+            style=component.get("style"),
+            decoration=component.get("decoration"),
+            wrap=component.get("wrap"),
+            lineSpacing=component.get("lineSpacing"),
+            margin=component.get("margin"),
+            position=component.get("position"),
+            offsetTop=component.get("offsetTop"),
+            offsetBottom=component.get("offsetBottom"),
+            offsetStart=component.get("offsetStart"),
+            offsetEnd=component.get("offsetEnd"),
+            action=component.get("action"),
+            maxLines=component.get("maxLines"),
+            adjustMode=component.get("adjustMode"),
+            scaling=component.get("scaling"),
+        )
+    if component_type == "box":
+        return FlexBox(
+            layout=component.get("layout") or "vertical",
+            flex=component.get("flex"),
+            contents=[build_flex_component(item) for item in component.get("contents") or []],
+            spacing=component.get("spacing"),
+            margin=component.get("margin"),
+            position=component.get("position"),
+            offsetTop=component.get("offsetTop"),
+            offsetBottom=component.get("offsetBottom"),
+            offsetStart=component.get("offsetStart"),
+            offsetEnd=component.get("offsetEnd"),
+            backgroundColor=component.get("backgroundColor"),
+            borderColor=component.get("borderColor"),
+            borderWidth=component.get("borderWidth"),
+            cornerRadius=component.get("cornerRadius"),
+            width=component.get("width"),
+            maxWidth=component.get("maxWidth"),
+            height=component.get("height"),
+            maxHeight=component.get("maxHeight"),
+            paddingAll=component.get("paddingAll"),
+            paddingTop=component.get("paddingTop"),
+            paddingBottom=component.get("paddingBottom"),
+            paddingStart=component.get("paddingStart"),
+            paddingEnd=component.get("paddingEnd"),
+            action=component.get("action"),
+            justifyContent=component.get("justifyContent"),
+            alignItems=component.get("alignItems"),
+            background=component.get("background"),
+        )
+    if component_type == "bubble":
+        return FlexBubble(
+            direction=component.get("direction"),
+            styles=component.get("styles"),
+            header=build_flex_component(component.get("header")),
+            hero=build_flex_component(component.get("hero")),
+            body=build_flex_component(component.get("body")),
+            footer=build_flex_component(component.get("footer")),
+            size=component.get("size"),
+            action=component.get("action"),
+        )
+    return component
+
+
+def build_flex_message(message: dict):
+    alt_text = (message.get("altText") or message.get("alt_text") or "通知").strip() or "通知"
+    return FlexMessage(altText=alt_text, contents=build_flex_component(message.get("contents")))
+
+
 def send_push_message(user_id: str, message: str | dict, retry_key: str | None = None):
     stable_retry_key = retry_key or str(uuid.uuid4())
-    if isinstance(message, dict):
-        payload = PushMessageRequest(
-            to=user_id,
-            messages=[message],
-        )
-    else:
-        payload = PushMessageRequest(
-            to=user_id,
-            messages=[TextMessage(text=message)],
-        )
+    payload = PushMessageRequest(
+        to=user_id,
+        messages=[build_line_message(message)],
+    )
     for attempt in range(1, LINE_PUSH_MAX_RETRIES + 1):
         try:
             with ApiClient(MESSAGING_CONFIGURATION) as api_client:
@@ -274,16 +361,9 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
 
 def send_reply_message(reply_token: str, message: str | dict):
     try:
-        if isinstance(message, dict):
-            payload = ReplyMessageRequest(reply_token=reply_token, messages=[message])
-            with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-                MessagingApi(api_client).reply_message(payload)
-            return
-
+        payload = ReplyMessageRequest(reply_token=reply_token, messages=[build_line_message(message)])
         with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-            MessagingApi(api_client).reply_message(
-                ReplyMessageRequest(reply_token=reply_token, messages=[TextMessage(text=message)])
-            )
+            MessagingApi(api_client).reply_message(payload)
     except Exception:
         app.logger.exception("Failed to send reply message")
 

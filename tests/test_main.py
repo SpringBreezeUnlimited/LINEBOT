@@ -199,6 +199,30 @@ def test_get_admin_reservation_window_uses_existing_cursor(app_module, monkeypat
     assert end_minute == 1020
 
 
+def test_get_connection_request_scoped_connection_is_not_reentered(app_module):
+    entered = []
+
+    class FakeConnection:
+        closed = False
+
+        def __enter__(self):
+            entered.append("enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            entered.append("exit")
+            return False
+
+        def close(self):
+            self.closed = True
+
+    with app_module.app.test_request_context("/"):
+        app_module.g._db_connection = FakeConnection()
+        with app_module.get_connection() as conn:
+            assert isinstance(conn, FakeConnection)
+        assert entered == []
+
+
 def test_send_push_message_uses_retry_key(app_module, monkeypatch):
     captured = []
 
@@ -224,6 +248,38 @@ def test_send_push_message_uses_retry_key(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
     app_module.send_push_message("U1", "hello", retry_key="retry-key-1")
     assert captured == [("U1", "hello", "retry-key-1")]
+
+
+def test_send_reply_message_serializes_flex_payload(app_module, monkeypatch):
+    captured = []
+
+    class DummyApiClient:
+        def __init__(self, _config):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class DummyMessagingApi:
+        def __init__(self, _api_client):
+            return None
+
+        def reply_message(self, request_payload):
+            captured.append(request_payload.dict(by_alias=True, exclude_none=True))
+            return None
+
+    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+
+    app_module.send_reply_message("reply-token", app_module.bubble_from_title_and_text("受付完了", "本文"))
+
+    assert captured[0]["messages"][0]["type"] == "flex"
+    assert captured[0]["messages"][0]["altText"] == "受付完了 - 通知"
+    assert captured[0]["messages"][0]["contents"]["type"] == "bubble"
+    assert captured[0]["messages"][0]["contents"]["body"]["contents"][0]["text"] == "本文"
 
 
 def test_send_push_message_retries_with_same_key(app_module, monkeypatch):
@@ -572,7 +628,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.111" in text
+    assert "Version: v1.0.112" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
@@ -609,7 +665,7 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin/types")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.111" in text
+    assert "Version: v1.0.112" in text
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
