@@ -255,18 +255,8 @@ def build_flex_component(component):
         return component
     component_type = component.get("type")
     if component_type == "text":
-        # Ensure text is a string to satisfy pydantic validation in FlexText
-        raw_text = component.get("text")
-        if raw_text is None:
-            text_value = ""
-        else:
-            # Convert non-string values to string representation
-            try:
-                text_value = str(raw_text)
-            except Exception:
-                text_value = ""
         return FlexText(
-            text=text_value,
+            text=component.get("text") or "",
             flex=component.get("flex"),
             size=component.get("size"),
             align=component.get("align"),
