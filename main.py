@@ -1732,6 +1732,7 @@ def admin_page():
         return redirect(url_for("login"))
 
     type_error = request.args.get("type_error")
+    call_error = request.args.get("call_error")
     type_id = request.args.get("type_id", "").strip()
     current_type_id = int(type_id) if type_id.isdigit() else None
     sort_by = request.args.get("sort_by", "id").strip()
@@ -1762,6 +1763,7 @@ def admin_page():
         rows=active_rows,
         types=types,
         type_error=type_error,
+        call_error=call_error,
         current_type_id=current_type_id,
         type_counts=type_counts,
         sort_by=sort_by,
@@ -2171,6 +2173,14 @@ def admin_call(res_id):
             )
             row = cur.fetchone()
             if not row:
+                cur.execute(
+                    "SELECT status FROM reservations WHERE id = %s",
+                    (res_id,),
+                )
+                existing = cur.fetchone()
+                if existing and existing[0] == STATUS_CANCELLED:
+                    conn.commit()
+                    return redirect(url_for("admin_page", call_error=f"予約番号 {res_id} は直前にキャンセルされたため呼出できませんでした。"))
                 abort(404)
             user_id = row[0]
             conn.commit()

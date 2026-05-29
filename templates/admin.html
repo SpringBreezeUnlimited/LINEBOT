@@ -47,6 +47,11 @@
     <div class="shadow-sm">
         <div class="card-body">
             <div class="row g-2 align-items-center">
+                {% if call_error %}
+                <div class="col-12">
+                    <div class="alert alert-warning mb-0">{{ call_error }}</div>
+                </div>
+                {% endif %}
                 <div class="col-sm-6">
                     <label class="form-label">種類で絞り込み</label>
                     <select id="type-filter" class="form-select">
