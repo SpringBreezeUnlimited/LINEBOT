@@ -628,7 +628,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.112" in text
+    assert "Version: v1.0.113" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
@@ -665,7 +665,7 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin/types")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.112" in text
+    assert "Version: v1.0.113" in text
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
@@ -1427,8 +1427,8 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
     app_module.process_reservation(event, "U-123", "予約 相談")
 
     assert sent_texts
-    assert "【受付完了】番号: 10 / 種類: 相談 / 待ち: 2人" in sent_texts[0]
-    assert "現在の目安待ち時間: 3分" in sent_texts[0]
+    body_text = sent_texts[0]["contents"]["body"]["contents"][0]["text"]
+    assert body_text == "番号: 10\n種類: 相談\nあなたの前: 2人\n現在の目安待ち時間: 3分"
 
 
 def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch):
