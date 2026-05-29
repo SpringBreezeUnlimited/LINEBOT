@@ -96,7 +96,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
 
-APP_VERSION = "v1.0.111"
+APP_VERSION = "v1.0.112"
 APP_RELEASED_AT = "2026-05-28 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -517,7 +517,7 @@ def expire_called_reservations() -> int:
                 flex = auto_cancel_notification(reservation_id)
                 send_push_message(user_id, flex)
             except Exception:
-                app.logger.exception("Failed to send timeout message for reservation %s", reservation_id)
+                app.logger.exception("Failed to send timeout message for reservation %s user_id=%s", reservation_id, user_id)
         return len(timed_out_rows)
     except Exception:
         app.logger.exception("Failed to expire called reservations")
@@ -585,7 +585,7 @@ def process_queued_calls(now=None):
             sent_ids.append(res_id)
         except Exception:
             failed_ids.append(res_id)
-            app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
+            app.logger.exception("Failed to send LINE push message for reservation %s user_id=%s", res_id, user_id)
 
     if failed_ids:
         with get_connection() as conn:
@@ -2188,7 +2188,7 @@ def admin_call(res_id):
     try:
         send_push_message(user_id, build_call_message(res_id))
     except Exception:
-        app.logger.exception("Failed to send LINE push message for reservation %s", res_id)
+        app.logger.exception("Failed to send LINE push message for reservation %s user_id=%s", res_id, user_id)
         with get_connection() as rollback_conn:
             with rollback_conn.cursor() as rollback_cur:
                 rollback_cur.execute(
@@ -2448,6 +2448,7 @@ def process_reservation(event, user_id, user_message):
                             return
                         raise
                     conn.commit()
+                    app.logger.info("Created reservation %s by user %s type_id=%s", new_id, user_id, type_id)
                     if type_owner_admin_id:
                         waiting_people_ahead = count_waiting_people_ahead_by_owner(
                             cur,
