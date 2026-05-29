@@ -243,30 +243,17 @@ def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: Pu
 def build_line_message(message: str | dict):
     if isinstance(message, dict):
         mtype = message.get("type")
-        # Treat typical flex-format dicts as flex even if 'type' key is missing in some cases
-        if mtype == "flex" or ("altText" in message and "contents" in message):
-            try:
-                return build_flex_message(message)
-            except Exception:
-                app.logger.exception("Failed to build flex message from dict; falling back to text")
-                # fall through to text fallback
+        if mtype == "flex":
+            return build_flex_message(message)
         if mtype == "text":
+            # Ensure text is a string
             text_val = message.get("text")
             return TextMessage(text=str(text_val) if text_val is not None else "")
-        # Unknown dict shape: convert to JSON text to avoid sending raw python dict repr
+        # Unknown dict shape: convert to readable text to avoid sending raw python dicts
         try:
-            import json
-
-            text = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+            return TextMessage(text=str(message))
         except Exception:
-            try:
-                text = str(message)
-            except Exception:
-                text = "(invalid message)"
-        # Truncate overly long diagnostics to avoid huge text messages
-        if len(text) > 1000:
-            text = text[:1000] + "..."
-        return TextMessage(text=text)
+            return TextMessage(text="(invalid message)")
     return TextMessage(text=message)
 
 
