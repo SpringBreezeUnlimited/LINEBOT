@@ -91,9 +91,76 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
         for query in normalized_queries
     )
     assert any(
+        "ALTER TABLE reservations ALTER COLUMN user_id SET NOT NULL" in query
+        for query in normalized_queries
+    )
+    assert any(
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active ON reservations (user_id) WHERE status IN ('waiting', 'called')" in query
         for query in normalized_queries
     )
+
+
+def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+            if "FROM reservation_types WHERE name = %s" in query:
+                self._last = (1, "相談", True, 7)
+            elif "WHERE r.user_id = %s AND r.status IN" in query:
+                self._last = None
+            elif "FROM admin_accounts WHERE id = %s" in query:
+                self._last = (None, None)
+            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+                self._last = (10,)
+            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+                self._last = (2,)
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(
+        app_module,
+        "refresh_wait_time_estimate",
+        lambda now=None, owner_admin_id=None: {"message": "現在の目安待ち時間: 6分", "estimated_seconds": 360},
+    )
+
+    sent_texts = []
+    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+
+    event = SimpleNamespace(reply_token="reply-token")
+    app_module.process_reservation(event, "U-123", "予約 相談")
+
+    insert_queries = [params for query, params in queries if "INSERT INTO reservations (user_id, message, type_id)" in query]
+    assert insert_queries == [("U-123", "", 1)]
+    assert sent_texts
 
 
 def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
