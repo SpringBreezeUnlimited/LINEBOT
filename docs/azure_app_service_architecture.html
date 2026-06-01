@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Azure App Service構成図</title>
+    <style>
+      :root {
+        --bg: #f7f3ea;
+        --ink: #1f1f1f;
+        --muted: #6b6b6b;
+      }
+      body {
+        margin: 0;
+        font-family: "IBM Plex Sans", "Noto Sans JP", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(1200px 600px at 80% -10%, #d7e8ff, transparent),
+          radial-gradient(1000px 500px at -10% 10%, #ffe8c6, transparent),
+          var(--bg);
+      }
+      header {
+        padding: 28px 32px 8px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(20px, 2.4vw, 30px);
+        letter-spacing: 0.02em;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+      main {
+        padding: 10px 28px 36px;
+      }
+      .panel {
+        background: #fff;
+        border-radius: 16px;
+        padding: 14px;
+        box-shadow: 0 10px 25px rgba(32, 32, 32, 0.12);
+      }
+      #diagram {
+        min-height: 540px;
+      }
+      @media (max-width: 768px) {
+        header,
+        main {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        #diagram {
+          min-height: 460px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>LINEBOT - Azure App Service構成図</h1>
+      <p>App Service中心の運用構成。Key Vaultで秘密情報を管理し、PostgreSQLと監視を接続。</p>
+    </header>
+    <main>
+      <section class="panel">
+        <div id="diagram" class="mermaid">
+%%{init: {"theme": "base"}}%%
+flowchart LR
+  user["利用者"] -->|"HTTPS"| appgw["独自ドメイン + TLS"]
+  appgw --> app["App Service (Linux, Python, Gunicorn)"]
+  app --> kv["Key Vault"]
+  app --> db["Azure Database for PostgreSQL"]
+  app --> ai["Application Insights"]
+
+  subgraph 運用
+    repo["GitHubリポジトリ"] --> gha["GitHub Actions"]
+    gha --> deploy["App Serviceへデプロイ"]
+  end
+
+  deploy --> app
+
+  subgraph セキュリティ
+    waf["アクセス制限 / IPルール"]
+    vnet["VNet統合"]
+  end
+
+  app -.-> waf
+  app -.-> vnet
+        </div>
+      </section>
+    </main>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "base" });
+    </script>
+  </body>
+</html>

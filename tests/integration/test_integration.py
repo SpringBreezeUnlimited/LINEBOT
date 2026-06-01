@@ -74,6 +74,9 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
                         self._last = (state["user_id"],)
                     else:
                         self._last = None
+            elif normalized_query.startswith("SELECT status FROM reservations WHERE id = %s"):
+                with lock:
+                    self._last = (state["status"],)
             elif normalized_query.startswith("UPDATE reservations SET status = %s, called_at = NULL"):
                 with lock:
                     rollback_status, _res_id, expected_status = params
