@@ -635,6 +635,10 @@ select {
         width: calc(100% - 24px);
     }
 
+    .navbar {
+        margin-bottom: var(--space-3);
+    }
+
     .navbar .container {
         align-items: stretch;
     }
@@ -645,6 +649,10 @@ select {
     }
 
     .admin-scroll {
+        padding: var(--space-4);
+    }
+
+    .card-body {
         padding: var(--space-4);
     }
 
