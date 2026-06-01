@@ -649,7 +649,7 @@ select {
     }
 
     .admin-scroll {
-        padding: var(--space-4);
+        padding: var(--space-2) var(--space-4) var(--space-4);
     }
 
     .card-body {
@@ -668,6 +668,7 @@ select {
 
     .list-meta {
         justify-content: flex-start;
+        padding-top: var(--space-2);
         padding-right: var(--space-4);
         padding-left: var(--space-4);
     }
