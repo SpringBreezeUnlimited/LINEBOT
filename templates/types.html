@@ -39,8 +39,8 @@
 
 {% block content %}
 <div class="container">
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
+    <div class="card mb-4">
+        <div>
             <h5 class="card-title">種類を追加</h5>
             <div class="mb-3">
                 <span class="me-2">全体の新規受付</span>
@@ -108,8 +108,8 @@
             </form>
         </div>
     </div>
-    <div class="card shadow-sm">
-        <div class="card-body">
+    <div class="card">
+        <div>
             <h5 class="card-title">登録済みの種類</h5>
             <div class="types-card-shell">
                 <div class="types-scroll">
@@ -171,7 +171,7 @@
         </div>
     </div>
 </div>
-<div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded shadow-sm small version-badge">
+<div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded small version-badge">
     <div>Version: {{ app_version }}</div>
 </div>
 {% endblock %}

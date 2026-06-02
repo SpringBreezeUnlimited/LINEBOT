@@ -19,11 +19,13 @@
         </span>
         <div class="sidebar-nav-actions d-flex gap-2">
             <a href="/admin/types" class="btn btn-outline-light btn-sm" aria-label="種類" title="種類">
-                <img src="{{ url_for('static', filename='img/code_reader_fill.svg') }}" alt="" aria-hidden="true" class="nav-icon nav-icon-type">
+                <img src="{{ url_for('static', filename='img/code_reader_fill.svg') }}" alt="" aria-hidden="true"
+                    class="nav-icon nav-icon-type">
                 <span>種類</span>
             </a>
             <a href="/admin/history" class="btn btn-outline-light btn-sm" aria-label="過去ログ" title="過去ログ">
-                <img src="{{ url_for('static', filename='img/history_fill.svg') }}" alt="" aria-hidden="true" class="nav-icon nav-icon-history">
+                <img src="{{ url_for('static', filename='img/history_fill.svg') }}" alt="" aria-hidden="true"
+                    class="nav-icon nav-icon-history">
                 <span>ログ</span>
                 <span class="visually-hidden">過去ログ</span>
             </a>
@@ -31,12 +33,8 @@
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
             </form>
-            <a
-                href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
-                class="btn btn-outline-light btn-sm"
-                target="_blank"
-                rel="noopener noreferrer"
-            >お問い合わせ</a>
+            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
+                class="btn btn-outline-light btn-sm" target="_blank" rel="noopener noreferrer">お問い合わせ</a>
         </div>
     </div>
 </nav>
@@ -44,8 +42,8 @@
 
 {% block content %}
 <div class="container">
-    <div class="shadow-sm">
-        <div class="card-body">
+    <div>
+        <div>
             <div class="row g-2 align-items-center">
                 {% if call_error %}
                 <div class="col-12">
@@ -57,16 +55,16 @@
                     <select id="type-filter" class="form-select">
                         <option value="">すべて</option>
                         {% for t in types %}
-                        <option value="{{ t[0] }}" {% if current_type_id == t[0] %}selected{% endif %}>{{ t[1] }}</option>
+                        <option value="{{ t[0] }}" {% if current_type_id==t[0] %}selected{% endif %}>{{ t[1] }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="col-sm-6">
                     <label class="form-label">並べ替え</label>
                     <select id="sort-by" class="form-select">
-                        <option value="id" {% if sort_by == 'id' %}selected{% endif %}>番号</option>
-                        <option value="status" {% if sort_by == 'status' %}selected{% endif %}>状態</option>
-                        <option value="type" {% if sort_by == 'type' %}selected{% endif %}>種類</option>
+                        <option value="id" {% if sort_by=='id' %}selected{% endif %}>番号</option>
+                        <option value="status" {% if sort_by=='status' %}selected{% endif %}>状態</option>
+                        <option value="type" {% if sort_by=='type' %}selected{% endif %}>種類</option>
                     </select>
                 </div>
             </div>
@@ -74,22 +72,14 @@
                 <div class="col-sm-6 control-col">
                     <label class="form-label">新規受付</label>
                     {% if accepting_new %}
-                    <form
-                        method="POST"
-                        action="/admin/toggle-accepting"
-                        class="d-grid"
-                        data-inline-confirm="新規受付を停止しますか？"
-                    >
+                    <form method="POST" action="/admin/toggle-accepting" class="d-grid"
+                        data-inline-confirm="新規受付を停止しますか？">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="btn btn-success w-100">受付中（停止する）</button>
                     </form>
                     {% else %}
-                    <form
-                        method="POST"
-                        action="/admin/toggle-accepting"
-                        class="d-grid"
-                        data-inline-confirm="新規受付を再開しますか？"
-                    >
+                    <form method="POST" action="/admin/toggle-accepting" class="d-grid"
+                        data-inline-confirm="新規受付を再開しますか？">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="btn btn-danger w-100">受付停止中（再開する）</button>
                     </form>
@@ -99,15 +89,8 @@
                     <label class="form-label auto-call-label">5分ごとの自動呼出人数</label>
                     <form method="POST" action="/admin/auto-call-count" class="auto-call-form">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                        <input
-                            type="number"
-                            name="auto_call_count"
-                            min="0"
-                            max="50"
-                            step="1"
-                            value="{{ auto_call_count }}"
-                            class="form-control"
-                        >
+                        <input type="number" name="auto_call_count" min="0" max="50" step="1"
+                            value="{{ auto_call_count }}" class="form-control">
                         <button type="submit" class="btn btn-primary">保存</button>
                     </form>
                     <p class="helper-text">0 にすると自動呼出は停止します。手動の呼出ボタンは引き続き使えます。</p>
@@ -129,24 +112,21 @@
             </div>
         </div>
     </div>
-    <div class="shadow-sm">
+    <div>
         <div id="call-notification" class="call-notification" hidden></div>
         <div class="list-meta">
             <span class="list-meta-label">リスト最終更新</span>
             <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
         </div>
-        <div class="card-body p-0 admin-card-shell">
+        <div class="p-0 admin-card-shell">
             <div class="admin-scroll">
                 <div class="admin-card-list" id="active-rows">
                     {% for row in rows %}
-                    <article
-                        class="admin-reservation-card"
-                        data-id="{{ row.id }}"
+                    <article class="admin-reservation-card" data-id="{{ row.id }}"
                         data-created-at="{{ row.created_at if row.created_at else '' }}"
                         data-type="{{ row.type or '' }}"
                         data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
-                        data-status="{{ row.status }}"
-                    >
+                        data-status="{{ row.status }}">
                         <div class="admin-reservation-card__header">
                             <div>
                                 <div class="admin-reservation-card__label">番号</div>
@@ -196,7 +176,8 @@
     <div class="text-center mt-4">
         <a href="/admin" class="btn btn-secondary">リストを更新</a>
     </div>
-    <div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded shadow-sm small version-badge">
+    <div id="version-badge"
+        class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded small version-badge">
         <div>Version: {{ app_version }}</div>
     </div>
 </div>

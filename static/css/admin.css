@@ -124,7 +124,7 @@ select {
 }
 
 .card-body {
-    padding: var(--space-5);
+    padding: var(--space-0);
 }
 
 .admin-card-shell {
@@ -134,14 +134,14 @@ select {
 .admin-scroll {
     overflow-x: auto;
     overflow-y: hidden;
-    padding: var(--space-5);
+    padding: var(--space-4);
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x proximity;
 }
 
 .admin-card-list {
     display: flex;
-    gap: var(--space-4);
+    gap: var(--space-3);
     min-width: max-content;
 }
 
@@ -486,15 +486,11 @@ select {
 }
 
 .type-counts-block {
-    flex: 0 1 320px;
-    /* flex-grow:0（伸びない）; flex-shrink:1; flex-basis:320px */
     max-width: 320px;
-    /* 必要に応じて上限を固定 */
 }
 
 .auto-call-summary {
     margin-left: auto;
-    flex: 0 1 540px;
     text-align: right;
 }
 

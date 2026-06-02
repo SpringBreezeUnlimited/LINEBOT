@@ -27,8 +27,8 @@
 
 {% block content %}
 <div class="container">
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
+    <div class="card mb-4">
+        <div>
             <h5 class="card-title">管理者アカウント作成</h5>
             {% if account_error %}
             <div class="alert alert-danger">{{ account_error }}</div>
@@ -51,12 +51,8 @@
                 </div>
                 <div class="col-12 mt-3">
                     <label class="form-label">一括作成（任意）</label>
-                    <textarea
-                        name="bulk_accounts"
-                        class="form-control"
-                        rows="5"
-                        placeholder="manager01,superpower01\nmanager02,superpower02"
-                    ></textarea>
+                    <textarea name="bulk_accounts" class="form-control" rows="5"
+                        placeholder="manager01,superpower01\nmanager02,superpower02"></textarea>
                     <p class="text-muted small mt-2 mb-0">1行1アカウントで login_id,password 形式。ここに入力した場合は一括作成を優先します。</p>
                 </div>
             </form>
@@ -64,8 +60,8 @@
         </div>
     </div>
 
-    <div class="card shadow-sm mb-4">
-        <div class="card-body p-0">
+    <div class="card mb-4">
+        <div class="p-0">
             <table class="table table-striped mb-0">
                 <thead class="table-dark">
                     <tr>
@@ -83,9 +79,11 @@
                         <td>{{ account[0] }}</td>
                         <td>{{ account[1] }}</td>
                         <td>
-                            <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/login-id" class="d-flex gap-2 align-items-center">
+                            <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/login-id"
+                                class="d-flex gap-2 align-items-center">
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                <input type="text" name="login_id" class="form-control form-control-sm" value="{{ account[1] }}" required>
+                                <input type="text" name="login_id" class="form-control form-control-sm"
+                                    value="{{ account[1] }}" required>
                                 <button type="submit" class="btn btn-sm btn-outline-primary">更新</button>
                             </form>
                         </td>
@@ -115,8 +113,8 @@
         </div>
     </div>
 
-    <div class="card shadow-sm">
-        <div class="card-body p-0">
+    <div class="card ">
+        <div class="p-0">
             <table class="table table-striped mb-0">
                 <thead class="table-dark">
                     <tr>
