@@ -12,18 +12,18 @@ from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
-import psycopg2 # type: ignore
-from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context # type: ignore
-from linebot.v3 import WebhookHandler # type: ignore
-from linebot.v3.exceptions import InvalidSignatureError # type: ignore
-from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage # type: ignore
-from linebot.v3.messaging.models.flex_box import FlexBox # type: ignore
-from linebot.v3.messaging.models.flex_bubble import FlexBubble # type: ignore
-from linebot.v3.messaging.models.flex_message import FlexMessage # type: ignore
-from linebot.v3.messaging.models.flex_text import FlexText # type: ignore
-from linebot.v3.webhooks import MessageEvent, TextMessageContent # type: ignore
-from werkzeug.middleware.proxy_fix import ProxyFix # type: ignore
-from werkzeug.security import check_password_hash, generate_password_hash # type: ignore
+import psycopg2  # type: ignore
+from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context  # type: ignore
+from linebot.v3 import WebhookHandler  # type: ignore
+from linebot.v3.exceptions import InvalidSignatureError  # type: ignore
+from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage  # type: ignore
+from linebot.v3.messaging.models.flex_box import FlexBox  # type: ignore
+from linebot.v3.messaging.models.flex_bubble import FlexBubble  # type: ignore
+from linebot.v3.messaging.models.flex_message import FlexMessage  # type: ignore
+from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
+from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
+from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
+from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
 from flex_templates import (
     reservation_confirmation,
     call_notification,
@@ -66,48 +66,62 @@ def normalize_db_url(raw_url: str) -> str:
         query = dict(parse_qsl(parsed.query, keep_blank_values=True))
         query.setdefault("sslmode", "require")
         url = urlunparse(
-            (parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query), parsed.fragment)
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                urlencode(query),
+                parsed.fragment,
+            )
         )
     return url
 
+
 # --- セキュリティ設定 ---
-SECRET_KEY = os.getenv('SECRET_KEY')
+SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY is required")
 app.secret_key = SECRET_KEY
 
-ADMIN_PASSWORD_HASH = (os.getenv('ADMIN_PASSWORD_HASH') or "").strip()
+ADMIN_PASSWORD_HASH = (os.getenv("ADMIN_PASSWORD_HASH") or "").strip()
 if not ADMIN_PASSWORD_HASH:
     raise RuntimeError("ADMIN_PASSWORD_HASH is required")
 if os.getenv("ADMIN_PASSWORD"):
-    app.logger.warning("ADMIN_PASSWORD is deprecated and ignored. Use ADMIN_PASSWORD_HASH only.")
+    app.logger.warning(
+        "ADMIN_PASSWORD is deprecated and ignored. Use ADMIN_PASSWORD_HASH only."
+    )
 AUDIT_ADMIN_PASSWORD_HASH = (os.getenv("AUDIT_ADMIN_PASSWORD_HASH") or "").strip()
 
-CHANNEL_ACCESS_TOKEN = (os.getenv('CHANNEL_ACCESS_TOKEN') or "").strip()
-CHANNEL_SECRET = (os.getenv('CHANNEL_SECRET') or "").strip()
+CHANNEL_ACCESS_TOKEN = (os.getenv("CHANNEL_ACCESS_TOKEN") or "").strip()
+CHANNEL_SECRET = (os.getenv("CHANNEL_SECRET") or "").strip()
 if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
     raise RuntimeError("CHANNEL_ACCESS_TOKEN and CHANNEL_SECRET are required")
 
-raw_db_url = (os.getenv('DATABASE_URL') or "").strip()
+raw_db_url = (os.getenv("DATABASE_URL") or "").strip()
 if not raw_db_url:
     raise RuntimeError("DATABASE_URL is required")
 DATABASE_URL = normalize_db_url(raw_db_url)
 DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
-OWNER_LINE_ID = os.getenv('OWNER_LINE_ID', '').strip()
+OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.115"
-APP_RELEASED_AT = "2026-06-01 00:00 JST"
+APP_VERSION = "v1.0.116"
+APP_RELEASED_AT = "2026-06-02 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
-    host.strip().lower() for host in os.getenv("ALLOWED_HOSTS", "").split(",") if host.strip()
+    host.strip().lower()
+    for host in os.getenv("ALLOWED_HOSTS", "").split(",")
+    if host.strip()
 }
 
 # 本番環境での安全性チェック
 IS_PRODUCTION = bool(os.getenv("RENDER"))
 if IS_PRODUCTION and not ALLOWED_HOSTS:
-    raise RuntimeError("ALLOWED_HOSTS is required in production environment. Set it to your Render app domain(s)")
+    raise RuntimeError(
+        "ALLOWED_HOSTS is required in production environment. Set it to your Render app domain(s)"
+    )
 
 SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "1800"))
 MAX_TYPE_NAME_LENGTH = int(os.getenv("MAX_TYPE_NAME_LENGTH", "40"))
@@ -118,9 +132,13 @@ TYPE_NAME_PATTERN = re.compile(
 LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 
 WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
-WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60"))
+WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(
+    os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60")
+)
 CALL_TIMEOUT_MINUTES = int(os.getenv("CALL_TIMEOUT_MINUTES", "15"))
-ADMIN_REFRESH_INTERVAL_MS = parse_int_env("ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000)
+ADMIN_REFRESH_INTERVAL_MS = parse_int_env(
+    "ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000
+)
 BATCH_CALL_RUNNER_TOKEN = (os.getenv("BATCH_CALL_RUNNER_TOKEN") or "").strip()
 LINE_PUSH_MAX_RETRIES = parse_int_env("LINE_PUSH_MAX_RETRIES", 3, 1, 10)
 LINE_PUSH_RETRY_BASE_SECONDS = parse_int_env("LINE_PUSH_RETRY_BASE_SECONDS", 1, 1, 30)
@@ -133,7 +151,9 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=parse_bool_env("SESSION_COOKIE_SECURE", True),
-    SESSION_COOKIE_NAME="__Host-session" if parse_bool_env("SESSION_COOKIE_SECURE", True) else "session",
+    SESSION_COOKIE_NAME=(
+        "__Host-session" if parse_bool_env("SESSION_COOKIE_SECURE", True) else "session"
+    ),
     PERMANENT_SESSION_LIFETIME=timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS),
 )
 app.jinja_env.autoescape = True
@@ -146,6 +166,7 @@ def inject_template_globals():
         "app_released_at": APP_RELEASED_AT,
         "format_duration": format_duration_from_seconds,
     }
+
 
 handler = WebhookHandler(CHANNEL_SECRET)
 
@@ -174,7 +195,12 @@ ROLE_ADMIN = "admin"
 ROLE_AUDIT_ADMIN = "audit_admin"
 SCHEMA_LOCK = Lock()
 SCHEMA_READY = False
-RUNTIME_SETTING_KEYS = ("accepting_new", "auto_call_count") + AUTO_CALL_SETTING_KEYS + WAIT_TIME_SETTING_KEYS
+RUNTIME_SETTING_KEYS = (
+    ("accepting_new", "auto_call_count")
+    + AUTO_CALL_SETTING_KEYS
+    + WAIT_TIME_SETTING_KEYS
+)
+
 
 class ManagedConnection:
     def __init__(self, connection, close_on_exit: bool):
@@ -225,14 +251,18 @@ def is_retryable_push_error(error: Exception) -> bool:
     return False
 
 
-def push_message_with_retry_key(messaging_api: MessagingApi, request_payload: PushMessageRequest, retry_key: str):
+def push_message_with_retry_key(
+    messaging_api: MessagingApi, request_payload: PushMessageRequest, retry_key: str
+):
     try:
         return messaging_api.push_message(request_payload, x_line_retry_key=retry_key)
     except TypeError as error:
         message = str(error)
         if "x_line_retry_key" not in message:
             raise
-        app.logger.warning("line-bot-sdk does not support x_line_retry_key argument; fallback without retry key")
+        app.logger.warning(
+            "line-bot-sdk does not support x_line_retry_key argument; fallback without retry key"
+        )
         return messaging_api.push_message(request_payload)
 
 
@@ -271,7 +301,9 @@ def build_flex_component(component):
         return FlexBox(
             layout=component.get("layout") or "vertical",
             flex=component.get("flex"),
-            contents=[build_flex_component(item) for item in component.get("contents") or []],
+            contents=[
+                build_flex_component(item) for item in component.get("contents") or []
+            ],
             spacing=component.get("spacing"),
             margin=component.get("margin"),
             position=component.get("position"),
@@ -312,7 +344,9 @@ def build_flex_component(component):
 
 
 def build_flex_message(message: dict):
-    alt_text = (message.get("altText") or message.get("alt_text") or "通知").strip() or "通知"
+    alt_text = (
+        message.get("altText") or message.get("alt_text") or "通知"
+    ).strip() or "通知"
     contents = build_flex_component(message.get("contents"))
     if contents is None:
         raise ValueError("flex message contents is required")
@@ -325,9 +359,13 @@ def build_line_message(message: str | dict):
         if message_type == "flex" or ("altText" in message and "contents" in message):
             return build_flex_message(message)
         if message_type == "text":
-            return TextMessage(text="" if message.get("text") is None else str(message.get("text")))
+            return TextMessage(
+                text="" if message.get("text") is None else str(message.get("text"))
+            )
         try:
-            return TextMessage(text=json.dumps(message, ensure_ascii=False, separators=(",", ":")))
+            return TextMessage(
+                text=json.dumps(message, ensure_ascii=False, separators=(",", ":"))
+            )
         except Exception:
             return TextMessage(text="(invalid message)")
     return TextMessage(text="" if message is None else str(message))
@@ -349,11 +387,18 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
             status = extract_http_status(error)
             if status == 409:
                 # 同じリトライキーで受理済み。重複送信は行われていないので成功扱いにする。
-                app.logger.info("Push already accepted (409) retry_key=%s user_id=%s", stable_retry_key, user_id)
+                app.logger.info(
+                    "Push already accepted (409) retry_key=%s user_id=%s",
+                    stable_retry_key,
+                    user_id,
+                )
                 return
             if attempt >= LINE_PUSH_MAX_RETRIES or not is_retryable_push_error(error):
                 raise
-            delay_seconds = min(LINE_PUSH_RETRY_MAX_SECONDS, LINE_PUSH_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+            delay_seconds = min(
+                LINE_PUSH_RETRY_MAX_SECONDS,
+                LINE_PUSH_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+            )
             app.logger.warning(
                 "Push failed (attempt %s/%s, status=%s). Retry after %ss retry_key=%s",
                 attempt,
@@ -367,7 +412,9 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
 
 def send_reply_message(reply_token: str, message: str | dict):
     try:
-        payload = ReplyMessageRequest(reply_token=reply_token, messages=[build_line_message(message)])
+        payload = ReplyMessageRequest(
+            reply_token=reply_token, messages=[build_line_message(message)]
+        )
         with ApiClient(MESSAGING_CONFIGURATION) as api_client:
             MessagingApi(api_client).reply_message(payload)
     except Exception:
@@ -466,7 +513,9 @@ def calculate_wait_time_minutes(people_ahead: int) -> int:
     return max(0, math.ceil(ahead * 0.5 + 2))
 
 
-def count_waiting_people_ahead_by_owner(cur, reservation_id: int, owner_admin_id: int) -> int:
+def count_waiting_people_ahead_by_owner(
+    cur, reservation_id: int, owner_admin_id: int
+) -> int:
     cur.execute(
         """
             SELECT COUNT(*)
@@ -517,10 +566,17 @@ def expire_called_reservations() -> int:
                 flex = auto_cancel_notification(reservation_id)
                 send_push_message(user_id, flex)
             except Exception:
-                app.logger.exception("Failed to send timeout message for reservation %s user_id=%s", reservation_id, user_id)
+                app.logger.exception(
+                    "Failed to send timeout message for reservation %s user_id=%s",
+                    reservation_id,
+                    user_id,
+                )
         return len(timed_out_rows)
     except Exception:
-        app.logger.exception("Failed to expire called reservations CALL_TIMEOUT_MINUTES=%s", CALL_TIMEOUT_MINUTES)
+        app.logger.exception(
+            "Failed to expire called reservations CALL_TIMEOUT_MINUTES=%s",
+            CALL_TIMEOUT_MINUTES,
+        )
         return 0
 
 
@@ -579,13 +635,19 @@ def process_queued_calls(now=None):
     for res_id, user_id in auto_rows:
         try:
             # Build Flex call notification; alt text will be used as fallback when needed
-            timeout_at = (datetime.now(JST) + timedelta(minutes=CALL_TIMEOUT_MINUTES)).strftime("%H:%M")
+            timeout_at = (
+                datetime.now(JST) + timedelta(minutes=CALL_TIMEOUT_MINUTES)
+            ).strftime("%H:%M")
             flex = call_notification(res_id, timeout_at, CALL_TIMEOUT_MINUTES)
             send_push_message(user_id, flex)
             sent_ids.append(res_id)
         except Exception:
             failed_ids.append(res_id)
-            app.logger.exception("Failed to send LINE push message for reservation %s user_id=%s", res_id, user_id)
+            app.logger.exception(
+                "Failed to send LINE push message for reservation %s user_id=%s",
+                res_id,
+                user_id,
+            )
 
     if failed_ids:
         with get_connection() as conn:
@@ -610,12 +672,18 @@ def process_queued_calls(now=None):
         "last_auto_call_selected_count": str(len(auto_rows)),
     }
     if previous_summary["run_at"]:
-        settings_to_save.update({
-            "previous_auto_call_run_at": previous_summary["run_at"],
-            "previous_auto_call_sent_count": str(previous_summary["sent_count"]),
-            "previous_auto_call_failed_count": str(previous_summary["failed_count"]),
-            "previous_auto_call_selected_count": str(previous_summary["selected_count"]),
-        })
+        settings_to_save.update(
+            {
+                "previous_auto_call_run_at": previous_summary["run_at"],
+                "previous_auto_call_sent_count": str(previous_summary["sent_count"]),
+                "previous_auto_call_failed_count": str(
+                    previous_summary["failed_count"]
+                ),
+                "previous_auto_call_selected_count": str(
+                    previous_summary["selected_count"]
+                ),
+            }
+        )
     set_settings(settings_to_save)
     latest_wait_time = refresh_wait_time_estimate(current_dt)
 
@@ -648,7 +716,10 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
         with get_connection() as conn:
             with conn.cursor() as cur:
                 if owner_admin_id is None:
-                    cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s", (STATUS_WAITING,))
+                    cur.execute(
+                        "SELECT COUNT(*) FROM reservations WHERE status = %s",
+                        (STATUS_WAITING,),
+                    )
                     waiting_count = int(cur.fetchone()[0] or 0)
                 else:
                     cur.execute(
@@ -680,7 +751,9 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
             "message": f"現在の目安待ち時間: {estimated_minutes}分",
         }
     except Exception:
-        app.logger.exception("Failed to refresh wait time estimate owner_admin_id=%s", owner_admin_id)
+        app.logger.exception(
+            "Failed to refresh wait time estimate owner_admin_id=%s", owner_admin_id
+        )
         return default_result
 
 
@@ -695,12 +768,20 @@ def get_latest_wait_time_summary(values=None):
             "avg_service_seconds": 0,
             "message": "現在の目安待ち時間: 算出中",
         }
-    estimated_seconds_raw = (values.get("last_wait_time_estimated_seconds") or "0").strip()
+    estimated_seconds_raw = (
+        values.get("last_wait_time_estimated_seconds") or "0"
+    ).strip()
     waiting_count_raw = (values.get("last_wait_time_waiting_count") or "0").strip()
-    avg_service_seconds_raw = (values.get("last_wait_time_avg_service_seconds") or "0").strip()
-    estimated_seconds = int(estimated_seconds_raw) if estimated_seconds_raw.isdigit() else 0
+    avg_service_seconds_raw = (
+        values.get("last_wait_time_avg_service_seconds") or "0"
+    ).strip()
+    estimated_seconds = (
+        int(estimated_seconds_raw) if estimated_seconds_raw.isdigit() else 0
+    )
     waiting_count = int(waiting_count_raw) if waiting_count_raw.isdigit() else 0
-    avg_service_seconds = int(avg_service_seconds_raw) if avg_service_seconds_raw.isdigit() else 0
+    avg_service_seconds = (
+        int(avg_service_seconds_raw) if avg_service_seconds_raw.isdigit() else 0
+    )
     estimated_minutes = max(0, math.ceil(estimated_seconds / 60))
     return {
         "run_at": run_at,
@@ -779,13 +860,11 @@ def ensure_reservations_table():
                 CREATE INDEX IF NOT EXISTS idx_reservations_status_created_at_id
                 ON reservations (status, created_at DESC, id DESC)
             """)
-            cur.execute(
-                """
+            cur.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active
                     ON reservations (user_id)
                     WHERE status IN ('waiting', 'called')
-                """
-            )
+                """)
             conn.commit()
 
 
@@ -843,8 +922,7 @@ def ensure_admin_login_logs_table():
 def ensure_admin_accounts_table():
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
+            cur.execute("""
                     CREATE TABLE IF NOT EXISTS admin_accounts (
                         id SERIAL PRIMARY KEY,
                         login_id TEXT NOT NULL UNIQUE,
@@ -853,26 +931,19 @@ def ensure_admin_accounts_table():
                         active BOOLEAN NOT NULL DEFAULT TRUE,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
-                """
-            )
-            cur.execute(
-                """
+                """)
+            cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
                     ON admin_accounts (role, active)
-                """
-            )
-            cur.execute(
-                """
+                """)
+            cur.execute("""
                     ALTER TABLE admin_accounts
                     ADD COLUMN IF NOT EXISTS reservation_start_minute INTEGER
-                """
-            )
-            cur.execute(
-                """
+                """)
+            cur.execute("""
                     ALTER TABLE admin_accounts
                     ADD COLUMN IF NOT EXISTS reservation_end_minute INTEGER
-                """
-            )
+                """)
             cur.execute(
                 """
                     INSERT INTO admin_accounts (login_id, password_hash, role)
@@ -921,7 +992,9 @@ def ensure_rate_limit_tables():
             conn.commit()
 
 
-def record_admin_login(role: str, ip_address: str, user_agent: str, login_result: str = "success"):
+def record_admin_login(
+    role: str, ip_address: str, user_agent: str, login_result: str = "success"
+):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -932,6 +1005,7 @@ def record_admin_login(role: str, ip_address: str, user_agent: str, login_result
                 (login_result, role, ip_address, (user_agent or "")[:300]),
             )
             conn.commit()
+
 
 def verify_admin_password(candidate: str) -> bool:
     if not candidate:
@@ -972,7 +1046,9 @@ def authenticate_admin_account(login_id: str, candidate: str):
                     "role": row[3],
                 }
     except Exception:
-        app.logger.exception("Failed to authenticate admin account login_id=%s", normalized_login_id)
+        app.logger.exception(
+            "Failed to authenticate admin account login_id=%s", normalized_login_id
+        )
         return None
 
 
@@ -1009,7 +1085,9 @@ def enforce_https():
         return
     if request.is_secure:
         return
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    forwarded_proto = (
+        (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    )
     if forwarded_proto == "https":
         return
     secure_url = request.url.replace("http://", "https://", 1)
@@ -1076,6 +1154,7 @@ def validate_type_name(value: str) -> bool:
         return False
     return bool(TYPE_NAME_PATTERN.fullmatch(value))
 
+
 def get_csrf_token() -> str:
     token = session.get("_csrf_token")
     if not token:
@@ -1083,10 +1162,17 @@ def get_csrf_token() -> str:
         session["_csrf_token"] = token
     return token
 
+
 def validate_csrf():
     token = session.get("_csrf_token")
-    request_token = request.form.get("_csrf_token") or request.headers.get("X-CSRF-Token")
-    if not token or not request_token or not secrets.compare_digest(token, request_token):
+    request_token = request.form.get("_csrf_token") or request.headers.get(
+        "X-CSRF-Token"
+    )
+    if (
+        not token
+        or not request_token
+        or not secrets.compare_digest(token, request_token)
+    ):
         abort(403)
 
 
@@ -1154,23 +1240,35 @@ def apply_security_headers(response):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     # Allow camera and microphone for same-origin pages (required for getUserMedia)
-    response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()")
-    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    response.headers.setdefault(
+        "Permissions-Policy", "camera=(self), microphone=(self), geolocation=()"
+    )
+    forwarded_proto = (
+        (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    )
     if FORCE_HTTPS and (request.is_secure or forwarded_proto == "https"):
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
     if request.path.startswith("/admin") or request.path.startswith("/login"):
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
         response.headers["Pragma"] = "no-cache"
     return response
 
+
 LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "10"))
 LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "300"))
+
 
 def is_login_rate_limited(ip: str) -> bool:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                window_start = datetime.utcnow() - timedelta(seconds=LOGIN_WINDOW_SECONDS)
+                window_start = datetime.utcnow() - timedelta(
+                    seconds=LOGIN_WINDOW_SECONDS
+                )
                 cur.execute(
                     "SELECT COUNT(*) FROM login_attempt_records WHERE ip_address = %s AND attempted_at > %s",
                     (ip, window_start),
@@ -1179,6 +1277,7 @@ def is_login_rate_limited(ip: str) -> bool:
     except Exception:
         app.logger.exception("Failed to check login rate limit for ip=%s", ip)
         return False
+
 
 def record_login_failure(ip: str):
     try:
@@ -1197,7 +1296,9 @@ def is_webhook_rate_limited(ip: str) -> bool:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                window_start = datetime.utcnow() - timedelta(seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)
+                window_start = datetime.utcnow() - timedelta(
+                    seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
+                )
                 cur.execute(
                     "SELECT COUNT(*) FROM webhook_request_records WHERE ip_address = %s AND requested_at > %s",
                     (ip, window_start),
@@ -1215,7 +1316,9 @@ def is_webhook_rate_limited(ip: str) -> bool:
         app.logger.exception("Failed to check webhook rate limit for ip=%s", ip)
         return False
 
+
 # --- ルーティング ---
+
 
 @app.route("/")
 def index():
@@ -1239,7 +1342,9 @@ def login():
                 return redirect(url_for("admin_login_logs_page"))
             return redirect(url_for("admin_page"))
         else:
-            record_admin_login("unknown", ip, request.headers.get("User-Agent"), login_result="failure")
+            record_admin_login(
+                "unknown", ip, request.headers.get("User-Agent"), login_result="failure"
+            )
             record_login_failure(ip)
             error = "パスワードが正しくありません"
     return render_template(
@@ -1248,6 +1353,7 @@ def login():
         csrf_token=get_csrf_token(),
         audit_admin_enabled=has_audit_admin_account(),
     )
+
 
 def ensure_types_table():
     with get_connection() as conn:
@@ -1312,6 +1418,7 @@ def ensure_types_table():
                     (admin_row[0],),
                 )
             conn.commit()
+
 
 def ensure_settings_table():
     with get_connection() as conn:
@@ -1382,7 +1489,9 @@ def set_setting(key: str, value: str):
 def get_settings(keys):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT key, value FROM app_settings WHERE key = ANY(%s)", (list(keys),))
+            cur.execute(
+                "SELECT key, value FROM app_settings WHERE key = ANY(%s)", (list(keys),)
+            )
             return {row[0]: row[1] for row in cur.fetchall()}
 
 
@@ -1400,11 +1509,13 @@ def set_settings(settings):
                 )
             conn.commit()
 
+
 def is_accepting_new():
     return get_setting("accepting_new", "true") == "true"
 
+
 def set_accepting_new(flag: bool):
-    set_setting("accepting_new", 'true' if flag else 'false')
+    set_setting("accepting_new", "true" if flag else "false")
 
 
 def get_auto_call_count() -> int:
@@ -1418,9 +1529,15 @@ def set_auto_call_count(count: int):
 
 def build_auto_call_summary(values, prefix: str):
     run_at = (values.get(f"{prefix}_auto_call_run_at") or "").strip()
-    sent_count = int((values.get(f"{prefix}_auto_call_sent_count") or "0").strip() or "0")
-    failed_count = int((values.get(f"{prefix}_auto_call_failed_count") or "0").strip() or "0")
-    selected_count = int((values.get(f"{prefix}_auto_call_selected_count") or "0").strip() or "0")
+    sent_count = int(
+        (values.get(f"{prefix}_auto_call_sent_count") or "0").strip() or "0"
+    )
+    failed_count = int(
+        (values.get(f"{prefix}_auto_call_failed_count") or "0").strip() or "0"
+    )
+    selected_count = int(
+        (values.get(f"{prefix}_auto_call_selected_count") or "0").strip() or "0"
+    )
     if not run_at:
         return {
             "run_at": "",
@@ -1497,7 +1614,9 @@ def serialize_type_counts(rows):
     return [{"name": row[0], "count": row[1]} for row in rows]
 
 
-def get_active_rows(cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"):
+def get_active_rows(
+    cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"
+):
     params = [STATUS_WAITING, STATUS_CALLED]
     where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
     params.append(owner_admin_id)
@@ -1524,8 +1643,11 @@ def get_active_rows(cur, owner_admin_id: int, current_type_id=None, sort_by="id"
 
 
 def get_accepting_type_names(cur):
-    cur.execute("SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC")
+    cur.execute(
+        "SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC"
+    )
     return [row[0] for row in cur.fetchall()]
+
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -1545,27 +1667,23 @@ def admin_login_logs_page():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
+            cur.execute("""
                     SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at
                     FROM admin_login_logs
                     ORDER BY logged_in_at DESC, id DESC
                     LIMIT 500
-                """
-            )
+                """)
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
                 (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
                 for row in rows
             ]
-            cur.execute(
-                """
+            cur.execute("""
                     SELECT id, login_id, role, active, created_at
                     FROM admin_accounts
                     ORDER BY id ASC
-                """
-            )
+                """)
             admin_accounts = [
                 (row[0], row[1], row[2], row[3], format_dt(row[4]))
                 for row in cur.fetchall()
@@ -1588,7 +1706,9 @@ def admin_accounts_create():
     login_id = (request.form.get("login_id") or "").strip().lower()
     password = request.form.get("password") or ""
     bulk_accounts_raw = request.form.get("bulk_accounts") or ""
-    bulk_lines = [line.strip() for line in bulk_accounts_raw.splitlines() if line.strip()]
+    bulk_lines = [
+        line.strip() for line in bulk_accounts_raw.splitlines() if line.strip()
+    ]
 
     if bulk_lines:
         accounts_to_create = []
@@ -1651,11 +1771,20 @@ def admin_accounts_create():
                                 INSERT INTO admin_accounts (login_id, password_hash, role, active)
                                 VALUES (%s, %s, %s, TRUE)
                             """,
-                            (parsed_login_id, generate_password_hash(parsed_password), ROLE_ADMIN),
+                            (
+                                parsed_login_id,
+                                generate_password_hash(parsed_password),
+                                ROLE_ADMIN,
+                            ),
                         )
                     conn.commit()
         except psycopg2.IntegrityError:
-            return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
+            return redirect(
+                url_for(
+                    "admin_login_logs_page",
+                    account_error="同じログインIDが既に存在します。",
+                )
+            )
 
         return redirect(
             url_for(
@@ -1692,9 +1821,19 @@ def admin_accounts_create():
                 )
                 conn.commit()
     except psycopg2.IntegrityError:
-        return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="同じログインIDが既に存在します。",
+            )
+        )
 
-    return redirect(url_for("admin_login_logs_page", account_success=f"管理者アカウント「{login_id}」を作成しました。"))
+    return redirect(
+        url_for(
+            "admin_login_logs_page",
+            account_success=f"管理者アカウント「{login_id}」を作成しました。",
+        )
+    )
 
 
 @app.route("/admin/admin-accounts/<int:account_id>/login-id", methods=["POST"])
@@ -1719,12 +1858,28 @@ def admin_accounts_update_login_id(account_id):
                     (login_id, account_id),
                 )
                 if cur.rowcount == 0:
-                    return redirect(url_for("admin_login_logs_page", account_error="対象アカウントが存在しません。"))
+                    return redirect(
+                        url_for(
+                            "admin_login_logs_page",
+                            account_error="対象アカウントが存在しません。",
+                        )
+                    )
                 conn.commit()
     except psycopg2.IntegrityError:
-        return redirect(url_for("admin_login_logs_page", account_error="同じログインIDが既に存在します。"))
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="同じログインIDが既に存在します。",
+            )
+        )
 
-    return redirect(url_for("admin_login_logs_page", account_success=f"ログインIDを「{login_id}」に更新しました。"))
+    return redirect(
+        url_for(
+            "admin_login_logs_page",
+            account_success=f"ログインIDを「{login_id}」に更新しました。",
+        )
+    )
+
 
 @app.route("/admin")
 def admin_page():
@@ -1761,7 +1916,9 @@ def admin_page():
                 (current_admin_account_id,),
             )
             types = cur.fetchall()
-            type_counts = serialize_type_counts(fetch_type_counts(cur, current_admin_account_id))
+            type_counts = serialize_type_counts(
+                fetch_type_counts(cur, current_admin_account_id)
+            )
     return render_template(
         "admin.html",
         rows=active_rows,
@@ -1777,7 +1934,7 @@ def admin_page():
         last_auto_call=runtime_settings["last_auto_call"],
         latest_auto_call=runtime_settings["latest_auto_call"],
         admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
-        csrf_token=get_csrf_token()
+        csrf_token=get_csrf_token(),
     )
 
 
@@ -1801,15 +1958,30 @@ def admin_reservation_hours():
                     (current_admin_account_id,),
                 )
                 conn.commit()
-        return redirect(url_for("admin_types_page", schedule_success="予約受付時間の制限を解除しました。"))
+        return redirect(
+            url_for(
+                "admin_types_page",
+                schedule_success="予約受付時間の制限を解除しました。",
+            )
+        )
 
     if not start_text or not end_text:
-        return redirect(url_for("admin_types_page", schedule_error="開始時刻と終了時刻は両方入力してください。"))
+        return redirect(
+            url_for(
+                "admin_types_page",
+                schedule_error="開始時刻と終了時刻は両方入力してください。",
+            )
+        )
 
     start_minute = parse_hhmm_to_minute_of_day(start_text)
     end_minute = parse_hhmm_to_minute_of_day(end_text)
     if start_minute is None or end_minute is None:
-        return redirect(url_for("admin_types_page", schedule_error="時刻形式が不正です。HH:MM で入力してください。"))
+        return redirect(
+            url_for(
+                "admin_types_page",
+                schedule_error="時刻形式が不正です。HH:MM で入力してください。",
+            )
+        )
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1830,6 +2002,7 @@ def admin_reservation_hours():
         )
     )
 
+
 @app.route("/admin/data")
 def admin_data():
     if not is_admin_authenticated():
@@ -1841,16 +2014,21 @@ def admin_data():
     with get_connection() as conn:
         with conn.cursor() as cur:
             rows = get_active_rows(cur, owner_admin_id=current_admin_account_id)
-            type_counts = serialize_type_counts(fetch_type_counts(cur, current_admin_account_id))
+            type_counts = serialize_type_counts(
+                fetch_type_counts(cur, current_admin_account_id)
+            )
     runtime_settings = get_runtime_settings()
-    return jsonify({
-        "rows": serialize_active_rows(rows),
-        "meta": {
-            "last_auto_call": runtime_settings["last_auto_call"],
-            "latest_auto_call": runtime_settings["latest_auto_call"],
-            "type_counts": type_counts,
-        },
-    })
+    return jsonify(
+        {
+            "rows": serialize_active_rows(rows),
+            "meta": {
+                "last_auto_call": runtime_settings["last_auto_call"],
+                "latest_auto_call": runtime_settings["latest_auto_call"],
+                "type_counts": type_counts,
+            },
+        }
+    )
+
 
 @app.route("/admin/type_counts")
 def admin_type_counts():
@@ -1863,9 +2041,8 @@ def admin_type_counts():
     with get_connection() as conn:
         with conn.cursor() as cur:
             counts = fetch_type_counts(cur, current_admin_account_id)
-    return jsonify({
-        "counts": serialize_type_counts(counts)
-    })
+    return jsonify({"counts": serialize_type_counts(counts)})
+
 
 @app.route("/admin/types", methods=["GET", "POST"])
 def admin_types_page():
@@ -1901,9 +2078,15 @@ def admin_types_page():
                         (name, current_admin_account_id),
                     )
                     conn.commit()
-            return redirect(url_for("admin_types_page", type_success="種類を追加しました。"))
+            return redirect(
+                url_for("admin_types_page", type_success="種類を追加しました。")
+            )
         except psycopg2.IntegrityError:
-            return redirect(url_for("admin_types_page", type_error="同じ名前の種類が既に存在します。"))
+            return redirect(
+                url_for(
+                    "admin_types_page", type_error="同じ名前の種類が既に存在します。"
+                )
+            )
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -1922,8 +2105,9 @@ def admin_types_page():
         schedule_success=schedule_success,
         reservation_start_time=reservation_start_time,
         reservation_end_time=reservation_end_time,
-        csrf_token=get_csrf_token()
+        csrf_token=get_csrf_token(),
     )
+
 
 @app.route("/admin/types/delete/<int:type_id>", methods=["POST"])
 def admin_types_delete(type_id):
@@ -1954,6 +2138,7 @@ def admin_types_delete(type_id):
                 )
     return redirect(url_for("admin_types_page"))
 
+
 @app.route("/admin/types/toggle/<int:type_id>", methods=["POST"])
 def admin_types_toggle(type_id):
     if not is_admin_authenticated():
@@ -1974,6 +2159,7 @@ def admin_types_toggle(type_id):
             conn.commit()
     return redirect(url_for("admin_types_page"))
 
+
 @app.route("/admin/history")
 def admin_history():
     if not is_admin_authenticated():
@@ -1993,7 +2179,13 @@ def admin_history():
             current_type_id = int(type_id) if type_id.isdigit() else None
             sort_by = request.args.get("sort_by", "id").strip()
             sort_order = request.args.get("sort_order", "desc").strip().lower()
-            if sort_by not in ("id", "status", "type", "created_at", "service_duration"):
+            if sort_by not in (
+                "id",
+                "status",
+                "type",
+                "created_at",
+                "service_duration",
+            ):
                 sort_by = "id"
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
@@ -2007,10 +2199,11 @@ def admin_history():
                 "status": "r.status",
                 "type": "t.name",
                 "created_at": "r.created_at",
-                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.called_at)))"
+                "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.called_at)))",
             }
             order_by = order_map[sort_by]
-            cur.execute(f"""
+            cur.execute(
+                f"""
                 SELECT
                     r.id,
                     r.status,
@@ -2025,11 +2218,22 @@ def admin_history():
                 {where}
                 ORDER BY {order_by} {sort_order.upper()}, r.id DESC
                 LIMIT %s OFFSET %s
-            """, params + [history_page_size + 1, offset])
+            """,
+                params + [history_page_size + 1, offset],
+            )
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
-                (row[0], row[1], row[2], row[3], format_dt(row[4]), format_dt(row[5]), format_dt(row[6]), row[7])
+                (
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3],
+                    format_dt(row[4]),
+                    format_dt(row[5]),
+                    format_dt(row[6]),
+                    row[7],
+                )
                 for row in rows
             ]
             cur.execute(
@@ -2049,7 +2253,7 @@ def admin_history():
         current_type_id=current_type_id,
         sort_by=sort_by,
         sort_order=sort_order,
-        csrf_token=get_csrf_token()
+        csrf_token=get_csrf_token(),
     )
 
 
@@ -2081,23 +2285,25 @@ def admin_history_export():
         "status": "r.status",
         "type": "t.name",
         "created_at": "r.created_at",
-        "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.called_at)))"
+        "service_duration": "(EXTRACT(EPOCH FROM (r.completed_at - r.called_at)))",
     }
 
     def generate_csv():
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow([
-            "番号",
-            "種類",
-            "状態",
-            "受付時刻",
-            "呼出時刻",
-            "完了時刻",
-            "受付から呼出",
-            "受付から完了",
-            "呼出から完了",
-        ])
+        writer.writerow(
+            [
+                "番号",
+                "種類",
+                "状態",
+                "受付時刻",
+                "呼出時刻",
+                "完了時刻",
+                "受付から呼出",
+                "受付から完了",
+                "呼出から完了",
+            ]
+        )
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
@@ -2127,17 +2333,19 @@ def admin_history_export():
                     params,
                 )
                 for row in cur:
-                    writer.writerow([
-                        row[0],
-                        row[1],
-                        row[2],
-                        format_dt(row[3]),
-                        format_dt(row[4]),
-                        format_dt(row[5]),
-                        format_duration_from_seconds(row[6]) or "-",
-                        format_duration_from_seconds(row[7]) or "-",
-                        format_duration_from_seconds(row[8]) or "-",
-                    ])
+                    writer.writerow(
+                        [
+                            row[0],
+                            row[1],
+                            row[2],
+                            format_dt(row[3]),
+                            format_dt(row[4]),
+                            format_dt(row[5]),
+                            format_duration_from_seconds(row[6]) or "-",
+                            format_duration_from_seconds(row[7]) or "-",
+                            format_duration_from_seconds(row[8]) or "-",
+                        ]
+                    )
                     yield output.getvalue()
                     output.seek(0)
                     output.truncate(0)
@@ -2150,6 +2358,7 @@ def admin_history_export():
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
 
 @app.route("/admin/call/<int:res_id>", methods=["POST"])
 def admin_call(res_id):
@@ -2184,7 +2393,12 @@ def admin_call(res_id):
                 existing = cur.fetchone()
                 if existing and existing[0] == STATUS_CANCELLED:
                     conn.commit()
-                    return redirect(url_for("admin_page", call_error=f"予約番号 {res_id} は直前にキャンセルされたため呼出できませんでした。"))
+                    return redirect(
+                        url_for(
+                            "admin_page",
+                            call_error=f"予約番号 {res_id} は直前にキャンセルされたため呼出できませんでした。",
+                        )
+                    )
                 abort(404)
             user_id = row[0]
             conn.commit()
@@ -2192,7 +2406,11 @@ def admin_call(res_id):
     try:
         send_push_message(user_id, build_call_message(res_id))
     except Exception:
-        app.logger.exception("Failed to send LINE push message for reservation %s user_id=%s", res_id, user_id)
+        app.logger.exception(
+            "Failed to send LINE push message for reservation %s user_id=%s",
+            res_id,
+            user_id,
+        )
         with get_connection() as rollback_conn:
             with rollback_conn.cursor() as rollback_cur:
                 rollback_cur.execute(
@@ -2202,6 +2420,7 @@ def admin_call(res_id):
                 rollback_conn.commit()
         abort(502)
     return redirect(url_for("admin_page"))
+
 
 @app.route("/admin/finish/<int:res_id>", methods=["POST"])
 def admin_finish(res_id):
@@ -2264,13 +2483,14 @@ def process_call_queue_task():
     result = process_queued_calls()
     return jsonify(result)
 
+
 # --- LINE Webhook ---
-@app.route("/callback", methods=['POST'])
+@app.route("/callback", methods=["POST"])
 def callback():
     ip = request.remote_addr or "unknown"
     if is_webhook_rate_limited(ip):
         abort(429)
-    signature = request.headers.get('X-Line-Signature')
+    signature = request.headers.get("X-Line-Signature")
     if not signature:
         abort(400)
     body = request.get_data(as_text=True)
@@ -2286,14 +2506,16 @@ def callback():
             (signature or "")[:64],
             len(body) if body is not None else 0,
         )
-        return 'OK'
-    return 'OK'
+        return "OK"
+    return "OK"
+
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_message = event.message.text.strip()
     user_id = event.source.user_id
     process_reservation(event, user_id, user_message)
+
 
 def process_reservation(event, user_id, user_message):
     normalized = user_message.strip()
@@ -2315,9 +2537,13 @@ def process_reservation(event, user_id, user_message):
     accepting_new = is_accepting_new()
     with get_connection() as conn:
         with conn.cursor() as cur:
-            if normalized.startswith('予約'):
+            if normalized.startswith("予約"):
                 if not accepting_new:
-                    send_flex_notice(event.reply_token, "予約停止中", "現在、新規の予約受付は停止中です。")
+                    send_flex_notice(
+                        event.reply_token,
+                        "予約停止中",
+                        "現在、新規の予約受付は停止中です。",
+                    )
                     return
                 requested_type_name = normalize_type_name(normalized[2:])
                 type_id = None
@@ -2338,7 +2564,10 @@ def process_reservation(event, user_id, user_message):
                     if not type_row:
                         names = get_accepting_type_names(cur)
                         if names:
-                            body = f"指定した種類「{requested_type_name}」は存在しません。\n利用可能: " + " / ".join(names)
+                            body = (
+                                f"指定した種類「{requested_type_name}」は存在しません。\n利用可能: "
+                                + " / ".join(names)
+                            )
                         else:
                             body = "予約の種類がまだ登録されていません。管理画面で追加してください。"
                         send_flex_notice(event.reply_token, "種類がありません", body)
@@ -2347,7 +2576,10 @@ def process_reservation(event, user_id, user_message):
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
-                            body = f"「{type_name}」の新規受付は停止中です。\n利用可能: " + " / ".join(names)
+                            body = (
+                                f"「{type_name}」の新規受付は停止中です。\n利用可能: "
+                                + " / ".join(names)
+                            )
                         else:
                             body = f"「{type_name}」の新規受付は停止中です。"
                         send_flex_notice(event.reply_token, "受付停止", body)
@@ -2362,7 +2594,11 @@ def process_reservation(event, user_id, user_message):
                 else:
                     names = get_accepting_type_names(cur)
                     if names:
-                        body = "予約の種類を指定してください。\n利用可能: " + " / ".join(names) + "\n例: 予約 相談"
+                        body = (
+                            "予約の種類を指定してください。\n利用可能: "
+                            + " / ".join(names)
+                            + "\n例: 予約 相談"
+                        )
                     else:
                         body = "現在受付可能な予約の種類がありません。管理画面で受付を再開してください。"
                     send_flex_notice(event.reply_token, "種類を指定してください", body)
@@ -2376,11 +2612,17 @@ def process_reservation(event, user_id, user_message):
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
                         ORDER BY r.id DESC LIMIT 1
                     """,
-                    (user_id, STATUS_WAITING, STATUS_CALLED)
+                    (user_id, STATUS_WAITING, STATUS_CALLED),
                 )
                 existing = cur.fetchone()
                 if existing:
-                    res_id, status, existing_type_id, existing_type_name, existing_owner_admin_id = existing
+                    (
+                        res_id,
+                        status,
+                        existing_type_id,
+                        existing_type_name,
+                        existing_owner_admin_id,
+                    ) = existing
                     if status == STATUS_WAITING:
                         if existing_owner_admin_id is not None:
                             waiting_people_ahead = count_waiting_people_ahead_by_owner(
@@ -2390,7 +2632,10 @@ def process_reservation(event, user_id, user_message):
                             )
                             body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
-                            cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, res_id))
+                            cur.execute(
+                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                                (STATUS_WAITING, res_id),
+                            )
                             body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
@@ -2401,11 +2646,15 @@ def process_reservation(event, user_id, user_message):
                     return
                 else:
                     if type_owner_admin_id:
-                        start_minute, end_minute = get_admin_reservation_window(type_owner_admin_id, cur=cur)
+                        start_minute, end_minute = get_admin_reservation_window(
+                            type_owner_admin_id, cur=cur
+                        )
                         if start_minute is not None and end_minute is not None:
                             current_dt = datetime.now(JST)
                             current_minute = current_dt.hour * 60 + current_dt.minute
-                            if not is_minute_in_window(current_minute, int(start_minute), int(end_minute)):
+                            if not is_minute_in_window(
+                                current_minute, int(start_minute), int(end_minute)
+                            ):
                                 window_label = f"{format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)}"
                                 send_flex_notice(
                                     event.reply_token,
@@ -2433,13 +2682,21 @@ def process_reservation(event, user_id, user_message):
                         )
                         existing_after_conflict = cur.fetchone()
                         if existing_after_conflict:
-                            res_id, status, _existing_type_id, existing_type_name, existing_owner_admin_id = existing_after_conflict
+                            (
+                                res_id,
+                                status,
+                                _existing_type_id,
+                                existing_type_name,
+                                existing_owner_admin_id,
+                            ) = existing_after_conflict
                             if status == STATUS_WAITING:
                                 if existing_owner_admin_id is not None:
-                                    waiting_people_ahead = count_waiting_people_ahead_by_owner(
-                                        cur,
-                                        reservation_id=res_id,
-                                        owner_admin_id=existing_owner_admin_id,
+                                    waiting_people_ahead = (
+                                        count_waiting_people_ahead_by_owner(
+                                            cur,
+                                            reservation_id=res_id,
+                                            owner_admin_id=existing_owner_admin_id,
+                                        )
                                     )
                                     body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
@@ -2457,7 +2714,12 @@ def process_reservation(event, user_id, user_message):
                             return
                         raise
                     conn.commit()
-                    app.logger.info("Created reservation %s by user %s type_id=%s", new_id, user_id, type_id)
+                    app.logger.info(
+                        "Created reservation %s by user %s type_id=%s",
+                        new_id,
+                        user_id,
+                        type_id,
+                    )
                     if type_owner_admin_id:
                         waiting_people_ahead = count_waiting_people_ahead_by_owner(
                             cur,
@@ -2466,15 +2728,20 @@ def process_reservation(event, user_id, user_message):
                         )
                         body = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
-                        cur.execute("SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s", (STATUS_WAITING, new_id))
+                        cur.execute(
+                            "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                            (STATUS_WAITING, new_id),
+                        )
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
                         body = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
-                    estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
+                    estimated_minutes = calculate_wait_time_minutes(
+                        waiting_people_ahead
+                    )
                     body += f"\n現在の目安待ち時間: {estimated_minutes}分"
                     send_flex_notice(event.reply_token, "受付完了", body)
                     return
-            elif normalized == 'キャンセル':
+            elif normalized == "キャンセル":
                 cur.execute(
                     """
                         UPDATE reservations SET status = %s
@@ -2485,16 +2752,24 @@ def process_reservation(event, user_id, user_message):
                         )
                         RETURNING id
                     """,
-                    (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED)
+                    (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED),
                 )
                 cancelled = cur.fetchone()
                 if cancelled:
                     conn.commit()
-                    send_flex_notice(event.reply_token, "キャンセル完了", f"予約番号 {cancelled[0]} をキャンセルしました。")
+                    send_flex_notice(
+                        event.reply_token,
+                        "キャンセル完了",
+                        f"予約番号 {cancelled[0]} をキャンセルしました。",
+                    )
                 else:
-                    send_flex_notice(event.reply_token, "キャンセル", "キャンセル対象の予約はありません。")
+                    send_flex_notice(
+                        event.reply_token,
+                        "キャンセル",
+                        "キャンセル対象の予約はありません。",
+                    )
                 return
-            elif normalized == '待ち時間':
+            elif normalized == "待ち時間":
                 cur.execute(
                     """
                         SELECT r.id, r.status, t.name, t.owner_admin_id
@@ -2527,7 +2802,9 @@ def process_reservation(event, user_id, user_message):
                                 (STATUS_WAITING, res_id),
                             )
                             waiting_people_ahead = int(cur.fetchone()[0] or 0)
-                        estimated_minutes = calculate_wait_time_minutes(waiting_people_ahead)
+                        estimated_minutes = calculate_wait_time_minutes(
+                            waiting_people_ahead
+                        )
                         if type_name:
                             body = (
                                 f"番号: {res_id} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
@@ -2540,7 +2817,11 @@ def process_reservation(event, user_id, user_message):
                             )
                         send_flex_notice(event.reply_token, "待ち時間", body)
                     else:
-                        send_flex_notice(event.reply_token, "呼出中", f"【呼出中】番号: {res_id} です。会場へお越しください。")
+                        send_flex_notice(
+                            event.reply_token,
+                            "呼出中",
+                            f"【呼出中】番号: {res_id} です。会場へお越しください。",
+                        )
                 return
             else:
                 send_flex_notice(
@@ -2548,6 +2829,7 @@ def process_reservation(event, user_id, user_message):
                     "ご案内",
                     "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。",
                 )
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))

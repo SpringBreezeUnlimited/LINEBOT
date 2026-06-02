@@ -95,7 +95,8 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
         for query in normalized_queries
     )
     assert any(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active ON reservations (user_id) WHERE status IN ('waiting', 'called')" in query
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_user_active ON reservations (user_id) WHERE status IN ('waiting', 'called')"
+        in query
         for query in normalized_queries
     )
 
@@ -123,7 +124,10 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last = (None, None)
             elif "INSERT INTO reservations (user_id, message, type_id)" in query:
                 self._last = (10,)
-            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+            elif (
+                "JOIN reservation_types t ON r.type_id = t.id" in query
+                and "r.id < %s" in query
+            ):
                 self._last = (2,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -149,16 +153,27 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda now=None, owner_admin_id=None: {"message": "現在の目安待ち時間: 6分", "estimated_seconds": 360},
+        lambda now=None, owner_admin_id=None: {
+            "message": "現在の目安待ち時間: 6分",
+            "estimated_seconds": 360,
+        },
     )
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+    monkeypatch.setattr(
+        app_module,
+        "send_flex_notice",
+        lambda _reply_token, _title, body: sent_texts.append(body),
+    )
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-123", "予約 相談")
 
-    insert_queries = [params for query, params in queries if "INSERT INTO reservations (user_id, message, type_id)" in query]
+    insert_queries = [
+        params
+        for query, params in queries
+        if "INSERT INTO reservations (user_id, message, type_id)" in query
+    ]
     assert insert_queries == [("U-123", "", 1)]
     assert sent_texts
 
@@ -197,7 +212,10 @@ def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
     app_module.ensure_types_table()
 
     normalized_queries = [" ".join(query.split()) for query, _ in queries]
-    assert any("ADD CONSTRAINT fk_reservations_type_id" in query for query in normalized_queries)
+    assert any(
+        "ADD CONSTRAINT fk_reservations_type_id" in query
+        for query in normalized_queries
+    )
     assert any("ON DELETE RESTRICT" in query for query in normalized_queries)
 
 
@@ -259,9 +277,13 @@ def test_get_admin_reservation_window_uses_existing_cursor(app_module, monkeypat
     monkeypatch.setattr(
         app_module,
         "get_connection",
-        lambda: (_ for _ in ()).throw(AssertionError("get_connection should not be used")),
+        lambda: (_ for _ in ()).throw(
+            AssertionError("get_connection should not be used")
+        ),
     )
-    start_minute, end_minute = app_module.get_admin_reservation_window(7, cur=FakeCursor())
+    start_minute, end_minute = app_module.get_admin_reservation_window(
+        7, cur=FakeCursor()
+    )
     assert start_minute == 570
     assert end_minute == 1020
 
@@ -284,7 +306,9 @@ def test_send_push_message_uses_retry_key(app_module, monkeypatch):
             return None
 
         def push_message(self, request_payload, x_line_retry_key=None):
-            captured.append((request_payload.to, request_payload.messages[0].text, x_line_retry_key))
+            captured.append(
+                (request_payload.to, request_payload.messages[0].text, x_line_retry_key)
+            )
             return None
 
     monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
@@ -434,7 +458,9 @@ def test_calculate_wait_time_minutes_formula(app_module):
         (6, 5),
     ],
 )
-def test_calculate_wait_time_minutes_boundaries(app_module, people_ahead, expected_minutes):
+def test_calculate_wait_time_minutes_boundaries(
+    app_module, people_ahead, expected_minutes
+):
     assert app_module.calculate_wait_time_minutes(people_ahead) == expected_minutes
 
 
@@ -470,13 +496,17 @@ def test_get_csrf_token_generates_and_reuses(app_module):
 
 
 def test_validate_csrf_success(app_module):
-    with app_module.app.test_request_context("/dummy", method="POST", data={"_csrf_token": "abc"}):
+    with app_module.app.test_request_context(
+        "/dummy", method="POST", data={"_csrf_token": "abc"}
+    ):
         app_module.session["_csrf_token"] = "abc"
         app_module.validate_csrf()
 
 
 def test_validate_csrf_failure(app_module):
-    with app_module.app.test_request_context("/dummy", method="POST", data={"_csrf_token": "wrong"}):
+    with app_module.app.test_request_context(
+        "/dummy", method="POST", data={"_csrf_token": "wrong"}
+    ):
         app_module.session["_csrf_token"] = "abc"
         with pytest.raises(Forbidden):
             app_module.validate_csrf()
@@ -502,14 +532,20 @@ def test_is_authenticated_as_timeout_clears_session(app_module):
         app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(app_module.time, "time", lambda: now + app_module.SESSION_IDLE_TIMEOUT_SECONDS + 1)
+            mp.setattr(
+                app_module.time,
+                "time",
+                lambda: now + app_module.SESSION_IDLE_TIMEOUT_SECONDS + 1,
+            )
             assert app_module.is_authenticated_as(app_module.ROLE_ADMIN) is False
         assert app_module.session.get("logged_in") is None
 
 
 def test_apply_security_headers_admin_page(app_module):
     app_module.FORCE_HTTPS = True
-    with app_module.app.test_request_context("/admin", headers={"X-Forwarded-Proto": "https"}):
+    with app_module.app.test_request_context(
+        "/admin", headers={"X-Forwarded-Proto": "https"}
+    ):
         response = app_module.app.response_class("ok")
         result = app_module.apply_security_headers(response)
         assert "Content-Security-Policy" in result.headers
@@ -519,17 +555,29 @@ def test_apply_security_headers_admin_page(app_module):
 
 
 def test_is_login_rate_limited_on_exception_returns_false(app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "get_connection", lambda: (_ for _ in ()).throw(RuntimeError("db error")))
+    monkeypatch.setattr(
+        app_module,
+        "get_connection",
+        lambda: (_ for _ in ()).throw(RuntimeError("db error")),
+    )
     assert app_module.is_login_rate_limited("127.0.0.1") is False
 
 
 def test_record_login_failure_on_exception_does_not_raise(app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "get_connection", lambda: (_ for _ in ()).throw(RuntimeError("db error")))
+    monkeypatch.setattr(
+        app_module,
+        "get_connection",
+        lambda: (_ for _ in ()).throw(RuntimeError("db error")),
+    )
     app_module.record_login_failure("127.0.0.1")
 
 
 def test_is_webhook_rate_limited_on_exception_returns_false(app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "get_connection", lambda: (_ for _ in ()).throw(RuntimeError("db error")))
+    monkeypatch.setattr(
+        app_module,
+        "get_connection",
+        lambda: (_ for _ in ()).throw(RuntimeError("db error")),
+    )
     assert app_module.is_webhook_rate_limited("127.0.0.1") is False
 
 
@@ -543,7 +591,11 @@ def test_login_post_admin_success_redirect(client, csrf_token, app_module, monke
     monkeypatch.setattr(
         app_module,
         "authenticate_admin_account",
-        lambda _login_id, _pwd: {"id": 1, "login_id": "admin", "role": app_module.ROLE_ADMIN},
+        lambda _login_id, _pwd: {
+            "id": 1,
+            "login_id": "admin",
+            "role": app_module.ROLE_ADMIN,
+        },
     )
     monkeypatch.setattr(app_module, "record_admin_login", lambda *args, **kwargs: None)
 
@@ -560,7 +612,11 @@ def test_login_post_audit_success_redirect(client, csrf_token, app_module, monke
     monkeypatch.setattr(
         app_module,
         "authenticate_admin_account",
-        lambda _login_id, _pwd: {"id": 2, "login_id": "audit", "role": app_module.ROLE_AUDIT_ADMIN},
+        lambda _login_id, _pwd: {
+            "id": 2,
+            "login_id": "audit",
+            "role": app_module.ROLE_AUDIT_ADMIN,
+        },
     )
     monkeypatch.setattr(app_module, "record_admin_login", lambda *args, **kwargs: None)
 
@@ -574,7 +630,9 @@ def test_login_post_audit_success_redirect(client, csrf_token, app_module, monke
 
 def test_login_post_failure_shows_error(client, csrf_token, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_login_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module, "authenticate_admin_account", lambda _login_id, _pwd: None)
+    monkeypatch.setattr(
+        app_module, "authenticate_admin_account", lambda _login_id, _pwd: None
+    )
     monkeypatch.setattr(app_module, "record_admin_login", lambda *args, **kwargs: None)
     monkeypatch.setattr(app_module, "record_login_failure", lambda _ip: None)
 
@@ -598,12 +656,16 @@ def test_login_post_rate_limited(client, csrf_token, app_module, monkeypatch):
 def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
-    monkeypatch.setattr(app_module, "get_runtime_settings", lambda: {
-        "accepting_new": True,
-        "auto_call_count": 0,
-        "last_auto_call": {},
-        "latest_auto_call": {},
-    })
+    monkeypatch.setattr(
+        app_module,
+        "get_runtime_settings",
+        lambda: {
+            "accepting_new": True,
+            "auto_call_count": 0,
+            "last_auto_call": {},
+            "latest_auto_call": {},
+        },
+    )
 
     class FakeCursor:
         def __enter__(self):
@@ -614,9 +676,14 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
 
         def execute(self, query, params=None):
             normalized_query = " ".join(query.split())
-            if normalized_query.startswith("SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"):
+            if normalized_query.startswith(
+                "SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"
+            ):
                 self._rows = []
-            elif normalized_query.startswith("SELECT") and "FROM reservations" in normalized_query:
+            elif (
+                normalized_query.startswith("SELECT")
+                and "FROM reservations" in normalized_query
+            ):
                 self._rows = []
             else:
                 self._rows = []
@@ -639,14 +706,16 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.113" in text
+    assert f"Version: {app_module.APP_VERSION}" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
-    monkeypatch.setattr(app_module, "get_admin_reservation_window", lambda _admin_id: (None, None))
+    monkeypatch.setattr(
+        app_module, "get_admin_reservation_window", lambda _admin_id: (None, None)
+    )
 
     class FakeCursor:
         def __enter__(self):
@@ -676,7 +745,7 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     response = client.get("/admin/types")
     assert response.status_code == 200
     text = response.get_data(as_text=True)
-    assert "Version: v1.0.113" in text
+    assert f"Version: {app_module.APP_VERSION}" in text
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
@@ -1001,7 +1070,9 @@ def test_process_call_queue_task_without_token_returns_503(client, app_module):
     assert response.status_code == 503
 
 
-def test_process_call_queue_task_invalid_token_returns_403(client, app_module, monkeypatch):
+def test_process_call_queue_task_invalid_token_returns_403(
+    client, app_module, monkeypatch
+):
     app_module.BATCH_CALL_RUNNER_TOKEN = "token"
     monkeypatch.setattr(app_module, "validate_batch_runner_token", lambda: False)
     response = client.post("/tasks/process-call-queue")
@@ -1099,7 +1170,9 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
 
 
 def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypatch):
-    monkeypatch.setattr(app_module.time, "localtime", lambda: SimpleNamespace(tm_min=15))
+    monkeypatch.setattr(
+        app_module.time, "localtime", lambda: SimpleNamespace(tm_min=15)
+    )
     assert app_module.should_run_call_batch() is True
 
 
@@ -1155,7 +1228,11 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, message: sent_messages.append((user_id, message)))
+    monkeypatch.setattr(
+        app_module,
+        "send_push_message",
+        lambda user_id, message: sent_messages.append((user_id, message)),
+    )
     assert app_module.expire_called_reservations() == 3
     assert len(sent_messages) == 3
     assert sent_messages[0][0] == "U-1"
@@ -1196,7 +1273,11 @@ def test_expire_called_reservations_ignores_push_failure(app_module, monkeypatch
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "send_push_message", lambda _user_id, _text: (_ for _ in ()).throw(RuntimeError("push fail")))
+    monkeypatch.setattr(
+        app_module,
+        "send_push_message",
+        lambda _user_id, _text: (_ for _ in ()).throw(RuntimeError("push fail")),
+    )
     assert app_module.expire_called_reservations() == 1
 
 
@@ -1206,7 +1287,10 @@ def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda _now=None: {"message": "現在の目安待ち時間: 6分0秒", "estimated_seconds": 360},
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 6分0秒",
+            "estimated_seconds": 360,
+        },
     )
     now = datetime(2026, 4, 16, 10, 1, tzinfo=ZoneInfo("Asia/Tokyo"))
     result = app_module.process_queued_calls(now=now)
@@ -1267,7 +1351,10 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda _now=None: {"message": "現在の目安待ち時間: 2分", "estimated_seconds": 120},
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 2分",
+            "estimated_seconds": 120,
+        },
     )
     monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
     monkeypatch.setattr(
@@ -1284,7 +1371,9 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
         },
     )
     saved_settings = {}
-    monkeypatch.setattr(app_module, "set_settings", lambda values: saved_settings.update(values))
+    monkeypatch.setattr(
+        app_module, "set_settings", lambda values: saved_settings.update(values)
+    )
     monkeypatch.setattr(app_module, "send_push_message", fake_send_push)
 
     now = datetime(2026, 4, 16, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
@@ -1294,10 +1383,12 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
     assert result["failed_count"] == 1
     assert result["failed_ids"] == [11]
     rollback_queries = [item for item in executed if "called_at = NULL" in item[0]]
-    assert rollback_queries == [(
-        "UPDATE reservations SET status = %s, called_at = NULL WHERE id = ANY(%s) AND status = %s",
-        (app_module.STATUS_WAITING, [11], app_module.STATUS_CALLED),
-    )]
+    assert rollback_queries == [
+        (
+            "UPDATE reservations SET status = %s, called_at = NULL WHERE id = ANY(%s) AND status = %s",
+            (app_module.STATUS_WAITING, [11], app_module.STATUS_CALLED),
+        )
+    ]
     assert saved_settings["last_auto_call_failed_count"] == "1"
     assert len(commits) == 2
 
@@ -1351,7 +1442,10 @@ def test_process_queued_calls_uses_skip_locked_and_total_limit(app_module, monke
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda _now=None: {"message": "現在の目安待ち時間: 2分", "estimated_seconds": 120},
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 2分",
+            "estimated_seconds": 120,
+        },
     )
     monkeypatch.setattr(
         app_module,
@@ -1367,7 +1461,11 @@ def test_process_queued_calls_uses_skip_locked_and_total_limit(app_module, monke
         },
     )
     monkeypatch.setattr(app_module, "set_settings", lambda _values: None)
-    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, text: sent_messages.append((user_id, text)))
+    monkeypatch.setattr(
+        app_module,
+        "send_push_message",
+        lambda user_id, text: sent_messages.append((user_id, text)),
+    )
 
     now = datetime(2026, 4, 16, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
     result = app_module.process_queued_calls(now=now)
@@ -1378,7 +1476,9 @@ def test_process_queued_calls_uses_skip_locked_and_total_limit(app_module, monke
     assert [item[0] for item in sent_messages] == ["U-total-1"]
 
 
-def test_process_reservation_new_booking_replies_with_latest_wait_time(app_module, monkeypatch):
+def test_process_reservation_new_booking_replies_with_latest_wait_time(
+    app_module, monkeypatch
+):
     queries = []
 
     class FakeCursor:
@@ -1401,7 +1501,10 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
                 self._last = (None, None)
             elif "INSERT INTO reservations (user_id, message, type_id)" in query:
                 self._last = (10,)
-            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+            elif (
+                "JOIN reservation_types t ON r.type_id = t.id" in query
+                and "r.id < %s" in query
+            ):
                 self._last = (2,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -1427,12 +1530,19 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(app_modul
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda now=None, owner_admin_id=None: {"message": "現在の目安待ち時間: 6分", "estimated_seconds": 360},
+        lambda now=None, owner_admin_id=None: {
+            "message": "現在の目安待ち時間: 6分",
+            "estimated_seconds": 360,
+        },
     )
 
     sent_texts = []
 
-    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+    monkeypatch.setattr(
+        app_module,
+        "send_flex_notice",
+        lambda _reply_token, _title, body: sent_texts.append(body),
+    )
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-123", "予約 相談")
@@ -1492,7 +1602,11 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+    monkeypatch.setattr(
+        app_module,
+        "send_flex_notice",
+        lambda _reply_token, _title, body: sent_texts.append(body),
+    )
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-456", "予約 相談")
@@ -1514,9 +1628,15 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
             return False
 
         def execute(self, query, params=None):
-            if "FROM reservations r" in query and "WHERE r.user_id = %s AND r.status IN" in query:
+            if (
+                "FROM reservations r" in query
+                and "WHERE r.user_id = %s AND r.status IN" in query
+            ):
                 self._last = (12, app_module.STATUS_WAITING, "相談", 7)
-            elif "JOIN reservation_types t ON r.type_id = t.id" in query and "r.id < %s" in query:
+            elif (
+                "JOIN reservation_types t ON r.type_id = t.id" in query
+                and "r.id < %s" in query
+            ):
                 self._last = (3,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -1541,7 +1661,11 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+    monkeypatch.setattr(
+        app_module,
+        "send_flex_notice",
+        lambda _reply_token, _title, body: sent_texts.append(body),
+    )
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-789", "待ち時間")
@@ -1551,7 +1675,9 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
     assert "現在の目安待ち時間: 4分" in sent_texts[-1]
 
 
-def test_process_reservation_wait_time_reply_without_active_reservation(app_module, monkeypatch):
+def test_process_reservation_wait_time_reply_without_active_reservation(
+    app_module, monkeypatch
+):
     class FakeCursor:
         def __init__(self):
             self._last = None
@@ -1563,7 +1689,10 @@ def test_process_reservation_wait_time_reply_without_active_reservation(app_modu
             return False
 
         def execute(self, query, params=None):
-            if "FROM reservations r" in query and "WHERE r.user_id = %s AND r.status IN" in query:
+            if (
+                "FROM reservations r" in query
+                and "WHERE r.user_id = %s AND r.status IN" in query
+            ):
                 self._last = None
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -1588,7 +1717,11 @@ def test_process_reservation_wait_time_reply_without_active_reservation(app_modu
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+    monkeypatch.setattr(
+        app_module,
+        "send_flex_notice",
+        lambda _reply_token, _title, body: sent_texts.append(body),
+    )
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-999", "待ち時間")
@@ -1611,7 +1744,10 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
             return False
 
         def execute(self, query, params=None):
-            if "UPDATE reservations SET status = %s" in query and "RETURNING id" in query:
+            if (
+                "UPDATE reservations SET status = %s" in query
+                and "RETURNING id" in query
+            ):
                 self._last = (42,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -1636,7 +1772,11 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
 
     sent_texts = []
-    monkeypatch.setattr(app_module, "send_flex_notice", lambda _reply_token, _title, body: sent_texts.append(body))
+    monkeypatch.setattr(
+        app_module,
+        "send_flex_notice",
+        lambda _reply_token, _title, body: sent_texts.append(body),
+    )
 
     event = SimpleNamespace(reply_token="reply-token")
     app_module.process_reservation(event, "U-cancel", "キャンセル")
@@ -1707,8 +1847,8 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
                     datetime(2026, 4, 20, 2, 25, tzinfo=ZoneInfo("UTC")),
                     datetime(2026, 4, 20, 3, 0, tzinfo=ZoneInfo("UTC")),
                     600,
-                        2700,
-                        2100,
+                    2700,
+                    2100,
                 )
             ]
 
@@ -1836,7 +1976,9 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
     ]
 
 
-def test_admin_history_export_invalid_query_params_fall_back_to_defaults(app_module, monkeypatch):
+def test_admin_history_export_invalid_query_params_fall_back_to_defaults(
+    app_module, monkeypatch
+):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
 

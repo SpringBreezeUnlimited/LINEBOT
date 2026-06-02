@@ -6,7 +6,9 @@ from types import SimpleNamespace
 
 
 def _line_signature(secret: str, body: str) -> str:
-    mac = hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).digest()
+    mac = hmac.new(
+        secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+    ).digest()
     return base64.b64encode(mac).decode("utf-8")
 
 
@@ -44,7 +46,9 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
     monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
     monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
     monkeypatch.setattr(app_module, "enforce_https", lambda: None)
-    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda update_activity=True: True)
+    monkeypatch.setattr(
+        app_module, "is_admin_authenticated", lambda update_activity=True: True
+    )
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "validate_csrf", lambda: None)
 
@@ -66,7 +70,9 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
 
         def execute(self, query, params=None):
             normalized_query = " ".join(query.split())
-            if normalized_query.startswith("UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP"):
+            if normalized_query.startswith(
+                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP"
+            ):
                 with lock:
                     new_status, _res_id, expected_status, _owner_admin_id = params
                     if state["status"] == expected_status:
@@ -74,10 +80,14 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
                         self._last = (state["user_id"],)
                     else:
                         self._last = None
-            elif normalized_query.startswith("SELECT status FROM reservations WHERE id = %s"):
+            elif normalized_query.startswith(
+                "SELECT status FROM reservations WHERE id = %s"
+            ):
                 with lock:
                     self._last = (state["status"],)
-            elif normalized_query.startswith("UPDATE reservations SET status = %s, called_at = NULL"):
+            elif normalized_query.startswith(
+                "UPDATE reservations SET status = %s, called_at = NULL"
+            ):
                 with lock:
                     rollback_status, _res_id, expected_status = params
                     if state["status"] == expected_status:
@@ -106,7 +116,11 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
 
     push_calls = []
 
-    monkeypatch.setattr(app_module, "send_push_message", lambda user_id, _text: push_calls.append(user_id))
+    monkeypatch.setattr(
+        app_module,
+        "send_push_message",
+        lambda user_id, _text: push_calls.append(user_id),
+    )
 
     statuses = []
     barrier = threading.Barrier(2)

@@ -10,7 +10,9 @@ def bubble_from_title_and_text(title: str, text: str) -> Dict:
             "header": {
                 "type": "box",
                 "layout": "vertical",
-                "contents": [{"type": "text", "text": title, "weight": "bold", "size": "lg"}],
+                "contents": [
+                    {"type": "text", "text": title, "weight": "bold", "size": "lg"}
+                ],
             },
             "body": {
                 "type": "box",
@@ -21,7 +23,9 @@ def bubble_from_title_and_text(title: str, text: str) -> Dict:
     }
 
 
-def reservation_confirmation(res_id: int, type_name: str | None, waiting: int, estimated_minutes: int) -> Dict:
+def reservation_confirmation(
+    res_id: int, type_name: str | None, waiting: int, estimated_minutes: int
+) -> Dict:
     title = "受付完了"
     lines = [f"番号: {res_id}"]
     if type_name:
@@ -41,7 +45,12 @@ def call_notification(res_id: int, timeout_label: str, call_minutes: int) -> Dic
     return bubble_from_title_and_text(title, body_text)
 
 
-def wait_time_status(res_id: int | None, waiting: int, estimated_minutes: int, type_name: str | None = None) -> Dict:
+def wait_time_status(
+    res_id: int | None,
+    waiting: int,
+    estimated_minutes: int,
+    type_name: str | None = None,
+) -> Dict:
     title = "現在の待ち時間"
     if res_id:
         line = f"番号: {res_id} / あなたの前: {waiting}人"
@@ -55,7 +64,9 @@ def wait_time_status(res_id: int | None, waiting: int, estimated_minutes: int, t
 
 def cancel_notification(res_id: int | None) -> Dict:
     title = "キャンセル完了"
-    body_text = f"キャンセルした番号: {res_id}" if res_id else "キャンセルが完了しました。"
+    body_text = (
+        f"キャンセルした番号: {res_id}" if res_id else "キャンセルが完了しました。"
+    )
     return bubble_from_title_and_text(title, body_text)
 
 
