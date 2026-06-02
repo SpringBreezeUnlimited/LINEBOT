@@ -486,7 +486,10 @@ select {
 }
 
 .type-counts-block {
-    flex: 1 1 320px;
+    flex: 0 1 320px;
+    /* flex-grow:0（伸びない）; flex-shrink:1; flex-basis:320px */
+    max-width: 320px;
+    /* 必要に応じて上限を固定 */
 }
 
 .auto-call-summary {
@@ -643,7 +646,7 @@ select {
         align-items: stretch;
     }
 
-    .navbar .container > .d-flex {
+    .navbar .container>.d-flex {
         flex-wrap: wrap;
         justify-content: flex-end;
     }
@@ -691,7 +694,7 @@ select {
         width: calc(100% - 16px);
     }
 
-    .navbar .container > .d-flex {
+    .navbar .container>.d-flex {
         gap: var(--space-1);
     }
 
