@@ -45,9 +45,9 @@
             <div class="mb-3">
                 <span class="me-2">全体の新規受付</span>
                 {% if accepting_new %}
-                <span class="badge bg-success">受付中</span>
+                <span id="global-accepting-badge" class="badge bg-success" data-accepting-new="true">受付中</span>
                 {% else %}
-                <span class="badge bg-danger">停止中</span>
+                <span id="global-accepting-badge" class="badge bg-danger" data-accepting-new="false">停止中</span>
                 {% endif %}
             </div>
             {% if type_error %}
@@ -178,4 +178,5 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/inline-confirm.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/types.js') }}" defer></script>
 {% endblock %}

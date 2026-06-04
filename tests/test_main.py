@@ -784,6 +784,8 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     assert response.status_code == 200
     text = response.get_data(as_text=True)
     assert f"Version: {app_module.APP_VERSION}" in text
+    assert 'id="global-accepting-badge"' in text
+    assert "static/js/types.js" in text
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
