@@ -102,7 +102,7 @@ raw_db_url = (os.getenv("DATABASE_URL") or "").strip()
 if not raw_db_url:
     raise RuntimeError("DATABASE_URL is required")
 DATABASE_URL = normalize_db_url(raw_db_url)
-DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
+DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
@@ -123,19 +123,19 @@ if IS_PRODUCTION and not ALLOWED_HOSTS:
         "ALLOWED_HOSTS is required in production environment. Set it to your Render app domain(s)"
     )
 
-SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "1800"))
-MAX_TYPE_NAME_LENGTH = int(os.getenv("MAX_TYPE_NAME_LENGTH", "40"))
-MAX_USER_MESSAGE_CHARS = int(os.getenv("MAX_USER_MESSAGE_CHARS", "100"))
+SESSION_IDLE_TIMEOUT_SECONDS = parse_int_env("SESSION_IDLE_TIMEOUT_SECONDS", 1800, 60, 86400)
+MAX_TYPE_NAME_LENGTH = parse_int_env("MAX_TYPE_NAME_LENGTH", 40, 1, 255)
+MAX_USER_MESSAGE_CHARS = parse_int_env("MAX_USER_MESSAGE_CHARS", 100, 10, 10000)
 TYPE_NAME_PATTERN = re.compile(
     rf"^[A-Za-z0-9ぁ-んァ-ヶー一-龠々・ 　_-]{{1,{MAX_TYPE_NAME_LENGTH}}}$"
 )
 LOGIN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,31}$")
 
-WEBHOOK_RATE_LIMIT_COUNT = int(os.getenv("WEBHOOK_RATE_LIMIT_COUNT", "120"))
-WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = int(
-    os.getenv("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", "60")
+WEBHOOK_RATE_LIMIT_COUNT = parse_int_env("WEBHOOK_RATE_LIMIT_COUNT", 120, 1, 10000)
+WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = parse_int_env(
+    "WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", 60, 1, 86400
 )
-CALL_TIMEOUT_MINUTES = int(os.getenv("CALL_TIMEOUT_MINUTES", "15"))
+CALL_TIMEOUT_MINUTES = parse_int_env("CALL_TIMEOUT_MINUTES", 15, 1, 1440)
 ADMIN_REFRESH_INTERVAL_MS = parse_int_env(
     "ADMIN_REFRESH_INTERVAL_MS", 15000, 1000, 300000
 )
@@ -586,6 +586,7 @@ def process_queued_calls(now=None):
     current = current_dt.timetuple()
     minute_label = current_dt.strftime("%m-%d %H:%M")
     timed_out_count = expire_called_reservations()
+    cleanup_rate_limit_records()
     latest_wait_time = refresh_wait_time_estimate(current_dt)
     if not should_run_call_batch(current):
         return {
@@ -948,7 +949,7 @@ def ensure_admin_accounts_table():
                 """
                     INSERT INTO admin_accounts (login_id, password_hash, role)
                     VALUES (%s, %s, %s)
-                    ON CONFLICT (login_id) DO NOTHING
+                    ON CONFLICT (login_id) DO UPDATE SET password_hash = EXCLUDED.password_hash
                 """,
                 ("admin", ADMIN_PASSWORD_HASH, ROLE_ADMIN),
             )
@@ -957,7 +958,7 @@ def ensure_admin_accounts_table():
                     """
                         INSERT INTO admin_accounts (login_id, password_hash, role)
                         VALUES (%s, %s, %s)
-                        ON CONFLICT (login_id) DO NOTHING
+                        ON CONFLICT (login_id) DO UPDATE SET password_hash = EXCLUDED.password_hash
                     """,
                     ("audit", AUDIT_ADMIN_PASSWORD_HASH, ROLE_AUDIT_ADMIN),
                 )
@@ -990,6 +991,21 @@ def ensure_rate_limit_tables():
                 ON webhook_request_records (ip_address, requested_at DESC)
             """)
             conn.commit()
+
+
+def cleanup_rate_limit_records():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM login_attempt_records WHERE attempted_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
+                )
+                cur.execute(
+                    "DELETE FROM webhook_request_records WHERE requested_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
+                )
+                conn.commit()
+    except Exception:
+        app.logger.exception("Failed to cleanup rate limit records")
 
 
 def record_admin_login(
@@ -1285,15 +1301,15 @@ def apply_security_headers(response):
     return response
 
 
-LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "10"))
-LOGIN_WINDOW_SECONDS = int(os.getenv("LOGIN_WINDOW_SECONDS", "300"))
+LOGIN_MAX_ATTEMPTS = parse_int_env("LOGIN_MAX_ATTEMPTS", 10, 1, 1000)
+LOGIN_WINDOW_SECONDS = parse_int_env("LOGIN_WINDOW_SECONDS", 300, 1, 86400)
 
 
 def is_login_rate_limited(ip: str) -> bool:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                window_start = datetime.utcnow() - timedelta(
+                window_start = datetime.now(timezone.utc) - timedelta(
                     seconds=LOGIN_WINDOW_SECONDS
                 )
                 cur.execute(
@@ -1303,7 +1319,7 @@ def is_login_rate_limited(ip: str) -> bool:
                 return cur.fetchone()[0] >= LOGIN_MAX_ATTEMPTS
     except Exception:
         app.logger.exception("Failed to check login rate limit for ip=%s", ip)
-        return False
+        return True
 
 
 def record_login_failure(ip: str):
@@ -1323,7 +1339,7 @@ def is_webhook_rate_limited(ip: str) -> bool:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                window_start = datetime.utcnow() - timedelta(
+                window_start = datetime.now(timezone.utc) - timedelta(
                     seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
                 )
                 cur.execute(
@@ -1341,7 +1357,7 @@ def is_webhook_rate_limited(ip: str) -> bool:
                 return False
     except Exception:
         app.logger.exception("Failed to check webhook rate limit for ip=%s", ip)
-        return False
+        return True
 
 
 # --- ルーティング ---
@@ -1373,7 +1389,7 @@ def login():
                 "unknown", ip, request.headers.get("User-Agent"), login_result="failure"
             )
             record_login_failure(ip)
-            error = "パスワードが正しくありません"
+            error = "ログインIDまたはパスワードが正しくありません"
     return render_template(
         "login.html",
         error=error,
@@ -2337,7 +2353,7 @@ def admin_history_export():
 
         connection = create_connection()
         try:
-            cursor_name = f"history_export_{int(time.time() * 1000)}"
+            cursor_name = f"history_export_{uuid.uuid4().hex}"
             with connection.cursor(name=cursor_name) as cur:
                 cur.itersize = 500
                 cur.execute(

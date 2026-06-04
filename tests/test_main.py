@@ -592,13 +592,13 @@ def test_apply_security_headers_admin_page(app_module):
         assert "no-store" in result.headers.get("Cache-Control", "")
 
 
-def test_is_login_rate_limited_on_exception_returns_false(app_module, monkeypatch):
+def test_is_login_rate_limited_on_exception_returns_true(app_module, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "get_connection",
         lambda: (_ for _ in ()).throw(RuntimeError("db error")),
     )
-    assert app_module.is_login_rate_limited("127.0.0.1") is False
+    assert app_module.is_login_rate_limited("127.0.0.1") is True
 
 
 def test_record_login_failure_on_exception_does_not_raise(app_module, monkeypatch):
@@ -610,13 +610,13 @@ def test_record_login_failure_on_exception_does_not_raise(app_module, monkeypatc
     app_module.record_login_failure("127.0.0.1")
 
 
-def test_is_webhook_rate_limited_on_exception_returns_false(app_module, monkeypatch):
+def test_is_webhook_rate_limited_on_exception_returns_true(app_module, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "get_connection",
         lambda: (_ for _ in ()).throw(RuntimeError("db error")),
     )
-    assert app_module.is_webhook_rate_limited("127.0.0.1") is False
+    assert app_module.is_webhook_rate_limited("127.0.0.1") is True
 
 
 def test_login_get_ok(client):
@@ -679,7 +679,7 @@ def test_login_post_failure_shows_error(client, csrf_token, app_module, monkeypa
         data={"login_id": "admin", "password": "wrong", "_csrf_token": csrf_token},
     )
     assert response.status_code == 200
-    assert "パスワードが正しくありません" in response.get_data(as_text=True)
+    assert "ログインIDまたはパスワードが正しくありません" in response.get_data(as_text=True)
 
 
 def test_login_post_rate_limited(client, csrf_token, app_module, monkeypatch):
