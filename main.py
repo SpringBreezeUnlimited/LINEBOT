@@ -106,7 +106,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.118"
+APP_VERSION = "v1.0.119"
 APP_RELEASED_AT = "2026-06-04 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -2065,6 +2065,8 @@ def admin_data():
         {
             "rows": serialize_active_rows(rows),
             "meta": {
+                "accepting_new": runtime_settings["accepting_new"],
+                "auto_call_count": runtime_settings["auto_call_count"],
                 "last_auto_call": runtime_settings["last_auto_call"],
                 "latest_auto_call": runtime_settings["latest_auto_call"],
                 "type_counts": type_counts,

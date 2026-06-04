@@ -1102,6 +1102,55 @@ def test_admin_data_unauthorized(client):
     assert response.status_code == 401
 
 
+def test_admin_data_includes_runtime_controls(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "get_active_rows", lambda _cur, owner_admin_id=None: [])
+    monkeypatch.setattr(
+        app_module,
+        "fetch_type_counts",
+        lambda _cur, owner_admin_id: [],
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_runtime_settings",
+        lambda: {
+            "accepting_new": False,
+            "auto_call_count": 7,
+            "last_auto_call": {"message": "last"},
+            "latest_auto_call": {"message": "latest"},
+        },
+    )
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    response = client.get("/admin/data")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["meta"]["accepting_new"] is False
+    assert body["meta"]["auto_call_count"] == 7
+    assert body["meta"]["last_auto_call"]["message"] == "last"
+    assert body["meta"]["latest_auto_call"]["message"] == "latest"
+
+
 def test_process_call_queue_task_without_token_returns_503(client, app_module):
     app_module.BATCH_CALL_RUNNER_TOKEN = ""
     response = client.post("/tasks/process-call-queue")

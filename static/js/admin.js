@@ -56,6 +56,38 @@ function updateLastUpdatedWarningState(now = new Date()) {
     target.classList.toggle('list-meta-value-stale', shouldWarn);
 }
 
+function setFormDisabledState(form, disabled) {
+    form.querySelectorAll('button, input, select, textarea').forEach((element) => {
+        if (element.type === 'hidden') return;
+        element.disabled = disabled;
+    });
+}
+
+function updateAcceptingToggleState(acceptingNew) {
+    const button = document.getElementById('accepting-toggle-button');
+    if (!button) return;
+    const form = button.closest('form');
+    if (acceptingNew) {
+        button.className = 'btn btn-success w-100';
+        button.textContent = '受付中（停止する）';
+        if (form) {
+            form.dataset.inlineConfirm = '新規受付を停止しますか？';
+        }
+        return;
+    }
+    button.className = 'btn btn-danger w-100';
+    button.textContent = '受付停止中（再開する）';
+    if (form) {
+        form.dataset.inlineConfirm = '新規受付を再開しますか？';
+    }
+}
+
+function updateAutoCallCountInput(autoCallCount) {
+    const input = document.getElementById('auto-call-count-input');
+    if (!input || document.activeElement === input) return;
+    input.value = String(Number.isFinite(autoCallCount) ? autoCallCount : 0);
+}
+
 function getQueryParams() {
     const params = new URLSearchParams();
     const select = document.getElementById('type-filter');
@@ -132,6 +164,7 @@ function buildActionCell(row) {
         form.method = 'POST';
         form.action = `/admin/call/${row.id}`;
         form.className = 'd-inline';
+        form.dataset.ajaxPost = 'true';
         const button = document.createElement('button');
         button.type = 'submit';
         button.className = 'btn btn-sm btn-success';
@@ -144,6 +177,7 @@ function buildActionCell(row) {
         form.method = 'POST';
         form.action = `/admin/finish/${row.id}`;
         form.className = 'd-inline';
+        form.dataset.ajaxPost = 'true';
         const button = document.createElement('button');
         button.type = 'submit';
         button.className = 'btn btn-sm btn-primary';
@@ -259,6 +293,15 @@ function showAutoCallNotification(summary) {
     }
 }
 
+function updateAdminRuntimeControls(meta = {}) {
+    if (typeof meta.accepting_new === 'boolean') {
+        updateAcceptingToggleState(meta.accepting_new);
+    }
+    if (Number.isFinite(meta.auto_call_count)) {
+        updateAutoCallCountInput(meta.auto_call_count);
+    }
+}
+
 function renderActiveRows() {
     const cardList = document.getElementById('active-rows');
     if (!cardList) return;
@@ -275,6 +318,7 @@ async function refreshAdminData() {
         const res = await fetch('/admin/data', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
+        updateAdminRuntimeControls(data.meta || {});
         const nextRows = data.rows || [];
         const nextRowsSignature = buildRowsSignature(nextRows);
         if (nextRowsSignature !== activeRowsSignature) {
@@ -303,8 +347,53 @@ function applyAdminFilters() {
     renderActiveRows();
 }
 
+function isLoginRedirect(response) {
+    try {
+        return new URL(response.url, window.location.href).pathname === '/login';
+    } catch (error) {
+        return false;
+    }
+}
+
+async function submitAdminAjaxForm(form) {
+    if (form.dataset.ajaxBusy === 'true') return;
+    form.dataset.ajaxBusy = 'true';
+    setFormDisabledState(form, true);
+
+    try {
+        const response = await fetch(form.action, {
+            method: (form.method || 'POST').toUpperCase(),
+            body: new FormData(form),
+            credentials: 'same-origin',
+        });
+        if (isLoginRedirect(response)) {
+            window.location.assign(response.url);
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(`Unexpected response: ${response.status}`);
+        }
+        await refreshAdminData();
+    } catch (error) {
+        console.error('Failed to submit admin form', error);
+        window.alert('更新に失敗しました。もう一度試してください。');
+    } finally {
+        setFormDisabledState(form, false);
+        form.dataset.ajaxBusy = 'false';
+    }
+}
+
 document.getElementById('type-filter')?.addEventListener('change', applyAdminFilters);
 document.getElementById('sort-by')?.addEventListener('change', applyAdminFilters);
+document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    if (!form.matches('form[data-ajax-post="true"]')) return;
+    if (event.defaultPrevented) return;
+
+    event.preventDefault();
+    submitAdminAjaxForm(form);
+});
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
         refreshAdminData();
