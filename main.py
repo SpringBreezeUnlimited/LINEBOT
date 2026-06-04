@@ -106,8 +106,8 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.116"
-APP_RELEASED_AT = "2026-06-02 00:00 JST"
+APP_VERSION = "v1.0.117"
+APP_RELEASED_AT = "2026-06-04 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -1145,6 +1145,20 @@ def get_current_admin_account_id():
     return None
 
 
+def has_active_auth_session(role: str | None = None) -> bool:
+    if not session.get("logged_in"):
+        return False
+    if role is not None and session.get("admin_role") != role:
+        return False
+    admin_account_id = session.get("admin_account_id")
+    if not isinstance(admin_account_id, int) or admin_account_id <= 0:
+        return False
+    last_activity = session.get("last_activity")
+    if not isinstance(last_activity, (int, float)):
+        return False
+    return time.time() - last_activity <= SESSION_IDLE_TIMEOUT_SECONDS
+
+
 def normalize_type_name(value: str) -> str:
     return " ".join((value or "").split())
 
@@ -1220,6 +1234,17 @@ def csrf_protect():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         if request.path in ("/callback", "/tasks/process-call-queue"):
             return
+        if request.path.startswith("/admin/login-logs") or request.path.startswith(
+            "/admin/admin-accounts"
+        ):
+            if not has_active_auth_session(ROLE_AUDIT_ADMIN):
+                return
+        elif request.path.startswith("/admin") or request.path == "/logout":
+            if not (
+                has_active_auth_session(ROLE_ADMIN)
+                or has_active_auth_session(ROLE_AUDIT_ADMIN)
+            ):
+                return
         validate_csrf()
 
 

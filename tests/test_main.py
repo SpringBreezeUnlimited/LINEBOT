@@ -512,6 +512,34 @@ def test_validate_csrf_failure(app_module):
             app_module.validate_csrf()
 
 
+def test_admin_post_without_active_session_redirects_to_login(
+    client, app_module, monkeypatch
+):
+    monkeypatch.setattr(app_module, "set_accepting_new", lambda _value: None)
+
+    response = client.post("/admin/toggle-accepting")
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+def test_admin_post_with_active_session_still_rejects_invalid_csrf(
+    app_module, monkeypatch
+):
+    with app_module.app.test_request_context(
+        "/admin/toggle-accepting", method="POST", data={"_csrf_token": "wrong"}
+    ):
+        app_module.session["logged_in"] = True
+        app_module.session["admin_role"] = app_module.ROLE_ADMIN
+        app_module.session["admin_account_id"] = 1
+        app_module.session["last_activity"] = 1000.0
+        app_module.session["_csrf_token"] = "expected-token"
+        monkeypatch.setattr(app_module.time, "time", lambda: 1005.0)
+
+        with pytest.raises(Forbidden):
+            app_module.csrf_protect()
+
+
 def test_is_authenticated_as_success(app_module):
     with app_module.app.test_request_context("/"):
         now = 1000.0
