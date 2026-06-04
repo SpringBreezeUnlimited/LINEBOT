@@ -106,7 +106,7 @@ DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.117"
+APP_VERSION = "v1.0.118"
 APP_RELEASED_AT = "2026-06-04 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -1096,6 +1096,7 @@ def enforce_https():
 
 def start_admin_session(role: str, admin_account_id: int, admin_login_id: str):
     now = time.time()
+    csrf_token = session.get("_csrf_token")
     session.clear()
     session["logged_in"] = True
     session["admin_role"] = role
@@ -1103,7 +1104,8 @@ def start_admin_session(role: str, admin_account_id: int, admin_login_id: str):
     session["admin_login_id"] = admin_login_id
     session["issued_at"] = now
     session["last_activity"] = now
-    session["_csrf_token"] = secrets.token_urlsafe(32)
+    # Keep the same token across login so already-open tabs keep working.
+    session["_csrf_token"] = csrf_token or secrets.token_urlsafe(32)
     session.permanent = True
 
 

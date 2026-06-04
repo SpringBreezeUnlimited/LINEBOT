@@ -495,6 +495,16 @@ def test_get_csrf_token_generates_and_reuses(app_module):
         assert len(first) > 20
 
 
+def test_start_admin_session_preserves_existing_csrf_token(app_module):
+    with app_module.app.test_request_context("/login"):
+        app_module.session["_csrf_token"] = "shared-token"
+        app_module.start_admin_session(app_module.ROLE_ADMIN, 1, "admin")
+
+        assert app_module.session["_csrf_token"] == "shared-token"
+        assert app_module.session["logged_in"] is True
+        assert app_module.session["admin_role"] == app_module.ROLE_ADMIN
+
+
 def test_validate_csrf_success(app_module):
     with app_module.app.test_request_context(
         "/dummy", method="POST", data={"_csrf_token": "abc"}
