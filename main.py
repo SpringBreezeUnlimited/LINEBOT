@@ -106,8 +106,8 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.120"
-APP_RELEASED_AT = "2026-06-04 00:00 JST"
+APP_VERSION = "v1.0.121"
+APP_RELEASED_AT = "2026-06-05 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 ALLOWED_HOSTS = {
@@ -2554,10 +2554,18 @@ def callback():
         return "OK"
     return "OK"
 
+IGNORED_REPLY_MESSAGE = "https://ukweb.ikura.workers.dev/"
+
+
+def should_ignore_reply_message(message: str) -> bool:
+    return message.strip() == IGNORED_REPLY_MESSAGE
+
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_message = event.message.text.strip()
+    if should_ignore_reply_message(user_message):
+        return
     user_id = event.source.user_id
     process_reservation(event, user_id, user_message)
 
