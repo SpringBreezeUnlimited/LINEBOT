@@ -106,15 +106,19 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.126"
-APP_RELEASED_AT = "2026-06-05 00:00 JST"
+APP_VERSION = "v1.0.127"
+APP_RELEASED_AT = "2026-06-06 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
-ALLOWED_HOSTS = {
-    host.strip().lower()
-    for host in os.getenv("ALLOWED_HOSTS", "").split(",")
-    if host.strip()
-}
+def parse_allowed_hosts(raw_value: str) -> set[str]:
+    return {
+        host.strip().lower()
+        for host in re.split(r"[,\s]+", raw_value)
+        if host.strip()
+    }
+
+
+ALLOWED_HOSTS = parse_allowed_hosts(os.getenv("ALLOWED_HOSTS", ""))
 
 # 本番環境での安全性チェック
 IS_PRODUCTION = bool(os.getenv("RENDER"))
@@ -1089,7 +1093,9 @@ def enforce_host_allowlist():
     if not ALLOWED_HOSTS:
         return
     host = (request.host.split(":", 1)[0] if request.host else "").lower()
-    if host not in ALLOWED_HOSTS:
+    if host not in ALLOWED_HOSTS and not any(
+        host.endswith(f".{allowed_host}") for allowed_host in ALLOWED_HOSTS
+    ):
         abort(400)
 
 

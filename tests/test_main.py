@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
-from werkzeug.exceptions import Forbidden
+from werkzeug.exceptions import BadRequest
 
 
 def flex_message_text(message):
@@ -53,6 +53,32 @@ def test_normalize_db_url_localhost_keeps_no_sslmode(app_module):
 def test_normalize_db_url_invalid_raises(app_module):
     with pytest.raises(RuntimeError):
         app_module.normalize_db_url("not-a-url")
+
+
+def test_parse_allowed_hosts_supports_multiple_separators(app_module):
+    parsed = app_module.parse_allowed_hosts("example.com, api.example.com  admin.example.com")
+    assert parsed == {"example.com", "api.example.com", "admin.example.com"}
+
+
+def test_enforce_host_allowlist_accepts_multiple_hosts(app_module, monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "ALLOWED_HOSTS",
+        {"example.com", "api.example.com"},
+    )
+    with app_module.app.test_request_context("/", base_url="https://api.example.com"):
+        app_module.enforce_host_allowlist()
+
+
+def test_enforce_host_allowlist_rejects_unknown_host(app_module, monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "ALLOWED_HOSTS",
+        {"example.com", "api.example.com"},
+    )
+    with app_module.app.test_request_context("/", base_url="https://evil.example.net"):
+        with pytest.raises(BadRequest):
+            app_module.enforce_host_allowlist()
 
 
 def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
