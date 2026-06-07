@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg2  # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context  # type: ignore
+from flask.sessions import SecureCookieSessionInterface  # type: ignore
 from linebot.v3 import WebhookHandler  # type: ignore
 from linebot.v3.exceptions import InvalidSignatureError  # type: ignore
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage  # type: ignore
@@ -106,7 +107,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.127"
+APP_VERSION = "v1.0.128"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -161,6 +162,16 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(seconds=SESSION_IDLE_TIMEOUT_SECONDS),
 )
 app.jinja_env.autoescape = True
+
+
+class AppSessionInterface(SecureCookieSessionInterface):
+    def should_set_cookie(self, app, session):  # type: ignore[override]
+        if request.endpoint == "static":
+            return False
+        return super().should_set_cookie(app, session)
+
+
+app.session_interface = AppSessionInterface()
 
 
 @app.context_processor

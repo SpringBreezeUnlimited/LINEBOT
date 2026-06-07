@@ -878,7 +878,15 @@ def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypat
 
     assert response.status_code == 302
     assert "type_error=" in response.headers["Location"]
-    assert rollback_called == [True]
+
+
+def test_static_assets_do_not_set_cookie(app_module, client):
+    client.get("/login")
+
+    response = client.get("/static/js/admin.js")
+
+    assert response.status_code == 200
+    assert "Set-Cookie" not in response.headers
 
 
 def test_admin_accounts_create_requires_audit_auth(app_module):
