@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
-from werkzeug.exceptions import BadRequest
+from werkzeug.exceptions import BadRequest, Forbidden
 
 
 def flex_message_text(message):
@@ -884,8 +884,16 @@ def test_static_assets_do_not_set_cookie(app_module, client):
     client.get("/login")
 
     response = client.get("/static/js/admin.js")
-
     assert response.status_code == 200
+    assert "Set-Cookie" not in response.headers
+
+    response = client.get("/static/js/nonexistent.js")
+    assert "Set-Cookie" not in response.headers
+
+    response = client.get("/favicon.ico")
+    assert "Set-Cookie" not in response.headers
+
+    response = client.get("/robots.txt")
     assert "Set-Cookie" not in response.headers
 
 
