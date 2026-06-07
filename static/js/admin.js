@@ -358,12 +358,13 @@ function isLoginRedirect(response) {
 async function submitAdminAjaxForm(form) {
     if (form.dataset.ajaxBusy === 'true') return;
     form.dataset.ajaxBusy = 'true';
+    const formData = new FormData(form);
     setFormDisabledState(form, true);
 
     try {
         const response = await fetch(form.action, {
             method: (form.method || 'POST').toUpperCase(),
-            body: new FormData(form),
+            body: formData,
             credentials: 'same-origin',
         });
         if (isLoginRedirect(response)) {
