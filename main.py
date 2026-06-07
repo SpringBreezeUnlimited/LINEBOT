@@ -174,7 +174,7 @@ class AppSessionInterface(SecureCookieSessionInterface):
         ):
             return False
             
-        # ★追加：トップページ（ログイン画面へのリダイレクトのみ）もクッキー不要
+        #★追加：トップページ（ログイン画面へのリダイレクトのみ）もクッキー不要
         if request.path == "/":
             return False
             
