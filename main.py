@@ -166,10 +166,19 @@ app.jinja_env.autoescape = True
 
 class AppSessionInterface(SecureCookieSessionInterface):
     def should_set_cookie(self, app, session):  # type: ignore[override]
-        if request.endpoint == "static":
+        # /static/ 以下や、ファビコンなどの静的ファイルには絶対にクッキーを発行しない
+        if (
+            request.endpoint == "static"
+            or request.path.startswith("/static/")
+            or request.path in ("/favicon.ico", "/robots.txt")
+        ):
             return False
+            
+        # ★追加：トップページ（ログイン画面へのリダイレクトのみ）もクッキー不要
+        if request.path == "/":
+            return False
+            
         return super().should_set_cookie(app, session)
-
 
 app.session_interface = AppSessionInterface()
 
@@ -1281,41 +1290,6 @@ def csrf_protect():
             ):
                 return
         validate_csrf()
-
-
-@app.after_request
-def apply_security_headers(response):
-    csp = (
-        "default-src 'self'; "
-        "script-src 'self' https://cdn.jsdelivr.net; "
-        "style-src 'self' https://cdn.jsdelivr.net; "
-        "img-src 'self' data:; "
-        "connect-src 'self' https://cdn.jsdelivr.net; "
-        "frame-ancestors 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self'"
-    )
-    response.headers.setdefault("Content-Security-Policy", csp)
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
-    # Allow camera and microphone for same-origin pages (required for getUserMedia)
-    response.headers.setdefault(
-        "Permissions-Policy", "camera=(self), microphone=(self), geolocation=()"
-    )
-    forwarded_proto = (
-        (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
-    )
-    if FORCE_HTTPS and (request.is_secure or forwarded_proto == "https"):
-        response.headers.setdefault(
-            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
-        )
-    if request.path.startswith("/admin") or request.path.startswith("/login"):
-        response.headers["Cache-Control"] = (
-            "no-store, no-cache, must-revalidate, max-age=0"
-        )
-        response.headers["Pragma"] = "no-cache"
-    return response
 
 
 LOGIN_MAX_ATTEMPTS = parse_int_env("LOGIN_MAX_ATTEMPTS", 10, 1, 1000)
