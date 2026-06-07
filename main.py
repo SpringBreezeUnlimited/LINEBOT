@@ -166,7 +166,11 @@ app.jinja_env.autoescape = True
 
 class AppSessionInterface(SecureCookieSessionInterface):
     def should_set_cookie(self, app, session):  # type: ignore[override]
-        if request.endpoint == "static":
+        if (
+            request.endpoint == "static"
+            or request.path.startswith("/static/")
+            or request.path in ("/favicon.ico", "/robots.txt")
+        ):
             return False
         return super().should_set_cookie(app, session)
 
