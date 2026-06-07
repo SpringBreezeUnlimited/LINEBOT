@@ -35,6 +35,7 @@ from flex_templates import (
 from flex_templates import bubble_from_title_and_text
 
 app = Flask(__name__)
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 600
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
