@@ -88,7 +88,6 @@
                                 <div>
                                     <div class="types-card__label">種類</div>
                                     <div class="types-card__value">{{ t[1] }}</div>
-                                    {% if t[3] %} <!-- ← 追加ここから -->
                                     <div class="types-card__flavor-edit">
                                         <form method="POST" action="/admin/types/{{ t[0] }}/flavor"
                                             class="types-flavor-form"
@@ -102,7 +101,6 @@
                                                 class="btn btn-sm btn-outline-secondary mt-1">保存</button>
                                         </form>
                                     </div>
-                                    {% endif %}
                                 </div>
                                 <div class="types-card__status">
                                     {% if t[2] %}
