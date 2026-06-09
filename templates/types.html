@@ -91,10 +91,9 @@
                                             class="types-flavor-form"
                                             data-inline-confirm="{{ ('「%s」の説明を更新しますか？' % t[1]) | e }}">
                                             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                            <label class="types-card__flavor-label">説明</label>
-                                            <textarea name="flavor_text"
+                                            <input type="text" name="flavor_text"
                                                 class="form-control form-control-sm types-card__flavor-textarea"
-                                                rows="2" placeholder="受付完了時にLINEへ送信される説明文">{{ t[3] or '' }}</textarea>
+                                                placeholder="受付完了時にLINEへ送信される説明文" value="{{ t[3] or '' }}">
                                             <button type="submit"
                                                 class="btn btn-sm btn-outline-secondary mt-1">保存</button>
                                         </form>
