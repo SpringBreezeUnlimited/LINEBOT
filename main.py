@@ -1442,6 +1442,10 @@ def ensure_types_table():
                 ADD COLUMN IF NOT EXISTS owner_admin_id INTEGER
                 REFERENCES admin_accounts(id) ON DELETE RESTRICT
             """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
+                """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
@@ -2100,6 +2104,7 @@ def admin_types_page():
     reservation_end_time = format_minute_of_day(end_minute)
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
+        flavor_text = (request.form.get("flavor_text") or "").strip()
         if not validate_type_name(name):
             return redirect(
                 url_for(
@@ -2111,8 +2116,8 @@ def admin_types_page():
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "INSERT INTO reservation_types (name, owner_admin_id) VALUES (%s, %s)",
-                        (name, current_admin_account_id),
+                        "INSERT INTO reservation_types (name, flavor_text, owner_admin_id) VALUES (%s, %s, %s)",
+                        (name, flavor_text, current_admin_account_id),
                     )
                     conn.commit()
             return redirect(
@@ -2128,8 +2133,7 @@ def admin_types_page():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, accepting FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
-                (current_admin_account_id,),
+                "SELECT id, name, accepting, flavor_text FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
             )
             types = cur.fetchall()
     return render_template(
@@ -2602,7 +2606,7 @@ def process_reservation(event, user_id, user_message):
                         )
                         return
                     cur.execute(
-                        "SELECT id, name, accepting, owner_admin_id FROM reservation_types WHERE name = %s",
+                        "SELECT id, name, accepting, owner_admin_id, flavor_text FROM reservation_types WHERE name = %s",
                         (requested_type_name,),
                     )
                     type_row = cur.fetchone()
@@ -2617,7 +2621,7 @@ def process_reservation(event, user_id, user_message):
                             body = "予約の種類がまだ登録されていません。管理画面で追加してください。"
                         send_flex_notice(event.reply_token, "種類がありません", body)
                         return
-                    type_id, type_name, type_accepting, type_owner_admin_id = type_row
+                    type_id, type_name, type_accepting, type_owner_admin_id, type_flavor_text = type_row
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
@@ -2784,6 +2788,8 @@ def process_reservation(event, user_id, user_message):
                         waiting_people_ahead
                     )
                     body += f"\n現在の目安待ち時間: {estimated_minutes}分"
+                    if type_flavor_text:          # ← 追加
+                        body += f"\n{type_flavor_text}"
                     send_flex_notice(event.reply_token, "受付完了", body)
                     return
             elif normalized == "キャンセル":

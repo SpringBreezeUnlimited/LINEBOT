@@ -150,6 +150,14 @@ input {
     word-break: break-word;
 }
 
+.types-card__flavor {
+    margin-top: var(--space-2);
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    line-height: 1.5;
+    word-break: break-word;
+}
+
 .types-card__status {
     display: flex;
     align-items: flex-start;

@@ -18,7 +18,8 @@
         <div class="sidebar-nav-actions d-flex gap-2">
             <a href="/admin" class="btn btn-outline-light btn-sm">管理画面</a>
             <a href="/admin/history" class="btn btn-outline-light btn-sm" aria-label="過去ログ" title="過去ログ">
-                <img src="{{ url_for('static', filename='img/history_fill.svg') }}" alt="" aria-hidden="true" class="nav-icon nav-icon-history">
+                <img src="{{ url_for('static', filename='img/history_fill.svg') }}" alt="" aria-hidden="true"
+                    class="nav-icon nav-icon-history">
                 <span>ログ</span>
                 <span class="visually-hidden">過去ログ</span>
             </a>
@@ -26,12 +27,8 @@
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
             </form>
-            <a
-                href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
-                class="btn btn-outline-light btn-sm"
-                target="_blank"
-                rel="noopener noreferrer"
-            >お問い合わせ</a>
+            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
+                class="btn btn-outline-light btn-sm" target="_blank" rel="noopener noreferrer">お問い合わせ</a>
         </div>
     </div>
 </nav>
@@ -68,23 +65,13 @@
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                     <div class="col-sm-4 col-md-3">
                         <label class="form-label">開始</label>
-                        <input
-                            type="time"
-                            name="reservation_start_time"
-                            step="60"
-                            value="{{ reservation_start_time }}"
-                            class="form-control"
-                        >
+                        <input type="time" name="reservation_start_time" step="60" value="{{ reservation_start_time }}"
+                            class="form-control">
                     </div>
                     <div class="col-sm-4 col-md-3">
                         <label class="form-label">終了</label>
-                        <input
-                            type="time"
-                            name="reservation_end_time"
-                            step="60"
-                            value="{{ reservation_end_time }}"
-                            class="form-control"
-                        >
+                        <input type="time" name="reservation_end_time" step="60" value="{{ reservation_end_time }}"
+                            class="form-control">
                     </div>
                     <div class="col-sm-4 col-md-3 d-grid">
                         <button type="submit" class="btn btn-primary">保存</button>
@@ -92,16 +79,17 @@
                 </form>
                 <p class="helper-text mb-0 mt-2">未入力で保存すると時間制限を解除します。開始=終了は24時間受付として扱います。</p>
             </div>
-            <form
-                method="POST"
-                action="/admin/types"
-                class="row g-2 align-items-center"
-                data-inline-confirm="この内容で種類を追加しますか？"
-            >
+            <form method="POST" action="/admin/types" class="row g-2 align-items-center"
+                data-inline-confirm="この内容で種類を追加しますか？">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="col-sm-8">
                     <input type="text" name="name" class="form-control" placeholder="種類名" required>
                 </div>
+                <div class="col-12 mt-2"> <!-- ← 追加ここから -->
+                    <label class="form-label">フレーバーテキスト（任意）</label>
+                    <textarea name="flavor_text" class="form-control" rows="2"
+                        placeholder="受付完了時にLINEへ送信される説明文（例: 2番窓口にお越しください）"></textarea>
+                </div> <!-- ← 追加ここまで -->
                 <div class="col-sm-4 d-grid">
                     <button type="submit" class="btn btn-primary">追加</button>
                 </div>
@@ -120,6 +108,9 @@
                                 <div>
                                     <div class="types-card__label">種類</div>
                                     <div class="types-card__value">{{ t[1] }}</div>
+                                    {% if t[3] %} <!-- ← 追加ここから -->
+                                    <div class="types-card__flavor">{{ t[3] }}</div>
+                                    {% endif %}
                                 </div>
                                 <div class="types-card__status">
                                     {% if t[2] %}
@@ -131,32 +122,20 @@
                             </div>
                             <div class="types-card__actions">
                                 {% if t[2] %}
-                                <form
-                                    method="POST"
-                                    action="/admin/types/toggle/{{ t[0] }}"
-                                    class="d-inline"
-                                    data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
-                                >
+                                <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline"
+                                    data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-success">受付中</button>
                                 </form>
                                 {% else %}
-                                <form
-                                    method="POST"
-                                    action="/admin/types/toggle/{{ t[0] }}"
-                                    class="d-inline"
-                                    data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
-                                >
+                                <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline"
+                                    data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
                                 </form>
                                 {% endif %}
-                                <form
-                                    method="POST"
-                                    action="/admin/types/delete/{{ t[0] }}"
-                                    class="d-inline"
-                                    data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}"
-                                >
+                                <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="d-inline"
+                                    data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
                                 </form>
@@ -171,7 +150,8 @@
         </div>
     </div>
 </div>
-<div id="version-badge" class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded small version-badge">
+<div id="version-badge"
+    class="position-fixed bottom-0 end-0 m-3 px-3 py-2 bg-dark text-white rounded small version-badge">
     <div>Version: {{ app_version }}</div>
 </div>
 {% endblock %}
