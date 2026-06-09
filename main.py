@@ -473,66 +473,6 @@ def format_duration_from_seconds(total_seconds):
     return f"{secs}秒"
 
 
-def parse_hhmm_to_minute_of_day(value: str):
-    text = (value or "").strip()
-    if not text:
-        return None
-    if not re.fullmatch(r"\d{2}:\d{2}", text):
-        return None
-    hour = int(text[:2])
-    minute = int(text[3:5])
-    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-        return None
-    return hour * 60 + minute
-
-
-def format_minute_of_day(minute_of_day):
-    if minute_of_day is None:
-        return ""
-    minute = int(minute_of_day) % (24 * 60)
-    hour, minute = divmod(minute, 60)
-    return f"{hour:02d}:{minute:02d}"
-
-
-def is_minute_in_window(minute_of_day: int, start_minute: int, end_minute: int) -> bool:
-    if start_minute == end_minute:
-        return True
-    if start_minute < end_minute:
-        return start_minute <= minute_of_day < end_minute
-    return minute_of_day >= start_minute or minute_of_day < end_minute
-
-
-def get_admin_reservation_window(admin_account_id: int, cur=None):
-    if cur is not None:
-        cur.execute(
-            "SELECT reservation_start_minute, reservation_end_minute FROM admin_accounts WHERE id = %s",
-            (admin_account_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None, None
-        return row[0], row[1]
-    with get_connection() as conn:
-        with conn.cursor() as local_cur:
-            local_cur.execute(
-                "SELECT reservation_start_minute, reservation_end_minute FROM admin_accounts WHERE id = %s",
-                (admin_account_id,),
-            )
-            row = local_cur.fetchone()
-            if not row:
-                return None, None
-            return row[0], row[1]
-
-
-def is_within_admin_reservation_window(admin_account_id: int, now=None) -> bool:
-    start_minute, end_minute = get_admin_reservation_window(admin_account_id)
-    if start_minute is None or end_minute is None:
-        return True
-    current_dt = datetime.now(JST) if now is None else now.astimezone(JST)
-    current_minute = current_dt.hour * 60 + current_dt.minute
-    return is_minute_in_window(current_minute, int(start_minute), int(end_minute))
-
-
 def calculate_wait_time_minutes(people_ahead: int) -> int:
     ahead = max(0, int(people_ahead))
     return max(0, math.ceil(ahead * 0.5 + 2))
@@ -961,14 +901,6 @@ def ensure_admin_accounts_table():
             cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
                     ON admin_accounts (role, active)
-                """)
-            cur.execute("""
-                    ALTER TABLE admin_accounts
-                    ADD COLUMN IF NOT EXISTS reservation_start_minute INTEGER
-                """)
-            cur.execute("""
-                    ALTER TABLE admin_accounts
-                    ADD COLUMN IF NOT EXISTS reservation_end_minute INTEGER
                 """)
             cur.execute(
                 """
@@ -1977,71 +1909,6 @@ def admin_page():
     )
 
 
-@app.route("/admin/reservation-hours", methods=["POST"])
-def admin_reservation_hours():
-    if not is_admin_authenticated():
-        return redirect(url_for("login"))
-    current_admin_account_id = get_current_admin_account_id()
-    if not current_admin_account_id:
-        session.clear()
-        return redirect(url_for("login"))
-
-    start_text = (request.form.get("reservation_start_time") or "").strip()
-    end_text = (request.form.get("reservation_end_time") or "").strip()
-
-    if not start_text and not end_text:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE admin_accounts SET reservation_start_minute = NULL, reservation_end_minute = NULL WHERE id = %s",
-                    (current_admin_account_id,),
-                )
-                conn.commit()
-        return redirect(
-            url_for(
-                "admin_types_page",
-                schedule_success="予約受付時間の制限を解除しました。",
-            )
-        )
-
-    if not start_text or not end_text:
-        return redirect(
-            url_for(
-                "admin_types_page",
-                schedule_error="開始時刻と終了時刻は両方入力してください。",
-            )
-        )
-
-    start_minute = parse_hhmm_to_minute_of_day(start_text)
-    end_minute = parse_hhmm_to_minute_of_day(end_text)
-    if start_minute is None or end_minute is None:
-        return redirect(
-            url_for(
-                "admin_types_page",
-                schedule_error="時刻形式が不正です。HH:MM で入力してください。",
-            )
-        )
-
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                    UPDATE admin_accounts
-                    SET reservation_start_minute = %s, reservation_end_minute = %s
-                    WHERE id = %s
-                """,
-                (start_minute, end_minute, current_admin_account_id),
-            )
-            conn.commit()
-
-    return redirect(
-        url_for(
-            "admin_types_page",
-            schedule_success=f"予約受付時間を {format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)} に更新しました。",
-        )
-    )
-
-
 @app.route("/admin/data")
 def admin_data():
     if not is_admin_authenticated():
@@ -2099,9 +1966,6 @@ def admin_types_page():
     type_success = request.args.get("type_success")
     schedule_error = request.args.get("schedule_error")
     schedule_success = request.args.get("schedule_success")
-    start_minute, end_minute = get_admin_reservation_window(current_admin_account_id)
-    reservation_start_time = format_minute_of_day(start_minute)
-    reservation_end_time = format_minute_of_day(end_minute)
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
         flavor_text = (request.form.get("flavor_text") or "").strip()
@@ -2145,8 +2009,6 @@ def admin_types_page():
         type_success=type_success,
         schedule_error=schedule_error,
         schedule_success=schedule_success,
-        reservation_start_time=reservation_start_time,
-        reservation_end_time=reservation_end_time,
         csrf_token=get_csrf_token(),
     )
 
@@ -2695,23 +2557,6 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(event.reply_token, "予約状況", body)
                     return
                 else:
-                    if type_owner_admin_id:
-                        start_minute, end_minute = get_admin_reservation_window(
-                            type_owner_admin_id, cur=cur
-                        )
-                        if start_minute is not None and end_minute is not None:
-                            current_dt = datetime.now(JST)
-                            current_minute = current_dt.hour * 60 + current_dt.minute
-                            if not is_minute_in_window(
-                                current_minute, int(start_minute), int(end_minute)
-                            ):
-                                window_label = f"{format_minute_of_day(start_minute)}〜{format_minute_of_day(end_minute)}"
-                                send_flex_notice(
-                                    event.reply_token,
-                                    "受付時間外",
-                                    f"「{type_name}」の予約受付時間は {window_label} です。現在は受付時間外です。",
-                                )
-                                return
                     try:
                         cur.execute(
                             "INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id",
