@@ -1446,10 +1446,6 @@ def ensure_types_table():
                 ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
                 """)
-            cur.execute("""
-                ALTER TABLE reservation_types
-                ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
-                """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
@@ -2138,6 +2134,7 @@ def admin_types_page():
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, name, accepting, flavor_text FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
+                (current_admin_account_id,),
             )
             types = cur.fetchall()
     return render_template(
