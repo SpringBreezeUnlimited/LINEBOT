@@ -2063,6 +2063,27 @@ def admin_types_toggle(type_id):
             conn.commit()
     return redirect(url_for("admin_types_page"))
 
+@app.route("/admin/types/<int:type_id>/flavor", methods=["POST"])
+def admin_types_update_flavor(type_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    flavor_text = (request.form.get("flavor_text") or "").strip()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE reservation_types SET flavor_text = %s WHERE id = %s AND owner_admin_id = %s",
+                (flavor_text, type_id, current_admin_account_id),
+            )
+            if cur.rowcount == 0:
+                abort(403)
+            conn.commit()
+    return redirect(url_for("admin_types_page", type_success="説明を更新しました。"))
+
 
 @app.route("/admin/history")
 def admin_history():
