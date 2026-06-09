@@ -1446,6 +1446,10 @@ def ensure_types_table():
                 ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
                 """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
+                """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
