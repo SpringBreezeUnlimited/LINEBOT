@@ -20,6 +20,7 @@ from linebot.v3.exceptions import InvalidSignatureError  # type: ignore
 from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage  # type: ignore
 from linebot.v3.messaging.models.flex_box import FlexBox  # type: ignore
 from linebot.v3.messaging.models.flex_bubble import FlexBubble  # type: ignore
+from linebot.v3.messaging.models.flex_carousel import FlexCarousel  # type: ignore
 from linebot.v3.messaging.models.flex_message import FlexMessage  # type: ignore
 from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
@@ -292,7 +293,7 @@ def push_message_with_retry_key(
 
 
 def build_flex_component(component):
-    if isinstance(component, (FlexBubble, FlexBox, FlexText)):
+    if isinstance(component, (FlexBubble, FlexBox, FlexText, FlexCarousel)):
         return component
     if not isinstance(component, dict):
         return component
@@ -364,6 +365,12 @@ def build_flex_component(component):
             footer=build_flex_component(component.get("footer")),
             size=component.get("size"),
             action=component.get("action"),
+        )
+    if component_type == "carousel":
+        return FlexCarousel(
+            contents=[
+                build_flex_component(item) for item in component.get("contents") or []
+            ]
         )
     return component
 
@@ -2525,16 +2532,155 @@ def process_reservation(event, user_id, user_message):
                         )
                         return
                 else:
-                    names = get_accepting_type_names(cur)
-                    if names:
-                        body = (
-                            "予約の種類を指定してください。\n利用可能: "
-                            + " / ".join(names)
-                            + "\n例: 予約 相談"
+                    cur.execute(
+                        "SELECT name, flavor_text, accepting FROM reservation_types ORDER BY id ASC"
+                    )
+                    type_rows = cur.fetchall()
+                    if not type_rows:
+                        send_flex_notice(
+                            event.reply_token,
+                            "種類がありません",
+                            "現在、予約可能な種類が登録されていません。",
                         )
-                    else:
-                        body = "現在受付可能な予約の種類がありません。管理画面で受付を再開してください。"
-                    send_flex_notice(event.reply_token, "種類を指定してください", body)
+                        return
+                    
+                    carousel_bubbles = []
+                    for name, flavor_text, accepting in type_rows[:10]:
+                        # header box
+                        header = {
+                            "type": "box",
+                            "layout": "vertical",
+                            "backgroundColor": "#1e293b",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": name,
+                                    "weight": "bold",
+                                    "size": "xl",
+                                    "color": "#ffffff",
+                                    "wrap": True,
+                                }
+                            ],
+                            "paddingAll": "20px",
+                        }
+                        
+                        # status pill
+                        status_color = "#10b981" if accepting else "#ef4444"
+                        status_bg = "#d1fae5" if accepting else "#fee2e2"
+                        status_text = "受付中" if accepting else "受付停止中"
+                        
+                        body_contents = [
+                            {
+                                "type": "box",
+                                "layout": "horizontal",
+                                "contents": [
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "backgroundColor": status_bg,
+                                        "cornerRadius": "md",
+                                        "paddingStart": "8px",
+                                        "paddingEnd": "8px",
+                                        "paddingTop": "2px",
+                                        "paddingBottom": "2px",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": status_text,
+                                                "color": status_color,
+                                                "size": "xs",
+                                                "weight": "bold",
+                                                "align": "center",
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                        ]
+                        
+                        body_contents.append(
+                            {
+                                "type": "text",
+                                "text": flavor_text if flavor_text else "説明はありません。",
+                                "wrap": True,
+                                "size": "sm",
+                                "color": "#475569" if flavor_text else "#94a3b8",
+                                "style": "normal" if flavor_text else "italic",
+                                "margin": "lg",
+                            }
+                        )
+                        
+                        body = {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": body_contents,
+                            "paddingAll": "20px",
+                        }
+                        
+                        # footer
+                        if accepting:
+                            footer = {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "button",
+                                        "action": {
+                                            "type": "message",
+                                            "label": "この種類で予約する",
+                                            "text": f"予約 {name}",
+                                        },
+                                        "style": "primary",
+                                        "color": "#0284c7",
+                                    }
+                                ],
+                                "paddingAll": "10px",
+                            }
+                        else:
+                            footer = {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "backgroundColor": "#f1f5f9",
+                                        "cornerRadius": "md",
+                                        "paddingTop": "10px",
+                                        "paddingBottom": "10px",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "現在受付停止中",
+                                                "color": "#94a3b8",
+                                                "align": "center",
+                                                "weight": "bold",
+                                                "size": "sm",
+                                            }
+                                        ],
+                                    }
+                                ],
+                                "paddingAll": "10px",
+                            }
+                        
+                        bubble = {
+                            "type": "bubble",
+                            "size": "mega",
+                            "header": header,
+                            "body": body,
+                            "footer": footer,
+                        }
+                        carousel_bubbles.append(bubble)
+                    
+                    flex_msg = {
+                        "type": "flex",
+                        "altText": "予約の種類一覧",
+                        "contents": {
+                            "type": "carousel",
+                            "contents": carousel_bubbles,
+                        },
+                    }
+                    send_reply_message(event.reply_token, flex_msg)
                     return
 
                 cur.execute(

@@ -143,7 +143,7 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
         def execute(self, query, params=None):
             queries.append((query, params))
             if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7)
+                self._last = (1, "相談", True, 7, "説明")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
@@ -1645,7 +1645,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
         def execute(self, query, params=None):
             queries.append((query, params))
             if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7)
+                self._last = (1, "相談", True, 7, "説明")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
@@ -1725,7 +1725,7 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
 
         def execute(self, query, params=None):
             if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7)
+                self._last = (1, "相談", True, 7, "説明")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
@@ -2170,3 +2170,82 @@ def test_admin_history_export_invalid_query_params_fall_back_to_defaults(
     query, params = calls[0]
     assert "ORDER BY r.id DESC, r.id DESC" in query
     assert params == [app_module.STATUS_DONE, app_module.STATUS_CANCELLED, 7]
+
+
+def test_process_reservation_replies_with_carousel_when_no_type_specified(
+    app_module, monkeypatch
+):
+    queries = []
+    sent_replies = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+        def fetchall(self):
+            if "SELECT name, flavor_text, accepting FROM reservation_types" in queries[-1][0]:
+                return [
+                    ("相談", "個別相談を受け付けます。", True),
+                    ("体験", "体験ブースへの案内です。", False)
+                ]
+            return []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    
+    # Mock send_reply_message to capture the reply
+    monkeypatch.setattr(
+        app_module,
+        "send_reply_message",
+        lambda reply_token, message: sent_replies.append((reply_token, message))
+    )
+
+    event = SimpleNamespace(reply_token="test-reply-token")
+    app_module.process_reservation(event, "U-carousel-user", "予約")
+
+    assert len(sent_replies) == 1
+    reply_token, flex_msg = sent_replies[0]
+    assert reply_token == "test-reply-token"
+    
+    # Verify the flex message structure
+    assert flex_msg["type"] == "flex"
+    assert flex_msg["altText"] == "予約の種類一覧"
+    carousel = flex_msg["contents"]
+    assert carousel["type"] == "carousel"
+    
+    bubbles = carousel["contents"]
+    assert len(bubbles) == 2
+    
+    # First bubble (相談 - Accepting)
+    bubble_1 = bubbles[0]
+    assert bubble_1["header"]["contents"][0]["text"] == "相談"
+    assert bubble_1["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付中"
+    assert bubble_1["body"]["contents"][1]["text"] == "個別相談を受け付けます。"
+    assert bubble_1["footer"]["contents"][0]["type"] == "button"
+    assert bubble_1["footer"]["contents"][0]["action"]["text"] == "予約 相談"
+    
+    # Second bubble (体験 - Not accepting)
+    bubble_2 = bubbles[1]
+    assert bubble_2["header"]["contents"][0]["text"] == "体験"
+    assert bubble_2["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付停止中"
+    assert bubble_2["body"]["contents"][1]["text"] == "体験ブースへの案内です。"
+    assert bubble_2["footer"]["contents"][0]["contents"][0]["text"] == "現在受付停止中"
