@@ -115,21 +115,25 @@
                                 {% if t[2] %}
                                 <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline"
                                     data-ajax-post="true"
-                                    data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}">
+                                    data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
+                                    data-confirm-btn-text="停止する">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-success">受付中</button>
                                 </form>
                                 {% else %}
                                 <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline"
                                     data-ajax-post="true"
-                                    data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}">
+                                    data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
+                                    data-confirm-btn-text="再開する">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
                                 </form>
                                 {% endif %}
                                 <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="d-inline"
                                     data-ajax-post="true"
-                                    data-inline-confirm="この種類の受付を削除しますか？">
+                                    data-inline-confirm="この種類の受付を削除しますか？"
+                                    data-confirm-btn-text="削除する"
+                                    data-confirm-btn-class="btn-danger">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
                                 </form>
