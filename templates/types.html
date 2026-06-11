@@ -91,7 +91,8 @@
                                         <form method="POST" action="/admin/types/{{ t[0] }}/flavor"
                                             class="types-flavor-form"
                                             data-ajax-post="true"
-                                            data-inline-confirm="{{ ('「%s」の説明を更新しますか？' % t[1]) | e }}">
+                                            data-inline-confirm="説明を更新しますか？"
+                                            data-confirm-btn-text="更新する">
                                             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                             <input type="text" name="flavor_text"
                                                 class="form-control form-control-sm types-card__flavor-textarea"

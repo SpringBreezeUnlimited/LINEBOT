@@ -34,7 +34,7 @@ document.addEventListener('submit', (event) => {
     const okBtn = document.createElement('button');
     okBtn.type = 'button';
     okBtn.className = 'btn btn-sm btn-primary';
-    okBtn.textContent = '実行する';
+    okBtn.textContent = form.dataset.confirmBtnText || '実行する';
     okBtn.addEventListener('click', () => {
         form.dataset.confirmed = 'true';
         form.requestSubmit();
