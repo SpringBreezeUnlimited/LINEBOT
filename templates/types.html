@@ -35,7 +35,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container">
+<div class="container" id="types-container">
     <div class="card mb-4">
         <div>
             <h5 class="card-title">種類を追加</h5>
@@ -60,6 +60,7 @@
             <div class="alert alert-success">{{ schedule_success }}</div>
             {% endif %}
             <form method="POST" action="/admin/types" class="row g-2 align-items-center"
+                data-ajax-post="true"
                 data-inline-confirm="この内容で種類を追加しますか？">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="col-sm-8">
@@ -89,6 +90,7 @@
                                     <div class="types-card__flavor-edit">
                                         <form method="POST" action="/admin/types/{{ t[0] }}/flavor"
                                             class="types-flavor-form"
+                                            data-ajax-post="true"
                                             data-inline-confirm="{{ ('「%s」の説明を更新しますか？' % t[1]) | e }}">
                                             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                             <input type="text" name="flavor_text"
@@ -110,18 +112,21 @@
                             <div class="types-card__actions">
                                 {% if t[2] %}
                                 <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline"
+                                    data-ajax-post="true"
                                     data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-success">受付中</button>
                                 </form>
                                 {% else %}
                                 <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="d-inline"
+                                    data-ajax-post="true"
                                     data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-danger">受付停止中</button>
                                 </form>
                                 {% endif %}
                                 <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="d-inline"
+                                    data-ajax-post="true"
                                     data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
