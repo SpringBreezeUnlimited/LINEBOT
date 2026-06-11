@@ -129,7 +129,7 @@
                                 {% endif %}
                                 <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="d-inline"
                                     data-ajax-post="true"
-                                    data-inline-confirm="{{ ('「%s」を削除しますか？' % t[1]) | e }}">
+                                    data-inline-confirm="この種類の受付を削除しますか？">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">削除</button>
                                 </form>
