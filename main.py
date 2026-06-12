@@ -2804,8 +2804,6 @@ def process_reservation(event, user_id, user_message):
                         waiting_people_ahead
                     )
                     body += f"\n現在の目安待ち時間: {estimated_minutes}分"
-                    if type_flavor_text:          # ← 追加
-                        body += f"\n{type_flavor_text}"
                     send_flex_notice(event.reply_token, "受付完了", body)
                     return
             elif normalized == "キャンセル":
