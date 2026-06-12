@@ -22,6 +22,7 @@ from linebot.v3.messaging.models.flex_box import FlexBox  # type: ignore
 from linebot.v3.messaging.models.flex_bubble import FlexBubble  # type: ignore
 from linebot.v3.messaging.models.flex_carousel import FlexCarousel  # type: ignore
 from linebot.v3.messaging.models.flex_message import FlexMessage  # type: ignore
+from linebot.v3.messaging.models.flex_button import FlexButton  # type: ignore
 from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
@@ -372,6 +373,8 @@ def build_flex_component(component):
                 build_flex_component(item) for item in component.get("contents") or []
             ]
         )
+    if component_type == "button":
+        return FlexButton.from_dict(component)
     return component
 
 
