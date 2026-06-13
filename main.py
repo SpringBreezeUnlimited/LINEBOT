@@ -26,6 +26,7 @@ from linebot.v3.messaging.models.flex_message import FlexMessage  # type: ignore
 from linebot.v3.messaging.models.flex_button import FlexButton  # type: ignore
 from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
+from linebot.v3.messaging.exceptions import ApiException  # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
 from werkzeug.utils import secure_filename  # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
@@ -112,7 +113,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.129"
+APP_VERSION = "v1.0.130"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 TYPE_IMAGE_STATIC_DIR = Path(app.root_path) / "static" / "img" / "reservation_types"
@@ -458,6 +459,25 @@ def send_reply_message(reply_token: str, message: str | dict):
         )
         with ApiClient(MESSAGING_CONFIGURATION) as api_client:
             MessagingApi(api_client).reply_message(payload)
+    except ApiException as error:
+        status = extract_http_status(error)
+        if status == 400 and isinstance(message, dict):
+            fallback_message = strip_flex_hero(message)
+            if fallback_message is not None:
+                try:
+                    payload = ReplyMessageRequest(
+                        reply_token=reply_token,
+                        messages=[build_line_message(fallback_message)],
+                    )
+                    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+                        MessagingApi(api_client).reply_message(payload)
+                    return
+                except Exception:
+                    app.logger.exception(
+                        "Fallback reply without hero also failed reply_token=%s",
+                        reply_token,
+                    )
+        app.logger.exception("Failed to send reply message reply_token=%s", reply_token)
     except Exception:
         app.logger.exception("Failed to send reply message reply_token=%s", reply_token)
 
@@ -472,11 +492,45 @@ def build_static_url(relative_path: str | None) -> str | None:
     if not relative_path:
         return None
     cleaned = relative_path.lstrip("/")
-    if has_request_context():
-        return url_for("static", filename=cleaned, _external=True)
     if PUBLIC_BASE_URL:
         return f"{PUBLIC_BASE_URL}/static/{cleaned}"
-    return f"/static/{cleaned}"
+    if has_request_context():
+        base_url = (request.url_root or "").rstrip("/")
+        if base_url.startswith("http://"):
+            base_url = "https://" + base_url[len("http://") :]
+        if base_url:
+            return f"{base_url}/static/{cleaned}"
+    return None
+
+
+def strip_flex_hero(message: dict) -> dict | None:
+    if not isinstance(message, dict):
+        return None
+    if message.get("type") != "flex":
+        return None
+    contents = message.get("contents")
+    if not isinstance(contents, dict):
+        return None
+    updated = dict(message)
+    updated_contents = dict(contents)
+    if updated_contents.get("type") == "bubble":
+        bubble = dict(updated_contents)
+        bubble.pop("hero", None)
+        updated["contents"] = bubble
+        return updated
+    if updated_contents.get("type") == "carousel":
+        bubbles = []
+        for bubble in updated_contents.get("contents") or []:
+            if isinstance(bubble, dict):
+                clone = dict(bubble)
+                clone.pop("hero", None)
+                bubbles.append(clone)
+            else:
+                bubbles.append(bubble)
+        updated_contents["contents"] = bubbles
+        updated["contents"] = updated_contents
+        return updated
+    return None
 
 
 def save_type_image_upload(image_file, type_id: int) -> str:
