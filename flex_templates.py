@@ -1,30 +1,50 @@
-from typing import Dict
+from typing import Dict, Optional
 
 
-def bubble_from_title_and_text(title: str, text: str) -> Dict:
+def build_hero_image(url: str | None) -> Optional[Dict]:
+    if not url:
+        return None
+    return {
+        "type": "image",
+        "url": url,
+        "size": "full",
+        "aspectRatio": "16:9",
+        "aspectMode": "cover",
+    }
+
+
+def bubble_from_title_and_text(title: str, text: str, hero_url: str | None = None) -> Dict:
+    bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": title, "weight": "bold", "size": "lg"}
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [{"type": "text", "text": text, "wrap": True}],
+        },
+    }
+    hero = build_hero_image(hero_url)
+    if hero:
+        bubble["hero"] = hero
     return {
         "type": "flex",
         "altText": title + " - 通知",
-        "contents": {
-            "type": "bubble",
-            "header": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {"type": "text", "text": title, "weight": "bold", "size": "lg"}
-                ],
-            },
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [{"type": "text", "text": text, "wrap": True}],
-            },
-        },
+        "contents": bubble,
     }
 
 
 def reservation_confirmation(
-    res_id: int, type_name: str | None, waiting: int, estimated_minutes: int
+    res_id: int,
+    type_name: str | None,
+    waiting: int,
+    estimated_minutes: int,
+    image_url: str | None = None,
 ) -> Dict:
     title = "受付完了"
     lines = [f"番号: {res_id}"]
@@ -33,7 +53,7 @@ def reservation_confirmation(
     lines.append(f"あなたの前: {waiting}人")
     lines.append(f"現在の目安待ち時間: {estimated_minutes}分")
     body_text = "\n".join(lines)
-    return bubble_from_title_and_text(title, body_text)
+    return bubble_from_title_and_text(title, body_text, hero_url=image_url)
 
 
 def call_notification(res_id: int, timeout_label: str, call_minutes: int) -> Dict:

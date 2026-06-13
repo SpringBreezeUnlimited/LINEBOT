@@ -21,6 +21,7 @@ def app_module():
     os.environ["CHANNEL_ACCESS_TOKEN"] = "test-channel-access-token"
     os.environ["CHANNEL_SECRET"] = "test-channel-secret"
     os.environ["DATABASE_URL"] = "postgresql://user:pass@localhost:5432/testdb"
+    os.environ["PUBLIC_BASE_URL"] = "https://example.com"
     os.environ["FORCE_HTTPS"] = "false"
     os.environ["SESSION_COOKIE_SECURE"] = "false"
 

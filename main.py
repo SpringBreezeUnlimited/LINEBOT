@@ -8,6 +8,7 @@ import secrets
 import time
 import uuid
 from datetime import timedelta, datetime, timezone
+from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
@@ -26,6 +27,7 @@ from linebot.v3.messaging.models.flex_button import FlexButton  # type: ignore
 from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
+from werkzeug.utils import secure_filename  # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
 from flex_templates import (
     reservation_confirmation,
@@ -110,8 +112,12 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.128"
+APP_VERSION = "v1.0.129"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+TYPE_IMAGE_STATIC_DIR = Path(app.root_path) / "static" / "img" / "reservation_types"
+TYPE_IMAGE_DB_PREFIX = "img/reservation_types"
+ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 def parse_allowed_hosts(raw_value: str) -> set[str]:
@@ -456,8 +462,49 @@ def send_reply_message(reply_token: str, message: str | dict):
         app.logger.exception("Failed to send reply message reply_token=%s", reply_token)
 
 
-def send_flex_notice(reply_token: str, title: str, body: str):
-    send_reply_message(reply_token, bubble_from_title_and_text(title, body))
+def send_flex_notice(reply_token: str, title: str, body: str, hero_url: str | None = None):
+    send_reply_message(
+        reply_token, bubble_from_title_and_text(title, body, hero_url=hero_url)
+    )
+
+
+def build_static_url(relative_path: str | None) -> str | None:
+    if not relative_path:
+        return None
+    cleaned = relative_path.lstrip("/")
+    if has_request_context():
+        return url_for("static", filename=cleaned, _external=True)
+    if PUBLIC_BASE_URL:
+        return f"{PUBLIC_BASE_URL}/static/{cleaned}"
+    return f"/static/{cleaned}"
+
+
+def save_type_image_upload(image_file, type_id: int) -> str:
+    filename = (getattr(image_file, "filename", "") or "").strip()
+    if not filename:
+        return ""
+    suffix = Path(secure_filename(filename)).suffix.lower()
+    if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
+        raise ValueError("画像は jpg, jpeg, png, gif, webp のみアップロードできます。")
+    TYPE_IMAGE_STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = f"type-{type_id}-{uuid.uuid4().hex}{suffix}"
+    stored_path = TYPE_IMAGE_STATIC_DIR / stored_name
+    image_file.save(stored_path)
+    return f"{TYPE_IMAGE_DB_PREFIX}/{stored_name}"
+
+
+def delete_type_image_file(image_path: str | None):
+    if not image_path:
+        return
+    stored_path = Path(app.root_path) / "static" / image_path.lstrip("/")
+    try:
+        stored_path.resolve().relative_to((Path(app.root_path) / "static").resolve())
+    except ValueError:
+        return
+    try:
+        stored_path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def format_dt(value):
@@ -1388,6 +1435,10 @@ def ensure_types_table():
                 ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
                 """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''
+            """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
@@ -1979,6 +2030,16 @@ def admin_types_page():
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
         flavor_text = (request.form.get("flavor_text") or "").strip()
+        image_file = request.files.get("image")
+        if image_file and getattr(image_file, "filename", "").strip():
+            suffix = Path(secure_filename(image_file.filename)).suffix.lower()
+            if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
+                return redirect(
+                    url_for(
+                        "admin_types_page",
+                        type_error="画像は jpg, jpeg, png, gif, webp のみアップロードできます。",
+                    )
+                )
         if not validate_type_name(name):
             return redirect(
                 url_for(
@@ -1990,14 +2051,33 @@ def admin_types_page():
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "INSERT INTO reservation_types (name, flavor_text, owner_admin_id) VALUES (%s, %s, %s)",
-                        (name, flavor_text, current_admin_account_id),
+                        """
+                            INSERT INTO reservation_types
+                                (name, flavor_text, owner_admin_id, image_path)
+                            VALUES (%s, %s, %s, %s)
+                            RETURNING id
+                        """,
+                        (name, flavor_text, current_admin_account_id, ""),
                     )
+                    type_id = cur.fetchone()[0]
+                    image_path = ""
+                    if image_file and getattr(image_file, "filename", "").strip():
+                        image_path = save_type_image_upload(image_file, type_id)
+                        cur.execute(
+                            "UPDATE reservation_types SET image_path = %s WHERE id = %s AND owner_admin_id = %s",
+                            (image_path, type_id, current_admin_account_id),
+                        )
                     conn.commit()
             return redirect(
                 url_for("admin_types_page", type_success="種類を追加しました。")
             )
+        except ValueError as error:
+            return redirect(url_for("admin_types_page", type_error=str(error)))
         except psycopg2.IntegrityError:
+            if image_file and getattr(image_file, "filename", "").strip():
+                # INSERT が失敗した場合に保存済みファイルが残らないようにする
+                # save_type_image_upload は INSERT 後に呼ぶため通常は発生しないが、念のため吸収する。
+                pass
             return redirect(
                 url_for(
                     "admin_types_page", type_error="同じ名前の種類が既に存在します。"
@@ -2007,7 +2087,12 @@ def admin_types_page():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, accepting, flavor_text FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
+                """
+                    SELECT id, name, accepting, flavor_text, image_path
+                    FROM reservation_types
+                    WHERE owner_admin_id = %s
+                    ORDER BY id ASC
+                """,
                 (current_admin_account_id,),
             )
             types = cur.fetchall()
@@ -2023,6 +2108,44 @@ def admin_types_page():
     )
 
 
+@app.route("/admin/types/<int:type_id>/image", methods=["POST"])
+def admin_types_update_image(type_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    image_file = request.files.get("image")
+    if not image_file or not getattr(image_file, "filename", "").strip():
+        return redirect(url_for("admin_types_page", type_error="画像ファイルを選択してください。"))
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT image_path FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                (type_id, current_admin_account_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                abort(403)
+            old_image_path = row[0] or ""
+            try:
+                new_image_path = save_type_image_upload(image_file, type_id)
+            except ValueError as error:
+                return redirect(url_for("admin_types_page", type_error=str(error)))
+            cur.execute(
+                "UPDATE reservation_types SET image_path = %s WHERE id = %s AND owner_admin_id = %s",
+                (new_image_path, type_id, current_admin_account_id),
+            )
+            if cur.rowcount == 0:
+                abort(403)
+            conn.commit()
+    delete_type_image_file(old_image_path)
+    return redirect(url_for("admin_types_page", type_success="画像を更新しました。"))
+
+
 @app.route("/admin/types/delete/<int:type_id>", methods=["POST"])
 def admin_types_delete(type_id):
     if not is_admin_authenticated():
@@ -2034,6 +2157,12 @@ def admin_types_delete(type_id):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT image_path FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                (type_id, current_admin_account_id),
+            )
+            row = cur.fetchone()
+            old_image_path = row[0] if row else ""
             try:
                 cur.execute(
                     "DELETE FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
@@ -2050,6 +2179,7 @@ def admin_types_delete(type_id):
                         type_error="この種類に紐づく予約があるため削除できません。",
                     )
                 )
+    delete_type_image_file(old_image_path)
     return redirect(url_for("admin_types_page"))
 
 
@@ -2500,7 +2630,11 @@ def process_reservation(event, user_id, user_message):
                         )
                         return
                     cur.execute(
-                        "SELECT id, name, accepting, owner_admin_id, flavor_text FROM reservation_types WHERE name = %s",
+                        """
+                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_path
+                            FROM reservation_types
+                            WHERE name = %s
+                        """,
                         (requested_type_name,),
                     )
                     type_row = cur.fetchone()
@@ -2515,7 +2649,15 @@ def process_reservation(event, user_id, user_message):
                             body = "予約の種類がまだ登録されていません。管理画面で追加してください。"
                         send_flex_notice(event.reply_token, "種類がありません", body)
                         return
-                    type_id, type_name, type_accepting, type_owner_admin_id, type_flavor_text = type_row
+                    (
+                        type_id,
+                        type_name,
+                        type_accepting,
+                        type_owner_admin_id,
+                        type_flavor_text,
+                        type_image_path,
+                    ) = type_row
+                    type_image_url = build_static_url(type_image_path)
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
@@ -2536,7 +2678,11 @@ def process_reservation(event, user_id, user_message):
                         return
                 else:
                     cur.execute(
-                        "SELECT name, flavor_text, accepting FROM reservation_types ORDER BY id ASC"
+                        """
+                            SELECT name, flavor_text, accepting, image_path
+                            FROM reservation_types
+                            ORDER BY id ASC
+                        """
                     )
                     type_rows = cur.fetchall()
                     if not type_rows:
@@ -2548,7 +2694,8 @@ def process_reservation(event, user_id, user_message):
                         return
                     
                     carousel_bubbles = []
-                    for name, flavor_text, accepting in type_rows[:10]:
+                    for name, flavor_text, accepting, image_path in type_rows[:10]:
+                        image_url = build_static_url(image_path)
                         # header box
                         header = {
                             "type": "box",
@@ -2673,6 +2820,14 @@ def process_reservation(event, user_id, user_message):
                             "body": body,
                             "footer": footer,
                         }
+                        if image_url:
+                            bubble["hero"] = {
+                                "type": "image",
+                                "url": image_url,
+                                "size": "full",
+                                "aspectRatio": "16:9",
+                                "aspectMode": "cover",
+                            }
                         carousel_bubbles.append(bubble)
                     
                     flex_msg = {
@@ -2804,7 +2959,12 @@ def process_reservation(event, user_id, user_message):
                         waiting_people_ahead
                     )
                     body += f"\n現在の目安待ち時間: {estimated_minutes}分"
-                    send_flex_notice(event.reply_token, "受付完了", body)
+                    send_flex_notice(
+                        event.reply_token,
+                        "受付完了",
+                        body,
+                        hero_url=type_image_url,
+                    )
                     return
             elif normalized == "キャンセル":
                 cur.execute(

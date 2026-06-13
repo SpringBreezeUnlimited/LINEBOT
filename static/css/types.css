@@ -150,6 +150,21 @@ input {
     word-break: break-word;
 }
 
+.types-card__image-preview {
+    margin-top: var(--space-3);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-subtle);
+}
+
+.types-card__image-preview img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}
+
 .types-card__flavor {
     margin-top: var(--space-2);
     font-size: 0.8125rem;
@@ -159,6 +174,10 @@ input {
 }
 
 .types-card__flavor-edit {
+    margin-top: var(--space-3);
+}
+
+.types-card__image-edit {
     margin-top: var(--space-3);
 }
 
