@@ -737,6 +737,12 @@ def test_is_webhook_rate_limited_on_exception_returns_true(app_module, monkeypat
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    assert 'id="login-form"' in text
+    assert 'novalidate' in text
+    assert 'id="login-submit"' in text
+    assert 'autocomplete="username"' in text
+    assert 'autocomplete="current-password"' in text
 
 
 def test_login_post_admin_success_redirect(client, csrf_token, app_module, monkeypatch):

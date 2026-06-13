@@ -17,19 +17,51 @@
             {% if error %}
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
-            <form method="POST">
+            <form id="login-form" method="POST" novalidate>
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3">
                     <label class="form-label">ログインID</label>
-                    <input type="text" name="login_id" class="form-control" required>
+                    <input type="text" name="login_id" class="form-control" autocomplete="username" spellcheck="false" required>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">パスワード</label>
-                    <input type="password" name="password" class="form-control" required>
+                    <input type="password" name="password" class="form-control" autocomplete="current-password" required>
                 </div>
-                <button type="submit" class="btn btn-primary w-100">ログイン</button>
+                <button type="submit" class="btn btn-primary w-100" id="login-submit">ログイン</button>
             </form>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const form = document.getElementById('login-form');
+    const submitButton = document.getElementById('login-submit');
+    if (!form || !submitButton) return;
+
+    let submitRequested = false;
+
+    submitButton.addEventListener('click', (event) => {
+        if (!form.reportValidity()) {
+            event.preventDefault();
+            return;
+        }
+        submitRequested = true;
+    });
+
+    form.addEventListener('submit', (event) => {
+        if (!submitRequested) {
+            event.preventDefault();
+            return;
+        }
+        submitRequested = false;
+    });
+
+    form.addEventListener('input', () => {
+        submitRequested = false;
+    });
+})();
+</script>
 {% endblock %}
