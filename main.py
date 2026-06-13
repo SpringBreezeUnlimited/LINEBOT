@@ -1,4 +1,5 @@
 import csv
+import mimetypes
 import json
 import io
 import math
@@ -14,7 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
 import psycopg2  # type: ignore
-from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context  # type: ignore
+from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context, send_file  # type: ignore
 from flask.sessions import SecureCookieSessionInterface  # type: ignore
 from linebot.v3 import WebhookHandler  # type: ignore
 from linebot.v3.exceptions import InvalidSignatureError  # type: ignore
@@ -114,7 +115,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.132"
+APP_VERSION = "v1.0.133"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 TYPE_IMAGE_STATIC_DIR = Path(app.root_path) / "static" / "img" / "reservation_types"
@@ -517,15 +518,30 @@ def build_static_url(relative_path: str | None) -> str | None:
     if not relative_path:
         return None
     cleaned = relative_path.lstrip("/")
+    image_path = f"/reservation-type-images/{cleaned}"
+    if has_request_context():
+        image_path = url_for("reservation_type_image", image_path=cleaned)
     if PUBLIC_BASE_URL:
-        return f"{PUBLIC_BASE_URL}/static/{cleaned}"
+        return f"{PUBLIC_BASE_URL}{image_path}"
     if has_request_context():
         base_url = (request.url_root or "").rstrip("/")
         if base_url.startswith("http://"):
             base_url = "https://" + base_url[len("http://") :]
         if base_url:
-            return f"{base_url}/static/{cleaned}"
+            return f"{base_url}{image_path}"
     return None
+
+
+@app.route("/reservation-type-images/<path:image_path>")
+def reservation_type_image(image_path):
+    cleaned = image_path.lstrip("/")
+    if not cleaned.startswith(f"{TYPE_IMAGE_DB_PREFIX}/"):
+        abort(404)
+    stored_path = Path(app.root_path) / "static" / cleaned
+    if not stored_path.is_file():
+        abort(404)
+    mimetype, _ = mimetypes.guess_type(stored_path.name)
+    return send_file(stored_path, mimetype=mimetype or "application/octet-stream")
 
 
 def strip_flex_hero(message: dict) -> dict | None:

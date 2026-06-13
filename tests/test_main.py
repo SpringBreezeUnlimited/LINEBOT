@@ -64,13 +64,13 @@ def test_parse_allowed_hosts_supports_multiple_separators(app_module):
 
 def test_build_static_url_prefers_public_base_url(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://example.com")
-    assert app_module.build_static_url("img/reservation_types/a.png") == "https://example.com/static/img/reservation_types/a.png"
+    assert app_module.build_static_url("img/reservation_types/a.png") == "https://example.com/reservation-type-images/img/reservation_types/a.png"
 
 
 def test_build_static_url_forces_https_from_request(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "")
     with app_module.app.test_request_context("/", base_url="http://api.example.com"):
-        assert app_module.build_static_url("img/reservation_types/a.png") == "https://api.example.com/static/img/reservation_types/a.png"
+        assert app_module.build_static_url("img/reservation_types/a.png") == "https://api.example.com/reservation-type-images/img/reservation_types/a.png"
 
 
 def test_build_flex_component_handles_image(app_module):
