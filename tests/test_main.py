@@ -72,6 +72,31 @@ def test_build_static_url_forces_https_from_request(app_module, monkeypatch):
         assert app_module.build_static_url("img/reservation_types/a.png") == "https://api.example.com/static/img/reservation_types/a.png"
 
 
+def test_sanitize_flex_message_removes_invalid_hero_urls(app_module):
+    message = {
+        "type": "flex",
+        "altText": "予約の種類一覧",
+        "contents": {
+            "type": "carousel",
+            "contents": [
+                {
+                    "type": "bubble",
+                    "hero": {"type": "image", "url": "https://example.com/ok.png"},
+                },
+                {
+                    "type": "bubble",
+                    "hero": {"type": "image", "url": "/static/bad.png"},
+                },
+            ],
+        },
+    }
+
+    sanitized = app_module.sanitize_flex_message(message)
+    bubbles = sanitized["contents"]["contents"]
+    assert bubbles[0]["hero"]["url"] == "https://example.com/ok.png"
+    assert "hero" not in bubbles[1]
+
+
 def test_enforce_host_allowlist_accepts_multiple_hosts(app_module, monkeypatch):
     monkeypatch.setattr(
         app_module,

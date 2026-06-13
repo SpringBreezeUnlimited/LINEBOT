@@ -113,7 +113,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.130"
+APP_VERSION = "v1.0.131"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 TYPE_IMAGE_STATIC_DIR = Path(app.root_path) / "static" / "img" / "reservation_types"
@@ -454,6 +454,8 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
 
 def send_reply_message(reply_token: str, message: str | dict):
     try:
+        if isinstance(message, dict):
+            message = sanitize_flex_message(message)
         payload = ReplyMessageRequest(
             reply_token=reply_token, messages=[build_line_message(message)]
         )
@@ -531,6 +533,44 @@ def strip_flex_hero(message: dict) -> dict | None:
         updated["contents"] = updated_contents
         return updated
     return None
+
+
+def sanitize_flex_message(message: dict) -> dict:
+    sanitized = dict(message)
+    contents = sanitized.get("contents")
+    if not isinstance(contents, dict):
+        return sanitized
+
+    contents_type = contents.get("type")
+    if contents_type == "bubble":
+        bubble = dict(contents)
+        hero = bubble.get("hero")
+        if isinstance(hero, dict):
+            hero_url = (hero.get("url") or "").strip()
+            if not hero_url.startswith("https://"):
+                bubble.pop("hero", None)
+        sanitized["contents"] = bubble
+        return sanitized
+
+    if contents_type == "carousel":
+        carousel = dict(contents)
+        cleaned_bubbles = []
+        for item in carousel.get("contents") or []:
+            if not isinstance(item, dict):
+                cleaned_bubbles.append(item)
+                continue
+            clone = dict(item)
+            hero = clone.get("hero")
+            if isinstance(hero, dict):
+                hero_url = (hero.get("url") or "").strip()
+                if not hero_url.startswith("https://"):
+                    clone.pop("hero", None)
+            cleaned_bubbles.append(clone)
+        carousel["contents"] = cleaned_bubbles
+        sanitized["contents"] = carousel
+        return sanitized
+
+    return sanitized
 
 
 def save_type_image_upload(image_file, type_id: int) -> str:
