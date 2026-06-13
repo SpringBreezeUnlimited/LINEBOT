@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from werkzeug.exceptions import BadRequest, Forbidden
+from linebot.v3.messaging.models.flex_image import FlexImage
 
 
 def flex_message_text(message):
@@ -70,6 +71,20 @@ def test_build_static_url_forces_https_from_request(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "")
     with app_module.app.test_request_context("/", base_url="http://api.example.com"):
         assert app_module.build_static_url("img/reservation_types/a.png") == "https://api.example.com/static/img/reservation_types/a.png"
+
+
+def test_build_flex_component_handles_image(app_module):
+    image = app_module.build_flex_component(
+        {
+            "type": "image",
+            "url": "https://example.com/type.png",
+            "size": "full",
+            "aspectRatio": "16:9",
+            "aspectMode": "cover",
+        }
+    )
+    assert isinstance(image, FlexImage)
+    assert image.url == "https://example.com/type.png"
 
 
 def test_sanitize_flex_message_removes_invalid_hero_urls(app_module):

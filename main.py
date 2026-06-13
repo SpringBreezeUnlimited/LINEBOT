@@ -22,6 +22,7 @@ from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMes
 from linebot.v3.messaging.models.flex_box import FlexBox  # type: ignore
 from linebot.v3.messaging.models.flex_bubble import FlexBubble  # type: ignore
 from linebot.v3.messaging.models.flex_carousel import FlexCarousel  # type: ignore
+from linebot.v3.messaging.models.flex_image import FlexImage  # type: ignore
 from linebot.v3.messaging.models.flex_message import FlexMessage  # type: ignore
 from linebot.v3.messaging.models.flex_button import FlexButton  # type: ignore
 from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
@@ -113,7 +114,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.131"
+APP_VERSION = "v1.0.132"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 TYPE_IMAGE_STATIC_DIR = Path(app.root_path) / "static" / "img" / "reservation_types"
@@ -382,6 +383,28 @@ def build_flex_component(component):
         )
     if component_type == "button":
         return FlexButton.from_dict(component)
+    if component_type == "image":
+        url = (component.get("url") or "").strip()
+        if not url:
+            return None
+        return FlexImage(
+            url=url,
+            flex=component.get("flex"),
+            margin=component.get("margin"),
+            position=component.get("position"),
+            offsetTop=component.get("offsetTop"),
+            offsetBottom=component.get("offsetBottom"),
+            offsetStart=component.get("offsetStart"),
+            offsetEnd=component.get("offsetEnd"),
+            align=component.get("align"),
+            gravity=component.get("gravity"),
+            size=component.get("size") or "md",
+            aspectRatio=component.get("aspectRatio"),
+            aspectMode=component.get("aspectMode"),
+            backgroundColor=component.get("backgroundColor"),
+            action=component.get("action"),
+            animated=component.get("animated", False),
+        )
     return component
 
 
