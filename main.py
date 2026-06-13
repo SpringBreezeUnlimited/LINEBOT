@@ -32,6 +32,7 @@ from linebot.v3.messaging.exceptions import ApiException  # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
 from werkzeug.utils import secure_filename  # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
+from werkzeug.exceptions import HTTPException  # type: ignore
 from flex_templates import (
     reservation_confirmation,
     call_notification,
@@ -1376,6 +1377,17 @@ def validate_batch_runner_token() -> bool:
     return False
 
 
+def sanitize_next_path(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = value.strip()
+    if not value.startswith("/"):
+        return None
+    if value.startswith("//"):
+        return None
+    return value
+
+
 @app.teardown_appcontext
 def close_request_connection(_exception=None):
     connection = getattr(g, "_db_connection", None)
@@ -1418,7 +1430,17 @@ def csrf_protect():
                 or has_active_auth_session(ROLE_AUDIT_ADMIN)
             ):
                 return
-        validate_csrf()
+        try:
+            validate_csrf()
+        except HTTPException as error:
+            if error.code != 403:
+                raise
+            login_redirect = url_for(
+                "login",
+                next=sanitize_next_path(request.path),
+                notice="session_expired",
+            )
+            return redirect(login_redirect)
 
 
 LOGIN_MAX_ATTEMPTS = parse_int_env("LOGIN_MAX_ATTEMPTS", 10, 1, 1000)
@@ -1491,6 +1513,8 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
+    notice = request.args.get("notice")
+    next_path = sanitize_next_path(request.args.get("next") or request.form.get("next"))
     ip = request.remote_addr or "unknown"
     if request.method == "POST":
         if is_login_rate_limited(ip):
@@ -1502,8 +1526,8 @@ def login():
             start_admin_session(account["role"], account["id"], account["login_id"])
             record_admin_login(account["role"], ip, request.headers.get("User-Agent"))
             if account["role"] == ROLE_AUDIT_ADMIN:
-                return redirect(url_for("admin_login_logs_page"))
-            return redirect(url_for("admin_page"))
+                return redirect(next_path or url_for("admin_login_logs_page"))
+            return redirect(next_path or url_for("admin_page"))
         else:
             record_admin_login(
                 "unknown", ip, request.headers.get("User-Agent"), login_result="failure"
@@ -1513,6 +1537,8 @@ def login():
     return render_template(
         "login.html",
         error=error,
+        notice=notice,
+        next_path=next_path,
         csrf_token=get_csrf_token(),
         audit_admin_enabled=has_audit_admin_account(),
     )

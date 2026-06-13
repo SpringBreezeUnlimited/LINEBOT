@@ -637,6 +637,27 @@ def test_validate_csrf_failure(app_module):
             app_module.validate_csrf()
 
 
+def test_csrf_protect_redirects_to_login_when_token_is_invalid(
+    app_module, monkeypatch
+):
+    with app_module.app.test_request_context(
+        "/admin/toggle-accepting", method="POST", data={"_csrf_token": "wrong"}
+    ):
+        app_module.session["logged_in"] = True
+        app_module.session["admin_role"] = app_module.ROLE_ADMIN
+        app_module.session["admin_account_id"] = 1
+        app_module.session["last_activity"] = 1000.0
+        app_module.session["_csrf_token"] = "expected-token"
+        monkeypatch.setattr(app_module.time, "time", lambda: 1005.0)
+
+        response = app_module.csrf_protect()
+
+        assert response.status_code == 302
+        assert "/login" in response.headers["Location"]
+        assert "next=/admin/toggle-accepting" in response.headers["Location"]
+        assert "notice=session_expired" in response.headers["Location"]
+
+
 def test_admin_post_without_active_session_redirects_to_login(
     client, app_module, monkeypatch
 ):
@@ -661,8 +682,10 @@ def test_admin_post_with_active_session_still_rejects_invalid_csrf(
         app_module.session["_csrf_token"] = "expected-token"
         monkeypatch.setattr(app_module.time, "time", lambda: 1005.0)
 
-        with pytest.raises(Forbidden):
-            app_module.csrf_protect()
+        response = app_module.csrf_protect()
+
+        assert response.status_code == 302
+        assert response.headers["Location"].startswith("/login")
 
 
 def test_is_authenticated_as_success(app_module):
@@ -760,10 +783,15 @@ def test_login_post_admin_success_redirect(client, csrf_token, app_module, monke
 
     response = client.post(
         "/login",
-        data={"login_id": "admin", "password": "admin-pass", "_csrf_token": csrf_token},
+        data={
+            "login_id": "admin",
+            "password": "admin-pass",
+            "_csrf_token": csrf_token,
+            "next": "/admin/types",
+        },
     )
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin")
+    assert response.headers["Location"].endswith("/admin/types")
 
 
 def test_login_post_audit_success_redirect(client, csrf_token, app_module, monkeypatch):
@@ -781,7 +809,12 @@ def test_login_post_audit_success_redirect(client, csrf_token, app_module, monke
 
     response = client.post(
         "/login",
-        data={"login_id": "audit", "password": "audit-pass", "_csrf_token": csrf_token},
+        data={
+            "login_id": "audit",
+            "password": "audit-pass",
+            "_csrf_token": csrf_token,
+            "next": "/admin/login-logs",
+        },
     )
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/login-logs")

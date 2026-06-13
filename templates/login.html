@@ -14,11 +14,17 @@
                 <span class="responsive-label-full">管理者ログイン</span>
                 <span class="responsive-label-short">管理者ログイン</span>
             </h3>
+            {% if notice == "session_expired" %}
+            <div class="alert alert-warning">セッションの有効期限が切れたため、再度ログインしてください。</div>
+            {% endif %}
             {% if error %}
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
             <form id="login-form" method="POST" novalidate>
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                {% if next_path %}
+                <input type="hidden" name="next" value="{{ next_path }}">
+                {% endif %}
                 <div class="mb-3">
                     <label class="form-label">ログインID</label>
                     <input type="text" name="login_id" class="form-control" autocomplete="username" spellcheck="false" required>
