@@ -62,15 +62,15 @@ def test_parse_allowed_hosts_supports_multiple_separators(app_module):
     assert parsed == {"example.com", "api.example.com", "admin.example.com"}
 
 
-def test_build_static_url_prefers_public_base_url(app_module, monkeypatch):
+def test_build_type_image_url_prefers_public_base_url(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://example.com")
-    assert app_module.build_static_url("img/reservation_types/a.png") == "https://example.com/reservation-type-images/img/reservation_types/a.png"
+    assert app_module.build_type_image_url(3) == "https://example.com/reservation-type-images/3"
 
 
-def test_build_static_url_forces_https_from_request(app_module, monkeypatch):
+def test_build_type_image_url_forces_https_from_request(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "")
     with app_module.app.test_request_context("/", base_url="http://api.example.com"):
-        assert app_module.build_static_url("img/reservation_types/a.png") == "https://api.example.com/reservation-type-images/img/reservation_types/a.png"
+        assert app_module.build_type_image_url(3) == "https://api.example.com/reservation-type-images/3"
 
 
 def test_build_flex_component_handles_image(app_module):
@@ -317,7 +317,17 @@ def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
         for query in normalized_queries
     )
     assert any(
-        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''"
+        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_data BYTEA"
+        in query
+        for query in normalized_queries
+    )
+    assert any(
+        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_mime_type TEXT NOT NULL DEFAULT ''"
+        in query
+        for query in normalized_queries
+    )
+    assert any(
+        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_filename TEXT NOT NULL DEFAULT ''"
         in query
         for query in normalized_queries
     )
@@ -820,7 +830,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
         def execute(self, query, params=None):
             normalized_query = " ".join(query.split())
             if normalized_query.startswith(
-                "SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"
+                "SELECT id, name, accepting, flavor_text, image_mime_type, image_filename FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"
             ):
                 self._rows = []
             elif (
@@ -958,9 +968,9 @@ def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch
             return False
 
         def execute(self, query, params=None):
-            if "SELECT image_path FROM reservation_types" in query:
-                self._last = ("img/reservation_types/old.png",)
-            elif "UPDATE reservation_types SET image_path = %s" in query:
+            if "SELECT image_data, image_mime_type, image_filename FROM reservation_types" in query:
+                self._last = (b"old-bytes", "image/png", "old.png")
+            elif "UPDATE reservation_types SET image_data = %s" in query:
                 self.rowcount = 1
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -985,11 +995,8 @@ def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch
     monkeypatch.setattr(
         app_module,
         "save_type_image_upload",
-        lambda image_file, type_id: saved_files.append((image_file.filename, type_id))
-        or "img/reservation_types/new.png",
-    )
-    monkeypatch.setattr(
-        app_module, "delete_type_image_file", lambda path: deleted_paths.append(path)
+        lambda image_file: saved_files.append(image_file.filename)
+        or (b"new-bytes", "image/png", "new.png"),
     )
 
     with app_module.app.test_request_context(
@@ -1001,8 +1008,7 @@ def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch
         response = app_module.admin_types_update_image(7)
 
     assert response.status_code == 302
-    assert saved_files == [("new.png", 7)]
-    assert deleted_paths == ["img/reservation_types/old.png"]
+    assert saved_files == ["new.png"]
 
 
 def test_static_assets_do_not_set_cookie(app_module, client):
@@ -2328,15 +2334,16 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
             queries.append((query, params))
 
         def fetchall(self):
-            if "FROM reservation_types" in queries[-1][0] and "image_path" in queries[-1][0]:
+            if "FROM reservation_types" in queries[-1][0] and "image_mime_type" in queries[-1][0]:
                 return [
                     (
+                        1,
                         "相談",
                         "個別相談を受け付けます。",
                         True,
-                        "img/reservation_types/consultation.png",
+                        "image/png",
                     ),
-                    ("体験", "体験ブースへの案内です。", False, ""),
+                    (2, "体験", "体験ブースへの案内です。", False, ""),
                 ]
             return []
 

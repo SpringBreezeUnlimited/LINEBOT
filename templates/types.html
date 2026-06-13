@@ -93,7 +93,7 @@
                                     <div class="types-card__value">{{ t[1] }}</div>
                                     {% if t[4] %}
                                     <div class="types-card__image-preview">
-                                        <img src="{{ url_for('reservation_type_image', image_path=t[4]) }}" alt="{{ t[1] }}の画像">
+                                        <img src="{{ url_for('reservation_type_image', type_id=t[0]) }}" alt="{{ t[1] }}の画像">
                                     </div>
                                     {% endif %}
                                     <div class="types-card__flavor-edit">

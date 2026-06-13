@@ -118,8 +118,6 @@ OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 APP_VERSION = "v1.0.133"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
-TYPE_IMAGE_STATIC_DIR = Path(app.root_path) / "static" / "img" / "reservation_types"
-TYPE_IMAGE_DB_PREFIX = "img/reservation_types"
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
@@ -514,34 +512,52 @@ def send_flex_notice(reply_token: str, title: str, body: str, hero_url: str | No
     )
 
 
-def build_static_url(relative_path: str | None) -> str | None:
-    if not relative_path:
+def build_type_image_url(type_id: int | None) -> str | None:
+    if not type_id:
         return None
-    cleaned = relative_path.lstrip("/")
-    image_path = f"/reservation-type-images/{cleaned}"
+    path = f"/reservation-type-images/{type_id}"
     if has_request_context():
-        image_path = url_for("reservation_type_image", image_path=cleaned)
+        path = url_for("reservation_type_image", type_id=type_id)
     if PUBLIC_BASE_URL:
-        return f"{PUBLIC_BASE_URL}{image_path}"
+        return f"{PUBLIC_BASE_URL}{path}"
     if has_request_context():
         base_url = (request.url_root or "").rstrip("/")
         if base_url.startswith("http://"):
             base_url = "https://" + base_url[len("http://") :]
         if base_url:
-            return f"{base_url}{image_path}"
+            return f"{base_url}{path}"
     return None
 
 
-@app.route("/reservation-type-images/<path:image_path>")
-def reservation_type_image(image_path):
-    cleaned = image_path.lstrip("/")
-    if not cleaned.startswith(f"{TYPE_IMAGE_DB_PREFIX}/"):
+@app.route("/reservation-type-images/<int:type_id>")
+def reservation_type_image(type_id):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT image_data, image_mime_type, image_path
+                    FROM reservation_types
+                    WHERE id = %s
+                """,
+                (type_id,),
+            )
+            row = cur.fetchone()
+    if not row:
         abort(404)
-    stored_path = Path(app.root_path) / "static" / cleaned
-    if not stored_path.is_file():
-        abort(404)
-    mimetype, _ = mimetypes.guess_type(stored_path.name)
-    return send_file(stored_path, mimetype=mimetype or "application/octet-stream")
+    image_data, image_mime_type, image_path = row
+    if image_data:
+        return send_file(
+            io.BytesIO(image_data),
+            mimetype=image_mime_type or "application/octet-stream",
+        )
+    if image_path:
+        legacy_path = Path(app.root_path) / "static" / image_path.lstrip("/")
+        if legacy_path.is_file():
+            mimetype, _ = mimetypes.guess_type(legacy_path.name)
+            return send_file(
+                legacy_path, mimetype=mimetype or "application/octet-stream"
+            )
+    abort(404)
 
 
 def strip_flex_hero(message: dict) -> dict | None:
@@ -612,32 +628,22 @@ def sanitize_flex_message(message: dict) -> dict:
     return sanitized
 
 
-def save_type_image_upload(image_file, type_id: int) -> str:
+def save_type_image_upload(image_file) -> tuple[bytes, str, str]:
     filename = (getattr(image_file, "filename", "") or "").strip()
     if not filename:
-        return ""
+        return b"", "", ""
     suffix = Path(secure_filename(filename)).suffix.lower()
     if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
         raise ValueError("画像は jpg, jpeg, png, gif, webp のみアップロードできます。")
-    TYPE_IMAGE_STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    stored_name = f"type-{type_id}-{uuid.uuid4().hex}{suffix}"
-    stored_path = TYPE_IMAGE_STATIC_DIR / stored_name
-    image_file.save(stored_path)
-    return f"{TYPE_IMAGE_DB_PREFIX}/{stored_name}"
-
-
-def delete_type_image_file(image_path: str | None):
-    if not image_path:
-        return
-    stored_path = Path(app.root_path) / "static" / image_path.lstrip("/")
-    try:
-        stored_path.resolve().relative_to((Path(app.root_path) / "static").resolve())
-    except ValueError:
-        return
-    try:
-        stored_path.unlink()
-    except FileNotFoundError:
-        pass
+    data = image_file.read()
+    if not data:
+        return b"", "", ""
+    mimetype = (
+        (getattr(image_file, "mimetype", "") or "").strip()
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+    return data, mimetype, filename
 
 
 def format_dt(value):
@@ -1570,8 +1576,20 @@ def ensure_types_table():
                 """)
             cur.execute("""
                 ALTER TABLE reservation_types
-                ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''
+                ADD COLUMN IF NOT EXISTS image_data BYTEA
             """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_mime_type TEXT NOT NULL DEFAULT ''
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_filename TEXT NOT NULL DEFAULT ''
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''
+                """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
@@ -2181,25 +2199,31 @@ def admin_types_page():
                 )
             )
         try:
+            image_data = None
+            image_mime_type = ""
+            image_filename = ""
+            if image_file and getattr(image_file, "filename", "").strip():
+                image_data, image_mime_type, image_filename = save_type_image_upload(
+                    image_file
+                )
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
                             INSERT INTO reservation_types
-                                (name, flavor_text, owner_admin_id, image_path)
-                            VALUES (%s, %s, %s, %s)
+                                (name, flavor_text, owner_admin_id, image_data, image_mime_type, image_filename)
+                            VALUES (%s, %s, %s, %s, %s, %s)
                             RETURNING id
                         """,
-                        (name, flavor_text, current_admin_account_id, ""),
+                        (
+                            name,
+                            flavor_text,
+                            current_admin_account_id,
+                            image_data or None,
+                            image_mime_type,
+                            image_filename,
+                        ),
                     )
-                    type_id = cur.fetchone()[0]
-                    image_path = ""
-                    if image_file and getattr(image_file, "filename", "").strip():
-                        image_path = save_type_image_upload(image_file, type_id)
-                        cur.execute(
-                            "UPDATE reservation_types SET image_path = %s WHERE id = %s AND owner_admin_id = %s",
-                            (image_path, type_id, current_admin_account_id),
-                        )
                     conn.commit()
             return redirect(
                 url_for("admin_types_page", type_success="種類を追加しました。")
@@ -2221,7 +2245,7 @@ def admin_types_page():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT id, name, accepting, flavor_text, image_path
+                    SELECT id, name, accepting, flavor_text, image_mime_type, image_filename
                     FROM reservation_types
                     WHERE owner_admin_id = %s
                     ORDER BY id ASC
@@ -2254,28 +2278,39 @@ def admin_types_update_image(type_id):
     if not image_file or not getattr(image_file, "filename", "").strip():
         return redirect(url_for("admin_types_page", type_error="画像ファイルを選択してください。"))
 
+    try:
+        image_data, image_mime_type, image_filename = save_type_image_upload(image_file)
+    except ValueError as error:
+        return redirect(url_for("admin_types_page", type_error=str(error)))
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT image_path FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                "SELECT image_data, image_mime_type, image_filename FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
                 (type_id, current_admin_account_id),
             )
             row = cur.fetchone()
             if not row:
                 abort(403)
-            old_image_path = row[0] or ""
-            try:
-                new_image_path = save_type_image_upload(image_file, type_id)
-            except ValueError as error:
-                return redirect(url_for("admin_types_page", type_error=str(error)))
             cur.execute(
-                "UPDATE reservation_types SET image_path = %s WHERE id = %s AND owner_admin_id = %s",
-                (new_image_path, type_id, current_admin_account_id),
+                """
+                    UPDATE reservation_types
+                    SET image_data = %s,
+                        image_mime_type = %s,
+                        image_filename = %s
+                    WHERE id = %s AND owner_admin_id = %s
+                """,
+                (
+                    image_data or None,
+                    image_mime_type,
+                    image_filename,
+                    type_id,
+                    current_admin_account_id,
+                ),
             )
             if cur.rowcount == 0:
                 abort(403)
             conn.commit()
-    delete_type_image_file(old_image_path)
     return redirect(url_for("admin_types_page", type_success="画像を更新しました。"))
 
 
@@ -2291,11 +2326,10 @@ def admin_types_delete(type_id):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT image_path FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                "SELECT image_data, image_mime_type, image_filename FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
                 (type_id, current_admin_account_id),
             )
             row = cur.fetchone()
-            old_image_path = row[0] if row else ""
             try:
                 cur.execute(
                     "DELETE FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
@@ -2312,7 +2346,6 @@ def admin_types_delete(type_id):
                         type_error="この種類に紐づく予約があるため削除できません。",
                     )
                 )
-    delete_type_image_file(old_image_path)
     return redirect(url_for("admin_types_page"))
 
 
@@ -2764,7 +2797,7 @@ def process_reservation(event, user_id, user_message):
                         return
                     cur.execute(
                         """
-                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_path
+                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type
                             FROM reservation_types
                             WHERE name = %s
                         """,
@@ -2788,9 +2821,9 @@ def process_reservation(event, user_id, user_message):
                         type_accepting,
                         type_owner_admin_id,
                         type_flavor_text,
-                        type_image_path,
+                        type_image_mime_type,
                     ) = type_row
-                    type_image_url = build_static_url(type_image_path)
+                    type_image_url = build_type_image_url(type_id)
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
@@ -2812,7 +2845,7 @@ def process_reservation(event, user_id, user_message):
                 else:
                     cur.execute(
                         """
-                            SELECT name, flavor_text, accepting, image_path
+                            SELECT id, name, flavor_text, accepting, image_mime_type
                             FROM reservation_types
                             ORDER BY id ASC
                         """
@@ -2827,8 +2860,8 @@ def process_reservation(event, user_id, user_message):
                         return
                     
                     carousel_bubbles = []
-                    for name, flavor_text, accepting, image_path in type_rows[:10]:
-                        image_url = build_static_url(image_path)
+                    for type_id, name, flavor_text, accepting, image_mime_type in type_rows[:10]:
+                        image_url = build_type_image_url(type_id) if image_mime_type else None
                         # header box
                         header = {
                             "type": "box",
