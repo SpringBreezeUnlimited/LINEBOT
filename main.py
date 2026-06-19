@@ -116,7 +116,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.134"
+APP_VERSION = "v1.0.135"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -1066,6 +1066,8 @@ def ensure_admin_login_logs_table():
                     id SERIAL PRIMARY KEY,
                     login_result TEXT NOT NULL DEFAULT 'success',
                     admin_role TEXT NOT NULL,
+                    admin_account_id INTEGER REFERENCES admin_accounts(id) ON DELETE SET NULL,
+                    admin_login_id TEXT,
                     ip_address TEXT,
                     user_agent TEXT,
                     logged_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -1074,6 +1076,33 @@ def ensure_admin_login_logs_table():
             cur.execute("""
                 ALTER TABLE admin_login_logs
                 ADD COLUMN IF NOT EXISTS login_result TEXT NOT NULL DEFAULT 'success'
+            """)
+            cur.execute("""
+                ALTER TABLE admin_login_logs
+                ADD COLUMN IF NOT EXISTS admin_account_id INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE admin_login_logs
+                ADD COLUMN IF NOT EXISTS admin_login_id TEXT
+            """)
+            cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'admin_login_logs_admin_account_id_fkey'
+                    ) THEN
+                        ALTER TABLE admin_login_logs
+                        ADD CONSTRAINT admin_login_logs_admin_account_id_fkey
+                        FOREIGN KEY (admin_account_id) REFERENCES admin_accounts(id) ON DELETE SET NULL;
+                    END IF;
+                END
+                $$;
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_admin_login_logs_admin_account_id
+                ON admin_login_logs (admin_account_id)
             """)
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_admin_login_logs_logged_in_at
@@ -1163,16 +1192,30 @@ def cleanup_rate_limit_records():
 
 
 def record_admin_login(
-    role: str, ip_address: str, user_agent: str, login_result: str = "success"
+    role: str,
+    admin_account_id: int | None,
+    admin_login_id: str | None,
+    ip_address: str,
+    user_agent: str,
+    login_result: str = "success",
 ):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    INSERT INTO admin_login_logs (login_result, admin_role, ip_address, user_agent)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO admin_login_logs (
+                        login_result, admin_role, admin_account_id, admin_login_id, ip_address, user_agent
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (login_result, role, ip_address, (user_agent or "")[:300]),
+                (
+                    login_result,
+                    role,
+                    admin_account_id,
+                    (admin_login_id or None),
+                    ip_address,
+                    (user_agent or "")[:300],
+                ),
             )
             conn.commit()
 
@@ -1524,13 +1567,24 @@ def login():
         account = authenticate_admin_account(login_id, password)
         if account:
             start_admin_session(account["role"], account["id"], account["login_id"])
-            record_admin_login(account["role"], ip, request.headers.get("User-Agent"))
+            record_admin_login(
+                account["role"],
+                account["id"],
+                account["login_id"],
+                ip,
+                request.headers.get("User-Agent"),
+            )
             if account["role"] == ROLE_AUDIT_ADMIN:
                 return redirect(next_path or url_for("admin_login_logs_page"))
             return redirect(next_path or url_for("admin_page"))
         else:
             record_admin_login(
-                "unknown", ip, request.headers.get("User-Agent"), login_result="failure"
+                "unknown",
+                None,
+                None,
+                ip,
+                request.headers.get("User-Agent"),
+                login_result="failure",
             )
             record_login_failure(ip)
             error = "ログインIDまたはパスワードが正しくありません"
@@ -1877,7 +1931,7 @@ def admin_login_logs_page():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at
+                    SELECT id, login_result, admin_role, admin_login_id, ip_address, user_agent, logged_in_at
                     FROM admin_login_logs
                     ORDER BY logged_in_at DESC, id DESC
                     LIMIT 500
@@ -1885,7 +1939,7 @@ def admin_login_logs_page():
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）
             rows = [
-                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
+                (row[0], row[1], row[2], row[3], row[4], row[5], format_dt(row[6]))
                 for row in rows
             ]
             cur.execute("""

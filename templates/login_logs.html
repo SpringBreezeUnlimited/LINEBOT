@@ -121,6 +121,7 @@
                         <th>ID</th>
                         <th>結果</th>
                         <th>権限</th>
+                        <th>ログインID</th>
                         <th>IPアドレス</th>
                         <th>ユーザーエージェント</th>
                         <th>ログイン時刻</th>
@@ -148,11 +149,12 @@
                         </td>
                         <td>{{ row[3] or '-' }}</td>
                         <td>{{ row[4] or '-' }}</td>
-                        <td>{{ row[5] if row[5] else '-' }}</td>
+                        <td>{{ row[5] or '-' }}</td>
+                        <td>{{ row[6] if row[6] else '-' }}</td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="text-center">ログイン履歴はまだありません。</td>
+                        <td colspan="7" class="text-center">ログイン履歴はまだありません。</td>
                     </tr>
                     {% endfor %}
                 </tbody>
