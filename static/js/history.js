@@ -1,5 +1,6 @@
 const historyRowsCache = Array.from(document.querySelectorAll('#history-rows .history-card')).map((row) => ({
     id: Number(row.dataset.id || '0'),
+    display_no: Number(row.dataset.displayNo || row.dataset.id || '0'),
     type_id: row.dataset.typeId || '',
     type: row.dataset.type || '',
     status: row.dataset.status || '',
@@ -58,6 +59,7 @@ function createHistoryCard(row) {
     const card = document.createElement('article');
     card.className = 'history-card';
     card.dataset.id = String(row.id || '');
+    card.dataset.displayNo = String(row.display_no || row.id || '');
     card.dataset.typeId = row.type_id || '';
     card.dataset.type = row.type || '';
     card.dataset.status = row.status || '';
@@ -74,7 +76,7 @@ function createHistoryCard(row) {
     label.textContent = '番号';
     const value = document.createElement('div');
     value.className = 'history-card__value';
-    value.textContent = row.id || '';
+    value.textContent = row.display_no || row.id || '';
     identity.appendChild(label);
     identity.appendChild(value);
 
@@ -130,7 +132,7 @@ function applyHistoryFilters(rows) {
         if (sortBy === 'service_duration') {
             return compareHistoryValues(left.service_duration || 0, right.service_duration || 0, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
         }
-        return compareHistoryValues(left.id, right.id, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
+        return compareHistoryValues(left.display_no || left.id, right.display_no || right.id, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
     });
 
     return filtered;

@@ -116,7 +116,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.136"
+APP_VERSION = "v1.0.137"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -697,11 +697,11 @@ def should_run_call_batch(now=None) -> bool:
     return current.tm_min % 5 == 0
 
 
-def build_call_message(reservation_id: int, called_at=None) -> dict:
+def build_call_message(reservation_no: int, called_at=None) -> dict:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
     timeout_label = timeout_at.strftime("%H:%M")
-    return call_notification(reservation_id, timeout_label, CALL_TIMEOUT_MINUTES)
+    return call_notification(reservation_no, timeout_label, CALL_TIMEOUT_MINUTES)
 
 
 def expire_called_reservations() -> int:
@@ -717,15 +717,15 @@ def expire_called_reservations() -> int:
                         WHERE status = %s
                           AND called_at IS NOT NULL
                           AND called_at <= (CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute'))
-                        RETURNING id, user_id
+                        RETURNING id, user_id, COALESCE(reservation_no, id)
                     """,
                     (STATUS_CANCELLED, STATUS_CALLED, CALL_TIMEOUT_MINUTES),
                 )
                 timed_out_rows = cur.fetchall()
                 conn.commit()
-        for reservation_id, user_id in timed_out_rows:
+        for reservation_id, user_id, reservation_no in timed_out_rows:
             try:
-                flex = auto_cancel_notification(reservation_id)
+                flex = auto_cancel_notification(reservation_no or reservation_id)
                 send_push_message(user_id, flex)
             except Exception:
                 app.logger.exception(
@@ -772,7 +772,7 @@ def process_queued_calls(now=None):
                 cur.execute(
                     """
                         WITH selected_rows AS (
-                            SELECT r.id, r.user_id
+                            SELECT r.id, r.user_id, COALESCE(r.reservation_no, r.id)
                             FROM reservations r
                             JOIN reservation_types t ON r.type_id = t.id
                             WHERE r.status = %s
@@ -786,7 +786,7 @@ def process_queued_calls(now=None):
                             SELECT id FROM selected_rows
                         )
                           AND status = %s
-                        RETURNING id, user_id
+                        RETURNING id, user_id, COALESCE(reservation_no, id)
                     """,
                     (STATUS_WAITING, auto_call_count, STATUS_CALLED, STATUS_WAITING),
                 )
@@ -795,13 +795,13 @@ def process_queued_calls(now=None):
 
     sent_ids = []
     failed_ids = []
-    for res_id, user_id in auto_rows:
+    for res_id, user_id, reservation_no in auto_rows:
         try:
             # Build Flex call notification; alt text will be used as fallback when needed
             timeout_at = (
                 datetime.now(JST) + timedelta(minutes=CALL_TIMEOUT_MINUTES)
             ).strftime("%H:%M")
-            flex = call_notification(res_id, timeout_at, CALL_TIMEOUT_MINUTES)
+            flex = call_notification(reservation_no or res_id, timeout_at, CALL_TIMEOUT_MINUTES)
             send_push_message(user_id, flex)
             sent_ids.append(res_id)
         except Exception:
@@ -890,7 +890,7 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
                             SELECT COUNT(*)
                             FROM reservations r
                             JOIN reservation_types t ON r.type_id = t.id
-                            WHERE r.status = %s AND t.owner_admin_id = %s
+                            WHERE r.status = %s AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                         """,
                         (STATUS_WAITING, owner_admin_id),
                     )
@@ -969,6 +969,14 @@ def ensure_reservations_table():
             """)
             cur.execute("""
                 ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS owner_admin_id INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS reservation_no INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS user_id TEXT
             """)
             cur.execute("""
@@ -1008,6 +1016,14 @@ def ensure_reservations_table():
                 ALTER COLUMN status SET DEFAULT 'waiting'
             """)
             cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_owner_admin_id_id
+                ON reservations (owner_admin_id, id DESC)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_owner_admin_id_reservation_no
+                ON reservations (owner_admin_id, reservation_no DESC)
+            """)
+            cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_reservations_status_id
                 ON reservations (status, id)
             """)
@@ -1028,6 +1044,11 @@ def ensure_reservations_table():
                     ON reservations (user_id)
                     WHERE status IN ('waiting', 'called')
                 """)
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_owner_reservation_no
+                ON reservations (owner_admin_id, reservation_no)
+                WHERE owner_admin_id IS NOT NULL AND reservation_no IS NOT NULL
+            """)
             conn.commit()
 
 
@@ -1121,9 +1142,14 @@ def ensure_admin_accounts_table():
                         password_hash TEXT NOT NULL,
                         role TEXT NOT NULL,
                         active BOOLEAN NOT NULL DEFAULT TRUE,
+                        next_reservation_no INTEGER NOT NULL DEFAULT 1,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+            cur.execute("""
+                ALTER TABLE admin_accounts
+                ADD COLUMN IF NOT EXISTS next_reservation_no INTEGER NOT NULL DEFAULT 1
+            """)
             cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
                     ON admin_accounts (role, active)
@@ -1174,6 +1200,109 @@ def ensure_rate_limit_tables():
                 ON webhook_request_records (ip_address, requested_at DESC)
             """)
             conn.commit()
+
+
+def sync_reservation_owner_numbers(cur):
+    cur.execute(
+        """
+            UPDATE reservations r
+            SET owner_admin_id = COALESCE(r.owner_admin_id, t.owner_admin_id)
+            FROM reservation_types t
+            WHERE r.type_id = t.id
+              AND r.owner_admin_id IS NULL
+              AND t.owner_admin_id IS NOT NULL
+        """
+    )
+    cur.execute(
+        """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'fk_reservations_owner_admin_id'
+                ) THEN
+                    ALTER TABLE reservations
+                    ADD CONSTRAINT fk_reservations_owner_admin_id
+                    FOREIGN KEY (owner_admin_id)
+                    REFERENCES admin_accounts(id)
+                    ON DELETE RESTRICT;
+                END IF;
+            END
+            $$;
+        """
+    )
+    cur.execute(
+        """
+            WITH numbered AS (
+                SELECT
+                    r.id,
+                    r.owner_admin_id,
+                    COALESCE(max_existing.max_reservation_no, 0)
+                    + row_number() OVER (
+                        PARTITION BY r.owner_admin_id
+                        ORDER BY r.created_at ASC NULLS LAST, r.id ASC
+                    ) AS reservation_no
+                FROM reservations r
+                LEFT JOIN (
+                    SELECT owner_admin_id, MAX(reservation_no) AS max_reservation_no
+                    FROM reservations
+                    WHERE owner_admin_id IS NOT NULL
+                      AND reservation_no IS NOT NULL
+                    GROUP BY owner_admin_id
+                ) AS max_existing
+                    ON max_existing.owner_admin_id = r.owner_admin_id
+                WHERE r.owner_admin_id IS NOT NULL
+                  AND r.reservation_no IS NULL
+            )
+            UPDATE reservations r
+            SET reservation_no = numbered.reservation_no
+            FROM numbered
+            WHERE r.id = numbered.id
+        """
+    )
+    cur.execute(
+        """
+            UPDATE admin_accounts a
+            SET next_reservation_no = GREATEST(
+                a.next_reservation_no,
+                COALESCE(next_numbers.next_reservation_no, 1)
+            )
+            FROM (
+                SELECT owner_admin_id, COALESCE(MAX(reservation_no), 0) + 1 AS next_reservation_no
+                FROM reservations
+                WHERE owner_admin_id IS NOT NULL
+                  AND reservation_no IS NOT NULL
+                GROUP BY owner_admin_id
+            ) AS next_numbers
+            WHERE a.id = next_numbers.owner_admin_id
+        """
+    )
+
+
+def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
+    cur.execute(
+        """
+            SELECT next_reservation_no
+            FROM admin_accounts
+            WHERE id = %s
+            FOR UPDATE
+        """,
+        (owner_admin_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise ValueError("owner admin account not found")
+    reservation_no = int(row[0] or 1)
+    cur.execute(
+        """
+            UPDATE admin_accounts
+            SET next_reservation_no = %s
+            WHERE id = %s
+        """,
+        (reservation_no + 1, owner_admin_id),
+    )
+    return reservation_no
 
 
 def cleanup_rate_limit_records():
@@ -1680,6 +1809,7 @@ def ensure_types_table():
                     "UPDATE reservation_types SET owner_admin_id = %s WHERE owner_admin_id IS NULL",
                     (admin_row[0],),
                 )
+            sync_reservation_owner_numbers(cur)
             conn.commit()
 
 
@@ -1848,10 +1978,11 @@ def serialize_active_rows(rows):
     return [
         {
             "id": row[0],
-            "status": row[1],
-            "type_id": row[2],
-            "type": row[3],
-            "created_at": format_dt(row[4]),
+            "display_no": row[1],
+            "status": row[2],
+            "type_id": row[3],
+            "type": row[4],
+            "created_at": format_dt(row[5]),
         }
         for row in rows
     ]
@@ -1864,7 +1995,7 @@ def fetch_type_counts(cur, owner_admin_id: int):
             FROM reservations r
             JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.status IN (%s, %s)
-              AND t.owner_admin_id = %s
+              AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
             GROUP BY t.name
             ORDER BY COUNT(*) DESC, t.name ASC
         """,
@@ -1906,20 +2037,20 @@ def get_active_rows(
     cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"
 ):
     params = [STATUS_WAITING, STATUS_CALLED]
-    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+    where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
     params.append(owner_admin_id)
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
     order_map = {
-        "id": "r.id",
+        "id": "COALESCE(r.reservation_no, r.id)",
         "status": "r.status",
         "type": "t.name",
     }
     order_by = order_map[sort_by]
     cur.execute(
         f"""
-            SELECT r.id, r.status, t.id, t.name, r.created_at
+            SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.id, t.name, r.created_at
             FROM reservations r
             LEFT JOIN reservation_types t ON r.type_id = t.id
             {where}
@@ -2529,12 +2660,12 @@ def admin_history():
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
             params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-            where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+            where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
             order_map = {
-                "id": "r.id",
+                "id": "COALESCE(r.reservation_no, r.id)",
                 "status": "r.status",
                 "type": "t.name",
                 "created_at": "r.created_at",
@@ -2545,6 +2676,7 @@ def admin_history():
                 f"""
                 SELECT
                     r.id,
+                    COALESCE(r.reservation_no, r.id) AS display_no,
                     r.status,
                     t.name,
                     t.id,
@@ -2568,10 +2700,11 @@ def admin_history():
                     row[1],
                     row[2],
                     row[3],
-                    format_dt(row[4]),
+                    row[4],
                     format_dt(row[5]),
                     format_dt(row[6]),
-                    row[7],
+                    format_dt(row[7]),
+                    row[8],
                 )
                 for row in rows
             ]
@@ -2615,12 +2748,12 @@ def admin_history_export():
         sort_order = "desc"
 
     params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+    where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
     order_map = {
-        "id": "r.id",
+        "id": "COALESCE(r.reservation_no, r.id)",
         "status": "r.status",
         "type": "t.name",
         "created_at": "r.created_at",
@@ -2656,6 +2789,7 @@ def admin_history_export():
                     f"""
                         SELECT
                             r.id,
+                            COALESCE(r.reservation_no, r.id) AS display_no,
                             COALESCE(t.name, ''),
                             r.status,
                             r.created_at,
@@ -2674,15 +2808,15 @@ def admin_history_export():
                 for row in cur:
                     writer.writerow(
                         [
-                            row[0],
                             row[1],
                             row[2],
-                            format_dt(row[3]),
+                            row[3],
                             format_dt(row[4]),
                             format_dt(row[5]),
-                            format_duration_from_seconds(row[6]) or "-",
+                            format_dt(row[6]),
                             format_duration_from_seconds(row[7]) or "-",
                             format_duration_from_seconds(row[8]) or "-",
+                            format_duration_from_seconds(row[9]) or "-",
                         ]
                     )
                     yield output.getvalue()
@@ -2712,21 +2846,21 @@ def admin_call(res_id):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE reservations
+                    UPDATE reservations r
                     SET status = %s, called_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                      AND status = %s
-                      AND type_id IN (
-                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
-                      )
-                    RETURNING user_id
+                    FROM reservation_types t
+                    WHERE r.id = %s
+                      AND r.status = %s
+                      AND r.type_id = t.id
+                      AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
+                    RETURNING user_id, COALESCE(reservation_no, id)
                 """,
                 (STATUS_CALLED, res_id, STATUS_WAITING, current_admin_account_id),
             )
             row = cur.fetchone()
             if not row:
                 cur.execute(
-                    "SELECT status FROM reservations WHERE id = %s",
+                    "SELECT status, COALESCE(reservation_no, id) FROM reservations WHERE id = %s",
                     (res_id,),
                 )
                 existing = cur.fetchone()
@@ -2735,15 +2869,16 @@ def admin_call(res_id):
                     return redirect(
                         url_for(
                             "admin_page",
-                            call_error=f"予約番号 {res_id} は直前にキャンセルされたため呼出できませんでした。",
+                            call_error=f"受付番号 {existing[1] or res_id} は直前にキャンセルされたため呼出できませんでした。",
                         )
                     )
                 abort(404)
             user_id = row[0]
+            display_no = row[1] or res_id
             conn.commit()
 
     try:
-        send_push_message(user_id, build_call_message(res_id))
+        send_push_message(user_id, build_call_message(display_no))
     except Exception:
         app.logger.exception(
             "Failed to send LINE push message for reservation %s user_id=%s",
@@ -2774,13 +2909,13 @@ def admin_finish(res_id):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE reservations
+                    UPDATE reservations r
                     SET status = %s, completed_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                      AND status = %s
-                      AND type_id IN (
-                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
-                      )
+                    FROM reservation_types t
+                    WHERE r.id = %s
+                      AND r.status = %s
+                      AND r.type_id = t.id
+                      AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                     RETURNING id
                 """,
                 (STATUS_DONE, res_id, STATUS_CALLED, current_admin_account_id),
@@ -3117,7 +3252,7 @@ def process_reservation(event, user_id, user_message):
 
                 cur.execute(
                     """
-                        SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                        SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, r.type_id, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -3129,6 +3264,7 @@ def process_reservation(event, user_id, user_message):
                 if existing:
                     (
                         res_id,
+                        display_no,
                         status,
                         existing_type_id,
                         existing_type_name,
@@ -3141,32 +3277,40 @@ def process_reservation(event, user_id, user_message):
                                 reservation_id=res_id,
                                 owner_admin_id=existing_owner_admin_id,
                             )
-                            body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                            body = f"予約済みです。番号: {display_no} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute(
                                 "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                 (STATUS_WAITING, res_id),
                             )
-                            body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                            body = f"予約済みです。番号: {display_no} / 待ち: {cur.fetchone()[0]}人"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
-                            body = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                            body = f"【呼出中】番号: {display_no} / 種類: {existing_type_name} 会場へお越しください！"
                         else:
-                            body = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                            body = f"【呼出中】番号: {display_no} 会場へお越しください！"
                     send_flex_notice(event.reply_token, "予約状況", body)
                     return
                 else:
                     try:
+                        reservation_no = allocate_admin_reservation_no(
+                            cur, type_owner_admin_id
+                        )
                         cur.execute(
-                            "INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id",
-                            (user_id, "", type_id),
+                            """
+                                INSERT INTO reservations (
+                                    user_id, message, type_id, owner_admin_id, reservation_no
+                                ) VALUES (%s, %s, %s, %s, %s)
+                                RETURNING id
+                            """,
+                            (user_id, "", type_id, type_owner_admin_id, reservation_no),
                         )
                         new_id = cur.fetchone()[0]
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         cur.execute(
                             """
-                                SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                                SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, r.type_id, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
                                 FROM reservations r
                                 LEFT JOIN reservation_types t ON r.type_id = t.id
                                 WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -3178,6 +3322,7 @@ def process_reservation(event, user_id, user_message):
                         if existing_after_conflict:
                             (
                                 res_id,
+                                display_no,
                                 status,
                                 _existing_type_id,
                                 existing_type_name,
@@ -3192,18 +3337,18 @@ def process_reservation(event, user_id, user_message):
                                             owner_admin_id=existing_owner_admin_id,
                                         )
                                     )
-                                    body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                    body = f"予約済みです。番号: {display_no} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
                                     cur.execute(
                                         "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                         (STATUS_WAITING, res_id),
                                     )
-                                    body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                                    body = f"予約済みです。番号: {display_no} / 待ち: {cur.fetchone()[0]}人"
                             elif status == STATUS_CALLED:
                                 if existing_type_name:
-                                    body = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {display_no} / 種類: {existing_type_name} 会場へお越しください！"
                                 else:
-                                    body = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {display_no} 会場へお越しください！"
                             send_flex_notice(event.reply_token, "予約状況", body)
                             return
                         raise
@@ -3220,14 +3365,14 @@ def process_reservation(event, user_id, user_message):
                             reservation_id=new_id,
                             owner_admin_id=type_owner_admin_id,
                         )
-                        body = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute(
                             "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                             (STATUS_WAITING, new_id),
                         )
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
-                        body = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {reservation_no} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(
                         waiting_people_ahead
@@ -3249,7 +3394,7 @@ def process_reservation(event, user_id, user_message):
                             WHERE user_id = %s AND status IN (%s, %s)
                             ORDER BY id DESC LIMIT 1
                         )
-                        RETURNING id
+                        RETURNING id, COALESCE(reservation_no, id)
                     """,
                     (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED),
                 )
@@ -3259,7 +3404,7 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(
                         event.reply_token,
                         "キャンセル完了",
-                        f"予約番号 {cancelled[0]} をキャンセルしました。",
+                        f"受付番号 {cancelled[1] or cancelled[0]} をキャンセルしました。",
                     )
                 else:
                     send_flex_notice(
@@ -3271,7 +3416,7 @@ def process_reservation(event, user_id, user_message):
             elif normalized == "待ち時間":
                 cur.execute(
                     """
-                        SELECT r.id, r.status, t.name, t.owner_admin_id
+                        SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -3287,7 +3432,7 @@ def process_reservation(event, user_id, user_message):
                         "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。",
                     )
                 else:
-                    res_id, status, type_name, owner_admin_id = existing
+                    res_id, display_no, status, type_name, owner_admin_id = existing
                     if status == STATUS_WAITING:
                         if owner_admin_id is not None:
                             waiting_people_ahead = count_waiting_people_ahead_by_owner(
@@ -3306,12 +3451,12 @@ def process_reservation(event, user_id, user_message):
                         )
                         if type_name:
                             body = (
-                                f"番号: {res_id} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
+                                f"番号: {display_no} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         else:
                             body = (
-                                f"番号: {res_id} / あなたの前: {waiting_people_ahead}人"
+                                f"番号: {display_no} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         send_flex_notice(event.reply_token, "待ち時間", body)
@@ -3319,7 +3464,7 @@ def process_reservation(event, user_id, user_message):
                         send_flex_notice(
                             event.reply_token,
                             "呼出中",
-                            f"【呼出中】番号: {res_id} です。会場へお越しください。",
+                            f"【呼出中】番号: {display_no} です。会場へお越しください。",
                         )
                 return
             else:

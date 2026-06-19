@@ -8,6 +8,7 @@ const adminRefreshIntervalMs = Number.isFinite(configuredRefreshIntervalMs)
 function parseInitialRowsFromDom() {
     return Array.from(document.querySelectorAll('#active-rows .admin-reservation-card')).map((row) => ({
         id: Number(row.dataset.id || '0'),
+        display_no: Number(row.dataset.displayNo || row.dataset.id || '0'),
         created_at: row.dataset.createdAt || '',
         type: row.dataset.type || '',
         type_id: row.dataset.typeId || '',
@@ -16,7 +17,7 @@ function parseInitialRowsFromDom() {
 }
 
 function buildRowsSignature(rows) {
-    return rows.map((row) => `${row.id}:${row.status}:${row.type_id || ''}:${row.created_at || ''}`).join('|');
+    return rows.map((row) => `${row.id}:${row.display_no || ''}:${row.status}:${row.type_id || ''}:${row.created_at || ''}`).join('|');
 }
 
 function buildTypeCountsSignature(typeCounts) {
@@ -125,7 +126,7 @@ function applyClientFilters(rows) {
         if (sortBy === 'type') {
             return compareValues(left.type || '', right.type || '') || compareValues(left.id, right.id);
         }
-        return compareValues(left.id, right.id);
+        return compareValues(left.display_no || left.id, right.display_no || right.id) || compareValues(left.id, right.id);
     });
 
     return filtered;
@@ -198,6 +199,7 @@ function buildRow(row) {
     const card = document.createElement('article');
     card.className = 'admin-reservation-card';
     card.dataset.id = String(row.id ?? '');
+    card.dataset.displayNo = String(row.display_no ?? row.id ?? '');
     card.dataset.createdAt = row.created_at || '';
     card.dataset.type = row.type || '';
     card.dataset.typeId = row.type_id || '';
@@ -212,7 +214,7 @@ function buildRow(row) {
     label.textContent = '番号';
     const value = document.createElement('div');
     value.className = 'admin-reservation-card__value';
-    value.textContent = row.id ?? '';
+    value.textContent = row.display_no ?? row.id ?? '';
     identity.appendChild(label);
     identity.appendChild(value);
 
