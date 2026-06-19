@@ -116,7 +116,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.135"
+APP_VERSION = "v1.0.136"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -1877,6 +1877,31 @@ def serialize_type_counts(rows):
     return [{"name": row[0], "count": row[1]} for row in rows]
 
 
+def get_admin_login_log_rows(cur, limit: int = 500):
+    cur.execute(
+        """
+            SELECT id, login_result, admin_role, admin_login_id, ip_address, user_agent, logged_in_at
+            FROM admin_login_logs
+            ORDER BY logged_in_at DESC, id DESC
+            LIMIT %s
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    return [
+        {
+            "id": row[0],
+            "login_result": row[1],
+            "admin_role": row[2],
+            "admin_login_id": row[3],
+            "ip_address": row[4],
+            "user_agent": row[5],
+            "logged_in_at": format_dt(row[6]),
+        }
+        for row in rows
+    ]
+
+
 def get_active_rows(
     cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"
 ):
@@ -1930,18 +1955,7 @@ def admin_login_logs_page():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                    SELECT id, login_result, admin_role, admin_login_id, ip_address, user_agent, logged_in_at
-                    FROM admin_login_logs
-                    ORDER BY logged_in_at DESC, id DESC
-                    LIMIT 500
-                """)
-            rows = cur.fetchall()
-            # 時刻をフォーマット済み文字列に変換（日本時間対応）
-            rows = [
-                (row[0], row[1], row[2], row[3], row[4], row[5], format_dt(row[6]))
-                for row in rows
-            ]
+            rows = get_admin_login_log_rows(cur)
             cur.execute("""
                     SELECT id, login_id, role, active, created_at
                     FROM admin_accounts
@@ -1957,8 +1971,22 @@ def admin_login_logs_page():
         admin_accounts=admin_accounts,
         account_error=account_error,
         account_success=account_success,
+        admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token(),
     )
+
+
+@app.route("/admin/login-logs/data")
+def admin_login_logs_data():
+    if not is_audit_admin_authenticated():
+        return jsonify({"error": "unauthorized"}), 401
+    if not has_audit_admin_account():
+        abort(404)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            rows = get_admin_login_log_rows(cur)
+    return jsonify({"rows": rows})
 
 
 @app.route("/admin/admin-accounts", methods=["POST"])

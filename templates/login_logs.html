@@ -8,6 +8,8 @@
 
 {% block body_class %}bg-light sidebar-layout{% endblock %}
 
+{% block body_attrs %}data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}"{% endblock %}
+
 {% block navbar %}
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
@@ -127,7 +129,7 @@
                         <th>ログイン時刻</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="login-log-rows">
                     {% for row in rows %}
                     <tr>
                         <td>{{ row[0] }}</td>
@@ -162,4 +164,8 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/login_logs.js') }}" defer></script>
 {% endblock %}
