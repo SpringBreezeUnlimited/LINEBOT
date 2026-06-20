@@ -91,17 +91,29 @@ setInterval(() => {
     refreshGlobalAcceptingState();
 }, typesRefreshIntervalMs);
 
-// 「説明文」のテキストボックス変更時のみ「保存」ボタンを表示・有効化する制御
+// 「説明文」や「価格」のテキストボックス変更時のみ「保存」ボタンを表示・有効化する制御
 document.addEventListener('input', (event) => {
     const input = event.target;
-    if (input instanceof HTMLInputElement && input.classList.contains('types-card__flavor-textarea')) {
-        const form = input.closest('form');
-        if (form) {
-            const saveBtn = form.querySelector('.types-card__flavor-save-btn');
-            if (saveBtn) {
-                const isChanged = input.value !== input.defaultValue;
-                saveBtn.style.display = isChanged ? 'inline-block' : 'none';
-                saveBtn.disabled = !isChanged;
+    if (input instanceof HTMLInputElement) {
+        if (input.classList.contains('types-card__flavor-textarea')) {
+            const form = input.closest('form');
+            if (form) {
+                const saveBtn = form.querySelector('.types-card__flavor-save-btn');
+                if (saveBtn) {
+                    const isChanged = input.value !== input.defaultValue;
+                    saveBtn.style.display = isChanged ? 'inline-block' : 'none';
+                    saveBtn.disabled = !isChanged;
+                }
+            }
+        } else if (input.classList.contains('types-card__price-input')) {
+            const form = input.closest('form');
+            if (form) {
+                const saveBtn = form.querySelector('.types-card__price-save-btn');
+                if (saveBtn) {
+                    const isChanged = input.value !== input.defaultValue;
+                    saveBtn.style.display = isChanged ? 'inline-block' : 'none';
+                    saveBtn.disabled = !isChanged;
+                }
             }
         }
     }

@@ -64,8 +64,11 @@
                 data-ajax-post="true"
                 data-inline-confirm="この内容で種類を追加しますか？">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                <div class="col-sm-8">
+                <div class="col-sm-6">
                     <input type="text" name="name" class="form-control" placeholder="種類名" required>
+                </div>
+                <div class="col-sm-6">
+                    <input type="number" name="price" class="form-control" placeholder="価格（円）" min="0" value="0" required>
                 </div>
                 <div class="col-12 mt-2">
                     <input type="text" name="flavor_text" class="form-control" placeholder="説明（任意）">
@@ -73,7 +76,7 @@
                 <div class="col-12 mt-2">
                     <input type="file" name="image" class="form-control" accept="image/*">
                 </div>
-                <div class="col-sm-4 d-grid">
+                <div class="col-sm-4 d-grid mt-2">
                     <button type="submit" class="btn btn-primary">追加</button>
                 </div>
             </form>
@@ -91,6 +94,9 @@
                                 <div>
                                     <div class="types-card__label">種類</div>
                                     <div class="types-card__value">{{ t[1] }}</div>
+                                    <div class="types-card__price-label text-muted small mt-1">
+                                        価格: {{ '{:,}'.format(t[6]) if t[6] is not none else '0' }}円
+                                    </div>
                                     {% if t[4] %}
                                     <div class="types-card__image-preview">
                                         <img src="{{ url_for('reservation_type_image', type_id=t[0]) }}" alt="{{ t[1] }}の画像">
@@ -109,6 +115,24 @@
                                             <button type="submit"
                                                 class="btn btn-sm btn-outline-secondary mt-1 types-card__flavor-save-btn"
                                                 style="display: none;" disabled>保存</button>
+                                        </form>
+                                    </div>
+                                    <div class="types-card__price-edit mt-2">
+                                        <form method="POST" action="/admin/types/{{ t[0] }}/price"
+                                            class="types-price-form"
+                                            data-ajax-post="true"
+                                            data-inline-confirm="価格を更新しますか？"
+                                            data-confirm-btn-text="更新する">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                            <label class="form-label small text-muted mb-1">価格（円）</label>
+                                            <div class="d-flex gap-2 align-items-center">
+                                                <input type="number" name="price"
+                                                    class="form-control form-control-sm types-card__price-input"
+                                                    placeholder="価格" value="{{ t[6] if t[6] is not none else 0 }}" min="0" required>
+                                                <button type="submit"
+                                                    class="btn btn-sm btn-outline-secondary types-card__price-save-btn"
+                                                    style="display: none;" disabled>保存</button>
+                                            </div>
                                         </form>
                                     </div>
                                     <div class="types-card__image-edit">

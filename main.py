@@ -1799,6 +1799,10 @@ def ensure_types_table():
                 ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''
                 """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0
+            """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
@@ -2420,6 +2424,7 @@ def admin_types_page():
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
         flavor_text = (request.form.get("flavor_text") or "").strip()
+        price_raw = (request.form.get("price") or "0").strip()
         image_file = request.files.get("image")
         if image_file and getattr(image_file, "filename", "").strip():
             suffix = Path(secure_filename(image_file.filename)).suffix.lower()
@@ -2437,6 +2442,21 @@ def admin_types_page():
                     type_error=f"種類名は1〜{MAX_TYPE_NAME_LENGTH}文字、英数字/日本語/スペース/記号(-_・)のみ使用できます。",
                 )
             )
+        if not price_raw.isdigit():
+            return redirect(
+                url_for(
+                    "admin_types_page",
+                    type_error="価格には正の整数を入力してください。",
+                )
+            )
+        price = int(price_raw)
+        if price < 0:
+            return redirect(
+                url_for(
+                    "admin_types_page",
+                    type_error="価格には0以上の値を入力してください。",
+                )
+            )
         try:
             image_data = None
             image_mime_type = ""
@@ -2450,8 +2470,8 @@ def admin_types_page():
                     cur.execute(
                         """
                             INSERT INTO reservation_types
-                                (name, flavor_text, owner_admin_id, image_data, image_mime_type, image_filename)
-                            VALUES (%s, %s, %s, %s, %s, %s)
+                                (name, flavor_text, owner_admin_id, image_data, image_mime_type, image_filename, price)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
                             RETURNING id
                         """,
                         (
@@ -2461,6 +2481,7 @@ def admin_types_page():
                             image_data or None,
                             image_mime_type,
                             image_filename,
+                            price,
                         ),
                     )
                     conn.commit()
@@ -2484,7 +2505,7 @@ def admin_types_page():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT id, name, accepting, flavor_text, image_mime_type, image_filename
+                    SELECT id, name, accepting, flavor_text, image_mime_type, image_filename, price
                     FROM reservation_types
                     WHERE owner_admin_id = %s
                     ORDER BY id ASC
@@ -2628,6 +2649,34 @@ def admin_types_update_flavor(type_id):
                 abort(403)
             conn.commit()
     return redirect(url_for("admin_types_page", type_success="説明を更新しました。"))
+
+
+@app.route("/admin/types/<int:type_id>/price", methods=["POST"])
+def admin_types_update_price(type_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    price_raw = (request.form.get("price") or "0").strip()
+    if not price_raw.isdigit():
+        return redirect(url_for("admin_types_page", type_error="価格には正の整数を入力してください。"))
+    price = int(price_raw)
+    if price < 0:
+        return redirect(url_for("admin_types_page", type_error="価格には0以上の値を入力してください。"))
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE reservation_types SET price = %s WHERE id = %s AND owner_admin_id = %s",
+                (price, type_id, current_admin_account_id),
+            )
+            if cur.rowcount == 0:
+                abort(403)
+            conn.commit()
+    return redirect(url_for("admin_types_page", type_success="価格を更新しました。"))
 
 
 @app.route("/admin/history")
