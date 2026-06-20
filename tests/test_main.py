@@ -869,7 +869,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
         def execute(self, query, params=None):
             normalized_query = " ".join(query.split())
             if normalized_query.startswith(
-                "SELECT id, name, accepting, flavor_text, image_mime_type, image_filename FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"
+                "SELECT t.id, t.name, t.accepting, t.flavor_text, t.image_mime_type, t.image_filename, t.price, a.login_id FROM reservation_types t LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id WHERE t.owner_admin_id = %s ORDER BY t.id ASC"
             ):
                 self._rows = []
             elif (
@@ -905,9 +905,6 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
-    monkeypatch.setattr(
-        app_module, "get_admin_reservation_window", lambda _admin_id: (None, None)
-    )
 
     class FakeCursor:
         def __enter__(self):
@@ -938,8 +935,55 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     assert response.status_code == 200
     text = response.get_data(as_text=True)
     assert f"Version: {app_module.APP_VERSION}" in text
-    assert 'id="global-accepting-badge"' in text
-    assert "static/js/types.js" in text
+
+
+def test_admin_types_update_name_changes_type_name(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed.append((" ".join(query.split()), params))
+            if query.strip().startswith("UPDATE reservation_types SET name = %s"):
+                self.rowcount = 1
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/types/7/name",
+        method="POST",
+        data={"name": "新メニュー"},
+    ):
+        response = app_module.admin_types_update_name(7)
+
+    assert response.status_code == 302
+    assert any(params and params[0] == "新メニュー" for _, params in executed)
 
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):

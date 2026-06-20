@@ -117,7 +117,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.138"
+APP_VERSION = "v1.0.139"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -2544,10 +2544,12 @@ def admin_types_page():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT id, name, accepting, flavor_text, image_mime_type, image_filename, price
-                    FROM reservation_types
-                    WHERE owner_admin_id = %s
-                    ORDER BY id ASC
+                    SELECT t.id, t.name, t.accepting, t.flavor_text, t.image_mime_type,
+                           t.image_filename, t.price, a.login_id
+                    FROM reservation_types t
+                    LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id
+                    WHERE t.owner_admin_id = %s
+                    ORDER BY t.id ASC
                 """,
                 (current_admin_account_id,),
             )
@@ -2688,6 +2690,41 @@ def admin_types_update_flavor(type_id):
                 abort(403)
             conn.commit()
     return redirect(url_for("admin_types_page", type_success="説明を更新しました。"))
+
+
+@app.route("/admin/types/<int:type_id>/name", methods=["POST"])
+def admin_types_update_name(type_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    name = normalize_type_name(request.form.get("name"))
+    if not validate_type_name(name):
+        return redirect(
+            url_for(
+                "admin_types_page",
+                type_error=f"種類名は1〜{MAX_TYPE_NAME_LENGTH}文字、英数字/日本語/スペース/記号(-_・)のみ使用できます。",
+            )
+        )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE reservation_types SET name = %s WHERE id = %s AND owner_admin_id = %s",
+                    (name, type_id, current_admin_account_id),
+                )
+                if cur.rowcount == 0:
+                    abort(403)
+                conn.commit()
+    except psycopg2.IntegrityError:
+        return redirect(
+            url_for("admin_types_page", type_error="同じ名前の種類が既に存在します。")
+        )
+    return redirect(url_for("admin_types_page", type_success="種類名を更新しました。"))
 
 
 @app.route("/admin/types/<int:type_id>/price", methods=["POST"])
@@ -3128,9 +3165,11 @@ def process_reservation(event, user_id, user_message):
                         return
                     cur.execute(
                         """
-                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type, price
-                            FROM reservation_types
-                            WHERE name = %s
+                            SELECT t.id, t.name, t.accepting, t.owner_admin_id, t.flavor_text,
+                                   t.image_mime_type, t.price, a.login_id
+                            FROM reservation_types t
+                            LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id
+                            WHERE t.name = %s
                         """,
                         (requested_type_name,),
                     )
@@ -3154,6 +3193,7 @@ def process_reservation(event, user_id, user_message):
                         type_flavor_text,
                         type_image_mime_type,
                         type_price,
+                        type_owner_login_id,
                     ) = type_row
                     type_image_url = build_type_image_url(type_id)
                     if not type_accepting:
@@ -3177,9 +3217,11 @@ def process_reservation(event, user_id, user_message):
                 else:
                     cur.execute(
                         """
-                            SELECT id, name, flavor_text, accepting, image_mime_type, price
-                            FROM reservation_types
-                            ORDER BY id ASC
+                            SELECT t.id, t.name, t.flavor_text, t.accepting, t.image_mime_type,
+                                   t.price, a.login_id
+                            FROM reservation_types t
+                            LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id
+                            ORDER BY t.id ASC
                         """
                     )
                     type_rows = cur.fetchall()
@@ -3192,7 +3234,7 @@ def process_reservation(event, user_id, user_message):
                         return
                     
                     carousel_bubbles = []
-                    for type_id, name, flavor_text, accepting, image_mime_type, price in type_rows[:10]:
+                    for type_id, name, flavor_text, accepting, image_mime_type, price, owner_login_id in type_rows[:10]:
                         image_url = build_type_image_url(type_id) if image_mime_type else None
                         # header box
                         header = {
@@ -3246,6 +3288,16 @@ def process_reservation(event, user_id, user_message):
                             }
                         ]
                         
+                        body_contents.append(
+                            {
+                                "type": "text",
+                                "text": f"設定者: {owner_login_id}" if owner_login_id else "設定者: 不明",
+                                "wrap": True,
+                                "size": "xs",
+                                "color": "#64748b",
+                                "margin": "sm",
+                            }
+                        )
                         body_contents.append(
                             {
                                 "type": "text",
@@ -3481,7 +3533,12 @@ def process_reservation(event, user_id, user_message):
                             owner_admin_id=type_owner_admin_id,
                         )
                         price_text = f" / 価格: {type_price:,}円" if type_price else ""
-                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name}{price_text} / 待ち: {waiting_people_ahead}人"
+                        owner_text = (
+                            f" / 設定者: {type_owner_login_id}"
+                            if type_owner_login_id
+                            else ""
+                        )
+                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name}{owner_text}{price_text} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute(
                             "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",

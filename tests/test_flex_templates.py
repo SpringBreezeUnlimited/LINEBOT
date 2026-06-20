@@ -8,14 +8,14 @@ from flex_templates import (
 
 
 def test_reservation_confirmation_structure():
-    d = reservation_confirmation(123, "相談", 3, 4)
+    d = reservation_confirmation(123, "相談", "manager01", 3, 4)
     assert isinstance(d, dict)
     assert d.get("type") == "flex"
     assert "contents" in d
 
 
 def test_reservation_confirmation_supports_hero_image():
-    d = reservation_confirmation(123, "相談", 3, 4, "https://example.com/type.png")
+    d = reservation_confirmation(123, "相談", "manager01", 3, 4, "https://example.com/type.png")
     assert d["contents"]["hero"]["url"] == "https://example.com/type.png"
 
 

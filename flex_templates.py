@@ -42,6 +42,7 @@ def bubble_from_title_and_text(title: str, text: str, hero_url: str | None = Non
 def reservation_confirmation(
     reservation_no: int,
     type_name: str | None,
+    owner_name: str | None,
     waiting: int,
     estimated_minutes: int,
     image_url: str | None = None,
@@ -50,6 +51,8 @@ def reservation_confirmation(
     lines = [f"番号: {reservation_no}"]
     if type_name:
         lines.append(f"種類: {type_name}")
+    if owner_name:
+        lines.append(f"設定者: {owner_name}")
     lines.append(f"あなたの前: {waiting}人")
     lines.append(f"現在の目安待ち時間: {estimated_minutes}分")
     body_text = "\n".join(lines)
