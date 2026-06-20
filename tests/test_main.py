@@ -278,6 +278,26 @@ def test_handle_message_ignores_specific_url(app_module, monkeypatch):
     assert called == []
 
 
+def test_handle_message_ignores_usage_message(app_module, monkeypatch):
+    called = []
+
+    monkeypatch.setattr(
+        app_module,
+        "process_reservation",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
+
+    event = SimpleNamespace(
+        message=SimpleNamespace(text="使い方"),
+        source=SimpleNamespace(user_id="U-ignore"),
+        reply_token="reply-token",
+    )
+
+    app_module.handle_message(event)
+
+    assert called == []
+
+
 def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
     queries = []
 
