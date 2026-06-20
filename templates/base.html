@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,17 +9,20 @@
     {% block styles %}{% endblock %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
+
 <body class="{% block body_class %}bg-light{% endblock %}" {% block body_attrs %}{% endblock %}>
     {% block navbar %}{% endblock %}
     {% block content %}{% endblock %}
     <footer class="site-footer">
         <div class="container site-footer-inner">
-            <small><a href="https://www.digital.go.jp/policies/servicedesign/designsystem/Illustration_Icons" target="_blank" rel="noopener noreferrer">「イラストレーション・アイコン素材」（デジタル庁）</a>を元に、アイコン素材を独自に編集して提供しています。</small>
+            <small><a href="https://www.digital.go.jp/policies/servicedesign/designsystem/Illustration_Icons"
+                    target="_blank"
+                    rel="noopener noreferrer">「イラストレーション・アイコン素材」（デジタル庁）</a>を元に、アイコン素材を独自に編集して提供しています。</small>
         </div>
     </footer>
     {% if session.get('logged_in') and session.get('admin_login_id') %}
     <div id="user-badge" class="user-badge" title="ログインユーザー">
-        <span class="user-badge-text">{{ session.get('admin_login_id') }}</span>
+        <span class="user-badge-version">{{ session.get('admin_login_id') }}</span>
         {% if app_version is defined %}
         <span class="user-badge-separator" aria-hidden="true">/</span>
         <span class="user-badge-version">Version: {{ app_version }}</span>
@@ -27,4 +31,5 @@
     {% endif %}
     {% block scripts %}{% endblock %}
 </body>
+
 </html>

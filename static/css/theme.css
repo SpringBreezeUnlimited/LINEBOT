@@ -220,7 +220,8 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
     left: 0;
     margin: var(--space-4, 16px);
     padding: var(--space-2, 8px) var(--space-3, 12px);
-    background-color: rgba(30, 41, 59, 0.85); /* 半透明のスレート色 */
+    background-color: rgba(30, 41, 59, 0.85);
+    /* 半透明のスレート色 */
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     color: #f8fafc;
@@ -253,11 +254,6 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
     flex-shrink: 0;
 }
 
-.user-badge-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
 @media (max-width: 760px) {
     .user-badge {
@@ -265,4 +261,3 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
         max-width: calc(100% - 24px);
     }
 }
-
