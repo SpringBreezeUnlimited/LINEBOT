@@ -18,7 +18,6 @@
     </footer>
     {% if session.get('logged_in') and session.get('admin_login_id') %}
     <div id="user-badge" class="user-badge" title="ログインユーザー">
-        <span class="user-badge-icon" aria-hidden="true">👤</span>
         <span class="user-badge-text">{{ session.get('admin_login_id') }}</span>
     </div>
     {% endif %}
