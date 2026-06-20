@@ -231,13 +231,14 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.1);
     z-index: 1040;
-    max-width: 148px;
-    white-space: nowrap;
+    max-width: min(220px, calc(100vw - 24px));
+    white-space: normal;
     overflow: hidden;
-    text-overflow: ellipsis;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2, 8px);
+    text-overflow: clip;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
     transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
@@ -252,6 +253,11 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
     font-size: 0.875rem;
     opacity: 0.9;
     flex-shrink: 0;
+}
+
+.user-badge-text,
+.user-badge-version {
+    line-height: 1.1;
 }
 
 
