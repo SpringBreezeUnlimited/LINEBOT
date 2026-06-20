@@ -94,9 +94,6 @@
                                 <div>
                                     <div class="types-card__label">種類</div>
                                     <div class="types-card__value">{{ t[1] }}</div>
-                                    <div class="types-card__meta text-muted small mt-1">
-                                        設定者: {{ t[7] or '不明' }}
-                                    </div>
                                     <div class="types-card__price-label text-muted small mt-1">
                                         価格: {{ '{:,}'.format(t[6]) if t[6] is not none else '0' }}円
                                     </div>
