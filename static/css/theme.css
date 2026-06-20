@@ -213,3 +213,56 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
     }
 }
 
+/* ログインユーザーバッジ */
+.user-badge {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    margin: var(--space-4, 16px);
+    padding: var(--space-2, 8px) var(--space-3, 12px);
+    background-color: rgba(30, 41, 59, 0.85); /* 半透明のスレート色 */
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #f8fafc;
+    border-radius: var(--radius-md, 8px);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 1040;
+    max-width: 148px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.user-badge:hover {
+    background-color: rgba(30, 41, 59, 0.95);
+    transform: translateY(-1px);
+    text-decoration: none;
+    color: #f8fafc;
+}
+
+.user-badge-icon {
+    font-size: 0.875rem;
+    opacity: 0.9;
+    flex-shrink: 0;
+}
+
+.user-badge-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    .user-badge {
+        margin: var(--space-3, 12px);
+        max-width: calc(100% - 24px);
+    }
+}
+

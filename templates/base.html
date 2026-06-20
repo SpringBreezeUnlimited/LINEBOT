@@ -16,6 +16,12 @@
             <small><a href="https://www.digital.go.jp/policies/servicedesign/designsystem/Illustration_Icons" target="_blank" rel="noopener noreferrer">「イラストレーション・アイコン素材」（デジタル庁）</a>を元に、アイコン素材を独自に編集して提供しています。</small>
         </div>
     </footer>
+    {% if session.get('logged_in') and session.get('admin_login_id') %}
+    <div id="user-badge" class="user-badge" title="ログインユーザー">
+        <span class="user-badge-icon" aria-hidden="true">👤</span>
+        <span class="user-badge-text">{{ session.get('admin_login_id') }}</span>
+    </div>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>
