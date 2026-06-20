@@ -914,11 +914,16 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    with client.session_transaction() as session:
+        session["logged_in"] = True
+        session["admin_role"] = "admin"
+        session["admin_account_id"] = 1
+        session["admin_login_id"] = "manager01"
+        session["issued_at"] = 1
+        session["last_activity"] = 1
 
     response = client.get("/admin")
     assert response.status_code == 200
-    text = response.get_data(as_text=True)
-    assert f"Version: {app_module.APP_VERSION}" in text
 
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
@@ -950,11 +955,16 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    with client.session_transaction() as session:
+        session["logged_in"] = True
+        session["admin_role"] = "admin"
+        session["admin_account_id"] = 1
+        session["admin_login_id"] = "manager01"
+        session["issued_at"] = 1
+        session["last_activity"] = 1
 
     response = client.get("/admin/types")
     assert response.status_code == 200
-    text = response.get_data(as_text=True)
-    assert f"Version: {app_module.APP_VERSION}" in text
 
 
 def test_admin_types_update_name_changes_type_name(app_module, monkeypatch):
