@@ -3089,7 +3089,7 @@ def process_reservation(event, user_id, user_message):
                         return
                     cur.execute(
                         """
-                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type
+                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type, price
                             FROM reservation_types
                             WHERE name = %s
                         """,
@@ -3114,6 +3114,7 @@ def process_reservation(event, user_id, user_message):
                         type_owner_admin_id,
                         type_flavor_text,
                         type_image_mime_type,
+                        type_price,
                     ) = type_row
                     type_image_url = build_type_image_url(type_id)
                     if not type_accepting:
@@ -3137,7 +3138,7 @@ def process_reservation(event, user_id, user_message):
                 else:
                     cur.execute(
                         """
-                            SELECT id, name, flavor_text, accepting, image_mime_type
+                            SELECT id, name, flavor_text, accepting, image_mime_type, price
                             FROM reservation_types
                             ORDER BY id ASC
                         """
@@ -3152,7 +3153,7 @@ def process_reservation(event, user_id, user_message):
                         return
                     
                     carousel_bubbles = []
-                    for type_id, name, flavor_text, accepting, image_mime_type in type_rows[:10]:
+                    for type_id, name, flavor_text, accepting, image_mime_type, price in type_rows[:10]:
                         image_url = build_type_image_url(type_id) if image_mime_type else None
                         # header box
                         header = {
@@ -3217,6 +3218,32 @@ def process_reservation(event, user_id, user_message):
                                 "margin": "lg",
                             }
                         )
+                        if price:
+                            body_contents.append(
+                                {
+                                    "type": "box",
+                                    "layout": "horizontal",
+                                    "margin": "md",
+                                    "contents": [
+                                        {
+                                            "type": "text",
+                                            "text": "価格",
+                                            "size": "sm",
+                                            "color": "#64748b",
+                                            "flex": 1,
+                                        },
+                                        {
+                                            "type": "text",
+                                            "text": f"{price:,}円",
+                                            "size": "sm",
+                                            "color": "#0f172a",
+                                            "weight": "bold",
+                                            "align": "end",
+                                            "flex": 2,
+                                        },
+                                    ],
+                                }
+                            )
                         
                         body = {
                             "type": "box",
@@ -3414,7 +3441,8 @@ def process_reservation(event, user_id, user_message):
                             reservation_id=new_id,
                             owner_admin_id=type_owner_admin_id,
                         )
-                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
+                        price_text = f" / 価格: {type_price:,}円" if type_price else ""
+                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name}{price_text} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute(
                             "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
