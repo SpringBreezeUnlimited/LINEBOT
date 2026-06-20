@@ -3055,7 +3055,7 @@ def admin_finish(res_id):
                       AND r.status = %s
                       AND r.type_id = t.id
                       AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
-                    RETURNING id
+                    RETURNING r.id
                 """,
                 (STATUS_DONE, res_id, STATUS_CALLED, current_admin_account_id),
             )
