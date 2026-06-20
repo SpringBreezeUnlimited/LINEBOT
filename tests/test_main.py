@@ -298,6 +298,64 @@ def test_handle_message_ignores_usage_message(app_module, monkeypatch):
     assert called == []
 
 
+def test_admin_call_push_failure_returns_to_admin_page(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(
+        app_module, "send_push_message", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("push fail"))
+    )
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __init__(self):
+            self.calls = []
+            self._last = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            self.calls.append((" ".join(query.split()), params))
+            if "RETURNING user_id, COALESCE(reservation_no, id)" in query:
+                self._last = ("U-123", 28)
+            elif "SELECT status, COALESCE(reservation_no, id)" in query:
+                self._last = ("waiting", 28)
+            elif "UPDATE reservations SET status = %s, called_at = NULL" in query:
+                self.rowcount = 1
+
+        def fetchone(self):
+            return self._last
+
+    class FakeConnection:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            self.committed = True
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context("/admin/call/28", method="POST"):
+        response = app_module.admin_call(28)
+
+    assert response.status_code == 302
+    assert "call_error=" in response.headers["Location"]
+
+
 def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
     queries = []
 

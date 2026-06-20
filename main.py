@@ -117,7 +117,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.142"
+APP_VERSION = "v1.0.143"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -3017,7 +3017,12 @@ def admin_call(res_id):
                     (STATUS_WAITING, res_id, STATUS_CALLED),
                 )
                 rollback_conn.commit()
-        abort(502)
+        return redirect(
+            url_for(
+                "admin_page",
+                call_error="呼出メッセージの送信に失敗しました。状態は待機中に戻しました。",
+            )
+        )
     return redirect(url_for("admin_page"))
 
 
