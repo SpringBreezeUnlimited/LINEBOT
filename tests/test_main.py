@@ -320,7 +320,7 @@ def test_admin_call_push_failure_returns_to_admin_page(app_module, monkeypatch):
 
         def execute(self, query, params=None):
             self.calls.append((" ".join(query.split()), params))
-            if "RETURNING user_id, COALESCE(reservation_no, id)" in query:
+            if "RETURNING user_id, COALESCE(reservation_no, r.id)" in query:
                 self._last = ("U-123", 28)
             elif "SELECT status, COALESCE(reservation_no, id)" in query:
                 self._last = ("waiting", 28)

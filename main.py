@@ -2544,19 +2544,28 @@ def admin_types_page():
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    SELECT t.id, t.name, t.accepting, t.flavor_text, t.image_mime_type,
-                           t.image_filename, t.price, a.login_id
-                    FROM reservation_types t
-                    LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id
-                    WHERE t.owner_admin_id = %s
-                    ORDER BY t.id ASC
+                    SELECT id, name, accepting, flavor_text, image_mime_type, image_filename, price, owner_admin_id
+                    FROM reservation_types
+                    WHERE owner_admin_id = %s
+                    ORDER BY id ASC
                 """,
                 (current_admin_account_id,),
             )
             types = cur.fetchall()
+            type_owner_login_ids = {}
+            owner_admin_ids = {
+                row[7] for row in types if len(row) > 7 and row[7] is not None
+            }
+            if owner_admin_ids:
+                cur.execute(
+                    "SELECT id, login_id FROM admin_accounts WHERE id = ANY(%s)",
+                    (list(owner_admin_ids),),
+                )
+                type_owner_login_ids = {row[0]: row[1] for row in cur.fetchall()}
     return render_template(
         "types.html",
         types=types,
+        type_owner_login_ids=type_owner_login_ids,
         accepting_new=accepting_new,
         type_error=type_error,
         type_success=type_success,
@@ -2978,7 +2987,7 @@ def admin_call(res_id):
                       AND r.status = %s
                       AND r.type_id = t.id
                       AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
-                    RETURNING user_id, COALESCE(reservation_no, id)
+                    RETURNING user_id, COALESCE(reservation_no, r.id)
                 """,
                 (STATUS_CALLED, res_id, STATUS_WAITING, current_admin_account_id),
             )
@@ -3171,11 +3180,9 @@ def process_reservation(event, user_id, user_message):
                         return
                     cur.execute(
                         """
-                            SELECT t.id, t.name, t.accepting, t.owner_admin_id, t.flavor_text,
-                                   t.image_mime_type, t.price, a.login_id
-                            FROM reservation_types t
-                            LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id
-                            WHERE t.name = %s
+                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type, price
+                            FROM reservation_types
+                            WHERE name = %s
                         """,
                         (requested_type_name,),
                     )
@@ -3191,16 +3198,22 @@ def process_reservation(event, user_id, user_message):
                             body = "予約の種類がまだ登録されていません。管理画面で追加してください。"
                         send_flex_notice(event.reply_token, "種類がありません", body)
                         return
-                    (
-                        type_id,
-                        type_name,
-                        type_accepting,
-                        type_owner_admin_id,
-                        type_flavor_text,
-                        type_image_mime_type,
-                        type_price,
-                        type_owner_login_id,
-                    ) = type_row
+                    type_id = type_row[0]
+                    type_name = type_row[1]
+                    type_accepting = type_row[2]
+                    type_owner_admin_id = type_row[3]
+                    type_flavor_text = type_row[4]
+                    type_image_mime_type = type_row[5]
+                    type_price = type_row[6] if len(type_row) > 6 else 0
+                    type_owner_login_id = None
+                    if type_owner_admin_id is not None:
+                        cur.execute(
+                            "SELECT login_id FROM admin_accounts WHERE id = %s",
+                            (type_owner_admin_id,),
+                        )
+                        owner_row = cur.fetchone()
+                        if owner_row:
+                            type_owner_login_id = owner_row[0]
                     type_image_url = build_type_image_url(type_id)
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
@@ -3223,14 +3236,22 @@ def process_reservation(event, user_id, user_message):
                 else:
                     cur.execute(
                         """
-                            SELECT t.id, t.name, t.flavor_text, t.accepting, t.image_mime_type,
-                                   t.price, a.login_id
-                            FROM reservation_types t
-                            LEFT JOIN admin_accounts a ON a.id = t.owner_admin_id
-                            ORDER BY t.id ASC
+                            SELECT id, name, flavor_text, accepting, image_mime_type, price, owner_admin_id
+                            FROM reservation_types
+                            ORDER BY id ASC
                         """
                     )
                     type_rows = cur.fetchall()
+                    owner_admin_ids = {
+                        row[6] for row in type_rows if len(row) > 6 and row[6] is not None
+                    }
+                    owner_login_ids = {}
+                    if owner_admin_ids:
+                        cur.execute(
+                            "SELECT id, login_id FROM admin_accounts WHERE id = ANY(%s)",
+                            (list(owner_admin_ids),),
+                        )
+                        owner_login_ids = {row[0]: row[1] for row in cur.fetchall()}
                     if not type_rows:
                         send_flex_notice(
                             event.reply_token,
@@ -3238,9 +3259,17 @@ def process_reservation(event, user_id, user_message):
                             "現在、予約可能な種類が登録されていません。",
                         )
                         return
-                    
+
                     carousel_bubbles = []
-                    for type_id, name, flavor_text, accepting, image_mime_type, price, owner_login_id in type_rows[:10]:
+                    for type_row in type_rows[:10]:
+                        type_id = type_row[0]
+                        name = type_row[1]
+                        flavor_text = type_row[2]
+                        accepting = type_row[3]
+                        image_mime_type = type_row[4]
+                        price = type_row[5] if len(type_row) > 5 else 0
+                        owner_admin_id = type_row[6] if len(type_row) > 6 else None
+                        owner_login_id = owner_login_ids.get(owner_admin_id)
                         image_url = build_type_image_url(type_id) if image_mime_type else None
                         # header box
                         header = {
@@ -3580,10 +3609,11 @@ def process_reservation(event, user_id, user_message):
                 cancelled = cur.fetchone()
                 if cancelled:
                     conn.commit()
+                    cancelled_no = cancelled[1] if len(cancelled) > 1 else cancelled[0]
                     send_flex_notice(
                         event.reply_token,
                         "キャンセル完了",
-                        f"受付番号 {cancelled[1] or cancelled[0]} をキャンセルしました。",
+                        f"受付番号 {cancelled_no} をキャンセルしました。",
                     )
                 else:
                     send_flex_notice(
@@ -3611,7 +3641,11 @@ def process_reservation(event, user_id, user_message):
                         "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。",
                     )
                 else:
-                    res_id, display_no, status, type_name, owner_admin_id = existing
+                    res_id = existing[0]
+                    display_no = existing[1]
+                    status = existing[2]
+                    type_name = existing[3] if len(existing) > 3 else None
+                    owner_admin_id = existing[4] if len(existing) > 4 else None
                     if status == STATUS_WAITING:
                         if owner_admin_id is not None:
                             waiting_people_ahead = count_waiting_people_ahead_by_owner(
