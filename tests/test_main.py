@@ -1009,7 +1009,7 @@ def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch
         def execute(self, query, params=None):
             if "SELECT image_data, image_mime_type, image_filename FROM reservation_types" in query:
                 self._last = (b"old-bytes", "image/png", "old.png")
-            elif "UPDATE reservation_types SET image_data = %s" in query:
+            elif "UPDATE reservation_types" in query and "SET image_data = %s" in query:
                 self.rowcount = 1
             else:
                 raise AssertionError(f"Unexpected query: {query}")
@@ -1048,6 +1048,65 @@ def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch
 
     assert response.status_code == 302
     assert saved_files == ["new.png"]
+
+
+def test_save_type_image_upload_resizes_and_compresses_jpeg(app_module):
+    from PIL import Image
+
+    image = Image.new("RGB", (4000, 3000), color="red")
+    buf = BytesIO()
+    image.save(buf, format="JPEG", quality=95)
+    buf.seek(0)
+    buf.filename = "large.jpg"
+    buf.mimetype = "image/jpeg"
+
+    data, mimetype, filename = app_module.save_type_image_upload(buf)
+
+    assert mimetype == "image/jpeg"
+    assert filename.endswith(".jpg")
+    assert len(data) < len(buf.getvalue())
+    with Image.open(BytesIO(data)) as saved:
+        assert saved.width <= 1920
+        assert saved.height <= 1080
+
+
+def test_save_type_image_upload_normalizes_webp_to_flex_safe_extension(app_module):
+    from PIL import Image
+
+    image = Image.new("RGB", (1280, 720), color="blue")
+    buf = BytesIO()
+    image.save(buf, format="WEBP")
+    buf.seek(0)
+    buf.filename = "sample.webp"
+    buf.mimetype = "image/webp"
+
+    data, mimetype, filename = app_module.save_type_image_upload(buf)
+
+    assert mimetype == "image/jpeg"
+    assert filename.endswith(".jpg")
+    with Image.open(BytesIO(data)) as saved:
+        assert saved.width == 1280
+        assert saved.height == 720
+
+
+def test_save_type_image_upload_preserves_png_transparency(app_module):
+    from PIL import Image
+
+    image = Image.new("RGBA", (2000, 1000), color=(0, 128, 255, 64))
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+    buf.filename = "transparent.png"
+    buf.mimetype = "image/png"
+
+    data, mimetype, filename = app_module.save_type_image_upload(buf)
+
+    assert mimetype == "image/png"
+    assert filename.endswith(".png")
+    with Image.open(BytesIO(data)) as saved:
+        assert saved.width <= 1920
+        assert saved.height <= 1080
+        assert saved.mode in {"RGBA", "LA", "P"}
 
 
 def test_static_assets_do_not_set_cookie(app_module, client):

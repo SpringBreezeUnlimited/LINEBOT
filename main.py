@@ -15,6 +15,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
 import psycopg2  # type: ignore
+from PIL import Image, ImageOps, UnidentifiedImageError  # type: ignore
 from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context, send_file  # type: ignore
 from flask.sessions import SecureCookieSessionInterface  # type: ignore
 from linebot.v3 import WebhookHandler  # type: ignore
@@ -116,10 +117,13 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.137"
+APP_VERSION = "v1.0.138"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+FLEX_SAFE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+MAX_TYPE_IMAGE_SIZE = (1920, 1080)
+JPEG_QUALITY = 85
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 def parse_allowed_hosts(raw_value: str) -> set[str]:
@@ -636,15 +640,50 @@ def save_type_image_upload(image_file) -> tuple[bytes, str, str]:
     suffix = Path(secure_filename(filename)).suffix.lower()
     if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
         raise ValueError("画像は jpg, jpeg, png, gif, webp のみアップロードできます。")
-    data = image_file.read()
-    if not data:
+    raw_data = image_file.read()
+    if not raw_data:
         return b"", "", ""
-    mimetype = (
-        (getattr(image_file, "mimetype", "") or "").strip()
-        or mimetypes.guess_type(filename)[0]
-        or "application/octet-stream"
-    )
-    return data, mimetype, filename
+
+    try:
+        with Image.open(io.BytesIO(raw_data)) as source:
+            source = ImageOps.exif_transpose(source)
+            source.load()
+            has_alpha = "A" in source.getbands()
+            is_animated = bool(getattr(source, "is_animated", False))
+            if is_animated:
+                source.seek(0)
+                frame = source.convert("RGBA" if has_alpha else "RGB")
+            else:
+                frame = source.convert("RGBA" if has_alpha else "RGB")
+
+            needs_resize = frame.width > MAX_TYPE_IMAGE_SIZE[0] or frame.height > MAX_TYPE_IMAGE_SIZE[1]
+            if needs_resize:
+                frame.thumbnail(MAX_TYPE_IMAGE_SIZE, Image.Resampling.LANCZOS)
+
+            use_png = has_alpha or suffix == ".png"
+            if is_animated:
+                use_png = False
+
+            buffer = io.BytesIO()
+            if use_png:
+                output_ext = ".png"
+                output_mimetype = "image/png"
+                frame.save(buffer, format="PNG", optimize=True)
+            else:
+                output_ext = ".jpg"
+                output_mimetype = "image/jpeg"
+                if frame.mode != "RGB":
+                    frame = frame.convert("RGB")
+                frame.save(buffer, format="JPEG", quality=JPEG_QUALITY, optimize=True, progressive=True)
+            if output_ext not in FLEX_SAFE_IMAGE_EXTENSIONS:
+                raise ValueError("Flex Message で利用できない画像形式です。")
+            data = buffer.getvalue()
+            if not data:
+                return b"", "", ""
+            base_name = Path(secure_filename(filename)).stem or "image"
+            return data, output_mimetype, f"{base_name}{output_ext}"
+    except UnidentifiedImageError as error:
+        raise ValueError("画像ファイルとして認識できませんでした。") from error
 
 
 def format_dt(value):
