@@ -128,6 +128,7 @@
                 <div class="admin-card-list" id="active-rows">
                     {% for row in rows %}
                     <article class="admin-reservation-card" data-id="{{ row.id }}"
+                        data-display-no="{{ row.display_no }}"
                         data-created-at="{{ row.created_at if row.created_at else '' }}"
                         data-type="{{ row.type or '' }}"
                         data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
@@ -135,7 +136,7 @@
                         <div class="admin-reservation-card__header">
                             <div>
                                 <div class="admin-reservation-card__label">番号</div>
-                                <div class="admin-reservation-card__value">{{ row.id }}</div>
+                                <div class="admin-reservation-card__value">{{ row.display_no }}</div>
                             </div>
                             <div class="admin-reservation-card__status">
                                 {% if row.status == 'waiting' %}

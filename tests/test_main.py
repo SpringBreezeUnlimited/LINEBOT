@@ -1,10 +1,12 @@
 import csv
+from io import BytesIO
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
 from werkzeug.exceptions import BadRequest, Forbidden
+from linebot.v3.messaging.models.flex_image import FlexImage
 
 
 def flex_message_text(message):
@@ -58,6 +60,56 @@ def test_normalize_db_url_invalid_raises(app_module):
 def test_parse_allowed_hosts_supports_multiple_separators(app_module):
     parsed = app_module.parse_allowed_hosts("example.com, api.example.com  admin.example.com")
     assert parsed == {"example.com", "api.example.com", "admin.example.com"}
+
+
+def test_build_type_image_url_prefers_public_base_url(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://example.com")
+    assert app_module.build_type_image_url(3) == "https://example.com/reservation-type-images/3"
+
+
+def test_build_type_image_url_forces_https_from_request(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "")
+    with app_module.app.test_request_context("/", base_url="http://api.example.com"):
+        assert app_module.build_type_image_url(3) == "https://api.example.com/reservation-type-images/3"
+
+
+def test_build_flex_component_handles_image(app_module):
+    image = app_module.build_flex_component(
+        {
+            "type": "image",
+            "url": "https://example.com/type.png",
+            "size": "full",
+            "aspectRatio": "16:9",
+            "aspectMode": "cover",
+        }
+    )
+    assert isinstance(image, FlexImage)
+    assert image.url == "https://example.com/type.png"
+
+
+def test_sanitize_flex_message_removes_invalid_hero_urls(app_module):
+    message = {
+        "type": "flex",
+        "altText": "予約の種類一覧",
+        "contents": {
+            "type": "carousel",
+            "contents": [
+                {
+                    "type": "bubble",
+                    "hero": {"type": "image", "url": "https://example.com/ok.png"},
+                },
+                {
+                    "type": "bubble",
+                    "hero": {"type": "image", "url": "/static/bad.png"},
+                },
+            ],
+        },
+    }
+
+    sanitized = app_module.sanitize_flex_message(message)
+    bubbles = sanitized["contents"]["contents"]
+    assert bubbles[0]["hero"]["url"] == "https://example.com/ok.png"
+    assert "hero" not in bubbles[1]
 
 
 def test_enforce_host_allowlist_accepts_multiple_hosts(app_module, monkeypatch):
@@ -142,8 +194,8 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
 
         def execute(self, query, params=None):
             queries.append((query, params))
-            if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7, "説明")
+            if "FROM reservation_types" in query and "WHERE name = %s" in query:
+                self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
@@ -189,7 +241,9 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     monkeypatch.setattr(
         app_module,
         "send_flex_notice",
-        lambda _reply_token, _title, body: sent_texts.append(body),
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
     )
 
     event = SimpleNamespace(reply_token="reply-token")
@@ -260,6 +314,21 @@ def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
     normalized_queries = [" ".join(query.split()) for query, _ in queries]
     assert any(
         "ADD CONSTRAINT fk_reservations_type_id" in query
+        for query in normalized_queries
+    )
+    assert any(
+        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_data BYTEA"
+        in query
+        for query in normalized_queries
+    )
+    assert any(
+        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_mime_type TEXT NOT NULL DEFAULT ''"
+        in query
+        for query in normalized_queries
+    )
+    assert any(
+        "ALTER TABLE reservation_types ADD COLUMN IF NOT EXISTS image_filename TEXT NOT NULL DEFAULT ''"
+        in query
         for query in normalized_queries
     )
     assert any("ON DELETE RESTRICT" in query for query in normalized_queries)
@@ -568,6 +637,27 @@ def test_validate_csrf_failure(app_module):
             app_module.validate_csrf()
 
 
+def test_csrf_protect_redirects_to_login_when_token_is_invalid(
+    app_module, monkeypatch
+):
+    with app_module.app.test_request_context(
+        "/admin/toggle-accepting", method="POST", data={"_csrf_token": "wrong"}
+    ):
+        app_module.session["logged_in"] = True
+        app_module.session["admin_role"] = app_module.ROLE_ADMIN
+        app_module.session["admin_account_id"] = 1
+        app_module.session["last_activity"] = 1000.0
+        app_module.session["_csrf_token"] = "expected-token"
+        monkeypatch.setattr(app_module.time, "time", lambda: 1005.0)
+
+        response = app_module.csrf_protect()
+
+        assert response.status_code == 302
+        assert "/login" in response.headers["Location"]
+        assert "next=/admin/toggle-accepting" in response.headers["Location"]
+        assert "notice=session_expired" in response.headers["Location"]
+
+
 def test_admin_post_without_active_session_redirects_to_login(
     client, app_module, monkeypatch
 ):
@@ -592,8 +682,10 @@ def test_admin_post_with_active_session_still_rejects_invalid_csrf(
         app_module.session["_csrf_token"] = "expected-token"
         monkeypatch.setattr(app_module.time, "time", lambda: 1005.0)
 
-        with pytest.raises(Forbidden):
-            app_module.csrf_protect()
+        response = app_module.csrf_protect()
+
+        assert response.status_code == 302
+        assert response.headers["Location"].startswith("/login")
 
 
 def test_is_authenticated_as_success(app_module):
@@ -668,6 +760,12 @@ def test_is_webhook_rate_limited_on_exception_returns_true(app_module, monkeypat
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    assert 'id="login-form"' in text
+    assert 'novalidate' in text
+    assert 'id="login-submit"' in text
+    assert 'autocomplete="username"' in text
+    assert 'autocomplete="current-password"' in text
 
 
 def test_login_post_admin_success_redirect(client, csrf_token, app_module, monkeypatch):
@@ -685,10 +783,15 @@ def test_login_post_admin_success_redirect(client, csrf_token, app_module, monke
 
     response = client.post(
         "/login",
-        data={"login_id": "admin", "password": "admin-pass", "_csrf_token": csrf_token},
+        data={
+            "login_id": "admin",
+            "password": "admin-pass",
+            "_csrf_token": csrf_token,
+            "next": "/admin/types",
+        },
     )
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/admin")
+    assert response.headers["Location"].endswith("/admin/types")
 
 
 def test_login_post_audit_success_redirect(client, csrf_token, app_module, monkeypatch):
@@ -706,7 +809,12 @@ def test_login_post_audit_success_redirect(client, csrf_token, app_module, monke
 
     response = client.post(
         "/login",
-        data={"login_id": "audit", "password": "audit-pass", "_csrf_token": csrf_token},
+        data={
+            "login_id": "audit",
+            "password": "audit-pass",
+            "_csrf_token": csrf_token,
+            "next": "/admin/login-logs",
+        },
     )
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/login-logs")
@@ -761,7 +869,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
         def execute(self, query, params=None):
             normalized_query = " ".join(query.split())
             if normalized_query.startswith(
-                "SELECT id, name FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"
+                "SELECT id, name, accepting, flavor_text, image_mime_type, image_filename FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC"
             ):
                 self._rows = []
             elif (
@@ -848,8 +956,12 @@ def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypat
             return False
 
         def execute(self, query, params=None):
+            self._last = ("img/reservation_types/old.png",)
             if "DELETE FROM reservation_types" in query:
                 raise app_module.psycopg2.IntegrityError("fk violation")
+
+        def fetchone(self):
+            return getattr(self, "_last", None)
 
         @property
         def rowcount(self):
@@ -878,6 +990,64 @@ def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypat
 
     assert response.status_code == 302
     assert "type_error=" in response.headers["Location"]
+
+
+def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    deleted_paths = []
+    saved_files = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "SELECT image_data, image_mime_type, image_filename FROM reservation_types" in query:
+                self._last = (b"old-bytes", "image/png", "old.png")
+            elif "UPDATE reservation_types SET image_data = %s" in query:
+                self.rowcount = 1
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return getattr(self, "_last", None)
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(
+        app_module,
+        "save_type_image_upload",
+        lambda image_file: saved_files.append(image_file.filename)
+        or (b"new-bytes", "image/png", "new.png"),
+    )
+
+    with app_module.app.test_request_context(
+        "/admin/types/7/image",
+        method="POST",
+        data={"image": (BytesIO(b"fake-image"), "new.png")},
+        content_type="multipart/form-data",
+    ):
+        response = app_module.admin_types_update_image(7)
+
+    assert response.status_code == 302
+    assert saved_files == ["new.png"]
 
 
 def test_static_assets_do_not_set_cookie(app_module, client):
@@ -1644,8 +1814,8 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
 
         def execute(self, query, params=None):
             queries.append((query, params))
-            if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7, "説明")
+            if "FROM reservation_types" in query and "WHERE name = %s" in query:
+                self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
@@ -1692,7 +1862,9 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
     monkeypatch.setattr(
         app_module,
         "send_flex_notice",
-        lambda _reply_token, _title, body: sent_texts.append(body),
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
     )
 
     event = SimpleNamespace(reply_token="reply-token")
@@ -1724,12 +1896,16 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
             return False
 
         def execute(self, query, params=None):
-            if "FROM reservation_types WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7, "説明")
+            if "FROM reservation_types" in query and "WHERE name = %s" in query:
+                self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
                 self._last = (570, 1020)
+            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+                self._last = (10,)
+            elif "FROM reservations r" in query and "JOIN reservation_types t ON r.type_id = t.id" in query:
+                self._last = (2,)
             else:
                 raise AssertionError(f"Unexpected query: {query}")
 
@@ -1756,7 +1932,9 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
     monkeypatch.setattr(
         app_module,
         "send_flex_notice",
-        lambda _reply_token, _title, body: sent_texts.append(body),
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
     )
 
     event = SimpleNamespace(reply_token="reply-token")
@@ -1815,7 +1993,9 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
     monkeypatch.setattr(
         app_module,
         "send_flex_notice",
-        lambda _reply_token, _title, body: sent_texts.append(body),
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
     )
 
     event = SimpleNamespace(reply_token="reply-token")
@@ -1871,7 +2051,9 @@ def test_process_reservation_wait_time_reply_without_active_reservation(
     monkeypatch.setattr(
         app_module,
         "send_flex_notice",
-        lambda _reply_token, _title, body: sent_texts.append(body),
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
     )
 
     event = SimpleNamespace(reply_token="reply-token")
@@ -1926,7 +2108,9 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     monkeypatch.setattr(
         app_module,
         "send_flex_notice",
-        lambda _reply_token, _title, body: sent_texts.append(body),
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
     )
 
     event = SimpleNamespace(reply_token="reply-token")
@@ -2189,10 +2373,16 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
             queries.append((query, params))
 
         def fetchall(self):
-            if "SELECT name, flavor_text, accepting FROM reservation_types" in queries[-1][0]:
+            if "FROM reservation_types" in queries[-1][0] and "image_mime_type" in queries[-1][0]:
                 return [
-                    ("相談", "個別相談を受け付けます。", True),
-                    ("体験", "体験ブースへの案内です。", False)
+                    (
+                        1,
+                        "相談",
+                        "個別相談を受け付けます。",
+                        True,
+                        "image/png",
+                    ),
+                    (2, "体験", "体験ブースへの案内です。", False, ""),
                 ]
             return []
 
@@ -2238,6 +2428,7 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     # First bubble (相談 - Accepting)
     bubble_1 = bubbles[0]
     assert bubble_1["header"]["contents"][0]["text"] == "相談"
+    assert bubble_1["hero"]["url"].endswith("consultation.png")
     assert bubble_1["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付中"
     assert bubble_1["body"]["contents"][1]["text"] == "個別相談を受け付けます。"
     assert bubble_1["footer"]["contents"][0]["type"] == "button"

@@ -1,4 +1,5 @@
 import csv
+import mimetypes
 import json
 import io
 import math
@@ -8,12 +9,13 @@ import secrets
 import time
 import uuid
 from datetime import timedelta, datetime, timezone
+from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
 import psycopg2  # type: ignore
-from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context  # type: ignore
+from flask import Flask, request, abort, render_template, redirect, url_for, session, jsonify, Response, g, has_request_context, stream_with_context, send_file  # type: ignore
 from flask.sessions import SecureCookieSessionInterface  # type: ignore
 from linebot.v3 import WebhookHandler  # type: ignore
 from linebot.v3.exceptions import InvalidSignatureError  # type: ignore
@@ -21,12 +23,16 @@ from linebot.v3.messaging import ApiClient, Configuration, MessagingApi, PushMes
 from linebot.v3.messaging.models.flex_box import FlexBox  # type: ignore
 from linebot.v3.messaging.models.flex_bubble import FlexBubble  # type: ignore
 from linebot.v3.messaging.models.flex_carousel import FlexCarousel  # type: ignore
+from linebot.v3.messaging.models.flex_image import FlexImage  # type: ignore
 from linebot.v3.messaging.models.flex_message import FlexMessage  # type: ignore
 from linebot.v3.messaging.models.flex_button import FlexButton  # type: ignore
 from linebot.v3.messaging.models.flex_text import FlexText  # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
+from linebot.v3.messaging.exceptions import ApiException  # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
+from werkzeug.utils import secure_filename  # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
+from werkzeug.exceptions import HTTPException  # type: ignore
 from flex_templates import (
     reservation_confirmation,
     call_notification,
@@ -110,8 +116,10 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.128"
+APP_VERSION = "v1.0.137"
 APP_RELEASED_AT = "2026-06-06 00:00 JST"
+PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
 def parse_allowed_hosts(raw_value: str) -> set[str]:
@@ -375,6 +383,28 @@ def build_flex_component(component):
         )
     if component_type == "button":
         return FlexButton.from_dict(component)
+    if component_type == "image":
+        url = (component.get("url") or "").strip()
+        if not url:
+            return None
+        return FlexImage(
+            url=url,
+            flex=component.get("flex"),
+            margin=component.get("margin"),
+            position=component.get("position"),
+            offsetTop=component.get("offsetTop"),
+            offsetBottom=component.get("offsetBottom"),
+            offsetStart=component.get("offsetStart"),
+            offsetEnd=component.get("offsetEnd"),
+            align=component.get("align"),
+            gravity=component.get("gravity"),
+            size=component.get("size") or "md",
+            aspectRatio=component.get("aspectRatio"),
+            aspectMode=component.get("aspectMode"),
+            backgroundColor=component.get("backgroundColor"),
+            action=component.get("action"),
+            animated=component.get("animated", False),
+        )
     return component
 
 
@@ -447,17 +477,174 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
 
 def send_reply_message(reply_token: str, message: str | dict):
     try:
+        if isinstance(message, dict):
+            message = sanitize_flex_message(message)
         payload = ReplyMessageRequest(
             reply_token=reply_token, messages=[build_line_message(message)]
         )
         with ApiClient(MESSAGING_CONFIGURATION) as api_client:
             MessagingApi(api_client).reply_message(payload)
+    except ApiException as error:
+        status = extract_http_status(error)
+        if status == 400 and isinstance(message, dict):
+            fallback_message = strip_flex_hero(message)
+            if fallback_message is not None:
+                try:
+                    payload = ReplyMessageRequest(
+                        reply_token=reply_token,
+                        messages=[build_line_message(fallback_message)],
+                    )
+                    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
+                        MessagingApi(api_client).reply_message(payload)
+                    return
+                except Exception:
+                    app.logger.exception(
+                        "Fallback reply without hero also failed reply_token=%s",
+                        reply_token,
+                    )
+        app.logger.exception("Failed to send reply message reply_token=%s", reply_token)
     except Exception:
         app.logger.exception("Failed to send reply message reply_token=%s", reply_token)
 
 
-def send_flex_notice(reply_token: str, title: str, body: str):
-    send_reply_message(reply_token, bubble_from_title_and_text(title, body))
+def send_flex_notice(reply_token: str, title: str, body: str, hero_url: str | None = None):
+    send_reply_message(
+        reply_token, bubble_from_title_and_text(title, body, hero_url=hero_url)
+    )
+
+
+def build_type_image_url(type_id: int | None) -> str | None:
+    if not type_id:
+        return None
+    path = f"/reservation-type-images/{type_id}"
+    if has_request_context():
+        path = url_for("reservation_type_image", type_id=type_id)
+    if PUBLIC_BASE_URL:
+        return f"{PUBLIC_BASE_URL}{path}"
+    if has_request_context():
+        base_url = (request.url_root or "").rstrip("/")
+        if base_url.startswith("http://"):
+            base_url = "https://" + base_url[len("http://") :]
+        if base_url:
+            return f"{base_url}{path}"
+    return None
+
+
+@app.route("/reservation-type-images/<int:type_id>")
+def reservation_type_image(type_id):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT image_data, image_mime_type, image_path
+                    FROM reservation_types
+                    WHERE id = %s
+                """,
+                (type_id,),
+            )
+            row = cur.fetchone()
+    if not row:
+        abort(404)
+    image_data, image_mime_type, image_path = row
+    if image_data:
+        return send_file(
+            io.BytesIO(image_data),
+            mimetype=image_mime_type or "application/octet-stream",
+        )
+    if image_path:
+        legacy_path = Path(app.root_path) / "static" / image_path.lstrip("/")
+        if legacy_path.is_file():
+            mimetype, _ = mimetypes.guess_type(legacy_path.name)
+            return send_file(
+                legacy_path, mimetype=mimetype or "application/octet-stream"
+            )
+    abort(404)
+
+
+def strip_flex_hero(message: dict) -> dict | None:
+    if not isinstance(message, dict):
+        return None
+    if message.get("type") != "flex":
+        return None
+    contents = message.get("contents")
+    if not isinstance(contents, dict):
+        return None
+    updated = dict(message)
+    updated_contents = dict(contents)
+    if updated_contents.get("type") == "bubble":
+        bubble = dict(updated_contents)
+        bubble.pop("hero", None)
+        updated["contents"] = bubble
+        return updated
+    if updated_contents.get("type") == "carousel":
+        bubbles = []
+        for bubble in updated_contents.get("contents") or []:
+            if isinstance(bubble, dict):
+                clone = dict(bubble)
+                clone.pop("hero", None)
+                bubbles.append(clone)
+            else:
+                bubbles.append(bubble)
+        updated_contents["contents"] = bubbles
+        updated["contents"] = updated_contents
+        return updated
+    return None
+
+
+def sanitize_flex_message(message: dict) -> dict:
+    sanitized = dict(message)
+    contents = sanitized.get("contents")
+    if not isinstance(contents, dict):
+        return sanitized
+
+    contents_type = contents.get("type")
+    if contents_type == "bubble":
+        bubble = dict(contents)
+        hero = bubble.get("hero")
+        if isinstance(hero, dict):
+            hero_url = (hero.get("url") or "").strip()
+            if not hero_url.startswith("https://"):
+                bubble.pop("hero", None)
+        sanitized["contents"] = bubble
+        return sanitized
+
+    if contents_type == "carousel":
+        carousel = dict(contents)
+        cleaned_bubbles = []
+        for item in carousel.get("contents") or []:
+            if not isinstance(item, dict):
+                cleaned_bubbles.append(item)
+                continue
+            clone = dict(item)
+            hero = clone.get("hero")
+            if isinstance(hero, dict):
+                hero_url = (hero.get("url") or "").strip()
+                if not hero_url.startswith("https://"):
+                    clone.pop("hero", None)
+            cleaned_bubbles.append(clone)
+        carousel["contents"] = cleaned_bubbles
+        sanitized["contents"] = carousel
+        return sanitized
+
+    return sanitized
+
+
+def save_type_image_upload(image_file) -> tuple[bytes, str, str]:
+    filename = (getattr(image_file, "filename", "") or "").strip()
+    if not filename:
+        return b"", "", ""
+    suffix = Path(secure_filename(filename)).suffix.lower()
+    if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
+        raise ValueError("画像は jpg, jpeg, png, gif, webp のみアップロードできます。")
+    data = image_file.read()
+    if not data:
+        return b"", "", ""
+    mimetype = (
+        (getattr(image_file, "mimetype", "") or "").strip()
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+    return data, mimetype, filename
 
 
 def format_dt(value):
@@ -510,11 +697,11 @@ def should_run_call_batch(now=None) -> bool:
     return current.tm_min % 5 == 0
 
 
-def build_call_message(reservation_id: int, called_at=None) -> dict:
+def build_call_message(reservation_no: int, called_at=None) -> dict:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
     timeout_label = timeout_at.strftime("%H:%M")
-    return call_notification(reservation_id, timeout_label, CALL_TIMEOUT_MINUTES)
+    return call_notification(reservation_no, timeout_label, CALL_TIMEOUT_MINUTES)
 
 
 def expire_called_reservations() -> int:
@@ -530,15 +717,15 @@ def expire_called_reservations() -> int:
                         WHERE status = %s
                           AND called_at IS NOT NULL
                           AND called_at <= (CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute'))
-                        RETURNING id, user_id
+                        RETURNING id, user_id, COALESCE(reservation_no, id)
                     """,
                     (STATUS_CANCELLED, STATUS_CALLED, CALL_TIMEOUT_MINUTES),
                 )
                 timed_out_rows = cur.fetchall()
                 conn.commit()
-        for reservation_id, user_id in timed_out_rows:
+        for reservation_id, user_id, reservation_no in timed_out_rows:
             try:
-                flex = auto_cancel_notification(reservation_id)
+                flex = auto_cancel_notification(reservation_no or reservation_id)
                 send_push_message(user_id, flex)
             except Exception:
                 app.logger.exception(
@@ -585,7 +772,7 @@ def process_queued_calls(now=None):
                 cur.execute(
                     """
                         WITH selected_rows AS (
-                            SELECT r.id, r.user_id
+                            SELECT r.id, r.user_id, COALESCE(r.reservation_no, r.id)
                             FROM reservations r
                             JOIN reservation_types t ON r.type_id = t.id
                             WHERE r.status = %s
@@ -599,7 +786,7 @@ def process_queued_calls(now=None):
                             SELECT id FROM selected_rows
                         )
                           AND status = %s
-                        RETURNING id, user_id
+                        RETURNING id, user_id, COALESCE(reservation_no, id)
                     """,
                     (STATUS_WAITING, auto_call_count, STATUS_CALLED, STATUS_WAITING),
                 )
@@ -608,13 +795,13 @@ def process_queued_calls(now=None):
 
     sent_ids = []
     failed_ids = []
-    for res_id, user_id in auto_rows:
+    for res_id, user_id, reservation_no in auto_rows:
         try:
             # Build Flex call notification; alt text will be used as fallback when needed
             timeout_at = (
                 datetime.now(JST) + timedelta(minutes=CALL_TIMEOUT_MINUTES)
             ).strftime("%H:%M")
-            flex = call_notification(res_id, timeout_at, CALL_TIMEOUT_MINUTES)
+            flex = call_notification(reservation_no or res_id, timeout_at, CALL_TIMEOUT_MINUTES)
             send_push_message(user_id, flex)
             sent_ids.append(res_id)
         except Exception:
@@ -703,7 +890,7 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
                             SELECT COUNT(*)
                             FROM reservations r
                             JOIN reservation_types t ON r.type_id = t.id
-                            WHERE r.status = %s AND t.owner_admin_id = %s
+                            WHERE r.status = %s AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                         """,
                         (STATUS_WAITING, owner_admin_id),
                     )
@@ -782,6 +969,14 @@ def ensure_reservations_table():
             """)
             cur.execute("""
                 ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS owner_admin_id INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS reservation_no INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS user_id TEXT
             """)
             cur.execute("""
@@ -821,6 +1016,14 @@ def ensure_reservations_table():
                 ALTER COLUMN status SET DEFAULT 'waiting'
             """)
             cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_owner_admin_id_id
+                ON reservations (owner_admin_id, id DESC)
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reservations_owner_admin_id_reservation_no
+                ON reservations (owner_admin_id, reservation_no DESC)
+            """)
+            cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_reservations_status_id
                 ON reservations (status, id)
             """)
@@ -841,6 +1044,11 @@ def ensure_reservations_table():
                     ON reservations (user_id)
                     WHERE status IN ('waiting', 'called')
                 """)
+            cur.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_reservations_owner_reservation_no
+                ON reservations (owner_admin_id, reservation_no)
+                WHERE owner_admin_id IS NOT NULL AND reservation_no IS NOT NULL
+            """)
             conn.commit()
 
 
@@ -879,6 +1087,8 @@ def ensure_admin_login_logs_table():
                     id SERIAL PRIMARY KEY,
                     login_result TEXT NOT NULL DEFAULT 'success',
                     admin_role TEXT NOT NULL,
+                    admin_account_id INTEGER REFERENCES admin_accounts(id) ON DELETE SET NULL,
+                    admin_login_id TEXT,
                     ip_address TEXT,
                     user_agent TEXT,
                     logged_in_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -887,6 +1097,33 @@ def ensure_admin_login_logs_table():
             cur.execute("""
                 ALTER TABLE admin_login_logs
                 ADD COLUMN IF NOT EXISTS login_result TEXT NOT NULL DEFAULT 'success'
+            """)
+            cur.execute("""
+                ALTER TABLE admin_login_logs
+                ADD COLUMN IF NOT EXISTS admin_account_id INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE admin_login_logs
+                ADD COLUMN IF NOT EXISTS admin_login_id TEXT
+            """)
+            cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM pg_constraint
+                        WHERE conname = 'admin_login_logs_admin_account_id_fkey'
+                    ) THEN
+                        ALTER TABLE admin_login_logs
+                        ADD CONSTRAINT admin_login_logs_admin_account_id_fkey
+                        FOREIGN KEY (admin_account_id) REFERENCES admin_accounts(id) ON DELETE SET NULL;
+                    END IF;
+                END
+                $$;
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_admin_login_logs_admin_account_id
+                ON admin_login_logs (admin_account_id)
             """)
             cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_admin_login_logs_logged_in_at
@@ -905,9 +1142,14 @@ def ensure_admin_accounts_table():
                         password_hash TEXT NOT NULL,
                         role TEXT NOT NULL,
                         active BOOLEAN NOT NULL DEFAULT TRUE,
+                        next_reservation_no INTEGER NOT NULL DEFAULT 1,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+            cur.execute("""
+                ALTER TABLE admin_accounts
+                ADD COLUMN IF NOT EXISTS next_reservation_no INTEGER NOT NULL DEFAULT 1
+            """)
             cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
                     ON admin_accounts (role, active)
@@ -960,6 +1202,109 @@ def ensure_rate_limit_tables():
             conn.commit()
 
 
+def sync_reservation_owner_numbers(cur):
+    cur.execute(
+        """
+            UPDATE reservations r
+            SET owner_admin_id = COALESCE(r.owner_admin_id, t.owner_admin_id)
+            FROM reservation_types t
+            WHERE r.type_id = t.id
+              AND r.owner_admin_id IS NULL
+              AND t.owner_admin_id IS NOT NULL
+        """
+    )
+    cur.execute(
+        """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conname = 'fk_reservations_owner_admin_id'
+                ) THEN
+                    ALTER TABLE reservations
+                    ADD CONSTRAINT fk_reservations_owner_admin_id
+                    FOREIGN KEY (owner_admin_id)
+                    REFERENCES admin_accounts(id)
+                    ON DELETE RESTRICT;
+                END IF;
+            END
+            $$;
+        """
+    )
+    cur.execute(
+        """
+            WITH numbered AS (
+                SELECT
+                    r.id,
+                    r.owner_admin_id,
+                    COALESCE(max_existing.max_reservation_no, 0)
+                    + row_number() OVER (
+                        PARTITION BY r.owner_admin_id
+                        ORDER BY r.created_at ASC NULLS LAST, r.id ASC
+                    ) AS reservation_no
+                FROM reservations r
+                LEFT JOIN (
+                    SELECT owner_admin_id, MAX(reservation_no) AS max_reservation_no
+                    FROM reservations
+                    WHERE owner_admin_id IS NOT NULL
+                      AND reservation_no IS NOT NULL
+                    GROUP BY owner_admin_id
+                ) AS max_existing
+                    ON max_existing.owner_admin_id = r.owner_admin_id
+                WHERE r.owner_admin_id IS NOT NULL
+                  AND r.reservation_no IS NULL
+            )
+            UPDATE reservations r
+            SET reservation_no = numbered.reservation_no
+            FROM numbered
+            WHERE r.id = numbered.id
+        """
+    )
+    cur.execute(
+        """
+            UPDATE admin_accounts a
+            SET next_reservation_no = GREATEST(
+                a.next_reservation_no,
+                COALESCE(next_numbers.next_reservation_no, 1)
+            )
+            FROM (
+                SELECT owner_admin_id, COALESCE(MAX(reservation_no), 0) + 1 AS next_reservation_no
+                FROM reservations
+                WHERE owner_admin_id IS NOT NULL
+                  AND reservation_no IS NOT NULL
+                GROUP BY owner_admin_id
+            ) AS next_numbers
+            WHERE a.id = next_numbers.owner_admin_id
+        """
+    )
+
+
+def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
+    cur.execute(
+        """
+            SELECT next_reservation_no
+            FROM admin_accounts
+            WHERE id = %s
+            FOR UPDATE
+        """,
+        (owner_admin_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise ValueError("owner admin account not found")
+    reservation_no = int(row[0] or 1)
+    cur.execute(
+        """
+            UPDATE admin_accounts
+            SET next_reservation_no = %s
+            WHERE id = %s
+        """,
+        (reservation_no + 1, owner_admin_id),
+    )
+    return reservation_no
+
+
 def cleanup_rate_limit_records():
     try:
         with get_connection() as conn:
@@ -976,16 +1321,30 @@ def cleanup_rate_limit_records():
 
 
 def record_admin_login(
-    role: str, ip_address: str, user_agent: str, login_result: str = "success"
+    role: str,
+    admin_account_id: int | None,
+    admin_login_id: str | None,
+    ip_address: str,
+    user_agent: str,
+    login_result: str = "success",
 ):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    INSERT INTO admin_login_logs (login_result, admin_role, ip_address, user_agent)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO admin_login_logs (
+                        login_result, admin_role, admin_account_id, admin_login_id, ip_address, user_agent
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                (login_result, role, ip_address, (user_agent or "")[:300]),
+                (
+                    login_result,
+                    role,
+                    admin_account_id,
+                    (admin_login_id or None),
+                    ip_address,
+                    (user_agent or "")[:300],
+                ),
             )
             conn.commit()
 
@@ -1190,6 +1549,17 @@ def validate_batch_runner_token() -> bool:
     return False
 
 
+def sanitize_next_path(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = value.strip()
+    if not value.startswith("/"):
+        return None
+    if value.startswith("//"):
+        return None
+    return value
+
+
 @app.teardown_appcontext
 def close_request_connection(_exception=None):
     connection = getattr(g, "_db_connection", None)
@@ -1232,7 +1602,17 @@ def csrf_protect():
                 or has_active_auth_session(ROLE_AUDIT_ADMIN)
             ):
                 return
-        validate_csrf()
+        try:
+            validate_csrf()
+        except HTTPException as error:
+            if error.code != 403:
+                raise
+            login_redirect = url_for(
+                "login",
+                next=sanitize_next_path(request.path),
+                notice="session_expired",
+            )
+            return redirect(login_redirect)
 
 
 LOGIN_MAX_ATTEMPTS = parse_int_env("LOGIN_MAX_ATTEMPTS", 10, 1, 1000)
@@ -1305,6 +1685,8 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
+    notice = request.args.get("notice")
+    next_path = sanitize_next_path(request.args.get("next") or request.form.get("next"))
     ip = request.remote_addr or "unknown"
     if request.method == "POST":
         if is_login_rate_limited(ip):
@@ -1314,19 +1696,32 @@ def login():
         account = authenticate_admin_account(login_id, password)
         if account:
             start_admin_session(account["role"], account["id"], account["login_id"])
-            record_admin_login(account["role"], ip, request.headers.get("User-Agent"))
+            record_admin_login(
+                account["role"],
+                account["id"],
+                account["login_id"],
+                ip,
+                request.headers.get("User-Agent"),
+            )
             if account["role"] == ROLE_AUDIT_ADMIN:
-                return redirect(url_for("admin_login_logs_page"))
-            return redirect(url_for("admin_page"))
+                return redirect(next_path or url_for("admin_login_logs_page"))
+            return redirect(next_path or url_for("admin_page"))
         else:
             record_admin_login(
-                "unknown", ip, request.headers.get("User-Agent"), login_result="failure"
+                "unknown",
+                None,
+                None,
+                ip,
+                request.headers.get("User-Agent"),
+                login_result="failure",
             )
             record_login_failure(ip)
             error = "ログインIDまたはパスワードが正しくありません"
     return render_template(
         "login.html",
         error=error,
+        notice=notice,
+        next_path=next_path,
         csrf_token=get_csrf_token(),
         audit_admin_enabled=has_audit_admin_account(),
     )
@@ -1388,6 +1783,22 @@ def ensure_types_table():
                 ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS flavor_text TEXT NOT NULL DEFAULT ''
                 """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_data BYTEA
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_mime_type TEXT NOT NULL DEFAULT ''
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_filename TEXT NOT NULL DEFAULT ''
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''
+                """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
                 (ROLE_ADMIN,),
@@ -1398,6 +1809,7 @@ def ensure_types_table():
                     "UPDATE reservation_types SET owner_admin_id = %s WHERE owner_admin_id IS NULL",
                     (admin_row[0],),
                 )
+            sync_reservation_owner_numbers(cur)
             conn.commit()
 
 
@@ -1566,10 +1978,11 @@ def serialize_active_rows(rows):
     return [
         {
             "id": row[0],
-            "status": row[1],
-            "type_id": row[2],
-            "type": row[3],
-            "created_at": format_dt(row[4]),
+            "display_no": row[1],
+            "status": row[2],
+            "type_id": row[3],
+            "type": row[4],
+            "created_at": format_dt(row[5]),
         }
         for row in rows
     ]
@@ -1582,7 +1995,7 @@ def fetch_type_counts(cur, owner_admin_id: int):
             FROM reservations r
             JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.status IN (%s, %s)
-              AND t.owner_admin_id = %s
+              AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
             GROUP BY t.name
             ORDER BY COUNT(*) DESC, t.name ASC
         """,
@@ -1595,24 +2008,49 @@ def serialize_type_counts(rows):
     return [{"name": row[0], "count": row[1]} for row in rows]
 
 
+def get_admin_login_log_rows(cur, limit: int = 500):
+    cur.execute(
+        """
+            SELECT id, login_result, admin_role, admin_login_id, ip_address, user_agent, logged_in_at
+            FROM admin_login_logs
+            ORDER BY logged_in_at DESC, id DESC
+            LIMIT %s
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    return [
+        {
+            "id": row[0],
+            "login_result": row[1],
+            "admin_role": row[2],
+            "admin_login_id": row[3],
+            "ip_address": row[4],
+            "user_agent": row[5],
+            "logged_in_at": format_dt(row[6]),
+        }
+        for row in rows
+    ]
+
+
 def get_active_rows(
     cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"
 ):
     params = [STATUS_WAITING, STATUS_CALLED]
-    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+    where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
     params.append(owner_admin_id)
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
     order_map = {
-        "id": "r.id",
+        "id": "COALESCE(r.reservation_no, r.id)",
         "status": "r.status",
         "type": "t.name",
     }
     order_by = order_map[sort_by]
     cur.execute(
         f"""
-            SELECT r.id, r.status, t.id, t.name, r.created_at
+            SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.id, t.name, r.created_at
             FROM reservations r
             LEFT JOIN reservation_types t ON r.type_id = t.id
             {where}
@@ -1648,18 +2086,7 @@ def admin_login_logs_page():
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("""
-                    SELECT id, login_result, admin_role, ip_address, user_agent, logged_in_at
-                    FROM admin_login_logs
-                    ORDER BY logged_in_at DESC, id DESC
-                    LIMIT 500
-                """)
-            rows = cur.fetchall()
-            # 時刻をフォーマット済み文字列に変換（日本時間対応）
-            rows = [
-                (row[0], row[1], row[2], row[3], row[4], format_dt(row[5]))
-                for row in rows
-            ]
+            rows = get_admin_login_log_rows(cur)
             cur.execute("""
                     SELECT id, login_id, role, active, created_at
                     FROM admin_accounts
@@ -1675,8 +2102,22 @@ def admin_login_logs_page():
         admin_accounts=admin_accounts,
         account_error=account_error,
         account_success=account_success,
+        admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token(),
     )
+
+
+@app.route("/admin/login-logs/data")
+def admin_login_logs_data():
+    if not is_audit_admin_authenticated():
+        return jsonify({"error": "unauthorized"}), 401
+    if not has_audit_admin_account():
+        abort(404)
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            rows = get_admin_login_log_rows(cur)
+    return jsonify({"rows": rows})
 
 
 @app.route("/admin/admin-accounts", methods=["POST"])
@@ -1979,6 +2420,16 @@ def admin_types_page():
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
         flavor_text = (request.form.get("flavor_text") or "").strip()
+        image_file = request.files.get("image")
+        if image_file and getattr(image_file, "filename", "").strip():
+            suffix = Path(secure_filename(image_file.filename)).suffix.lower()
+            if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
+                return redirect(
+                    url_for(
+                        "admin_types_page",
+                        type_error="画像は jpg, jpeg, png, gif, webp のみアップロードできます。",
+                    )
+                )
         if not validate_type_name(name):
             return redirect(
                 url_for(
@@ -1987,17 +2438,42 @@ def admin_types_page():
                 )
             )
         try:
+            image_data = None
+            image_mime_type = ""
+            image_filename = ""
+            if image_file and getattr(image_file, "filename", "").strip():
+                image_data, image_mime_type, image_filename = save_type_image_upload(
+                    image_file
+                )
             with get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "INSERT INTO reservation_types (name, flavor_text, owner_admin_id) VALUES (%s, %s, %s)",
-                        (name, flavor_text, current_admin_account_id),
+                        """
+                            INSERT INTO reservation_types
+                                (name, flavor_text, owner_admin_id, image_data, image_mime_type, image_filename)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            RETURNING id
+                        """,
+                        (
+                            name,
+                            flavor_text,
+                            current_admin_account_id,
+                            image_data or None,
+                            image_mime_type,
+                            image_filename,
+                        ),
                     )
                     conn.commit()
             return redirect(
                 url_for("admin_types_page", type_success="種類を追加しました。")
             )
+        except ValueError as error:
+            return redirect(url_for("admin_types_page", type_error=str(error)))
         except psycopg2.IntegrityError:
+            if image_file and getattr(image_file, "filename", "").strip():
+                # INSERT が失敗した場合に保存済みファイルが残らないようにする
+                # save_type_image_upload は INSERT 後に呼ぶため通常は発生しないが、念のため吸収する。
+                pass
             return redirect(
                 url_for(
                     "admin_types_page", type_error="同じ名前の種類が既に存在します。"
@@ -2007,7 +2483,12 @@ def admin_types_page():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name, accepting, flavor_text FROM reservation_types WHERE owner_admin_id = %s ORDER BY id ASC",
+                """
+                    SELECT id, name, accepting, flavor_text, image_mime_type, image_filename
+                    FROM reservation_types
+                    WHERE owner_admin_id = %s
+                    ORDER BY id ASC
+                """,
                 (current_admin_account_id,),
             )
             types = cur.fetchall()
@@ -2023,6 +2504,55 @@ def admin_types_page():
     )
 
 
+@app.route("/admin/types/<int:type_id>/image", methods=["POST"])
+def admin_types_update_image(type_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    image_file = request.files.get("image")
+    if not image_file or not getattr(image_file, "filename", "").strip():
+        return redirect(url_for("admin_types_page", type_error="画像ファイルを選択してください。"))
+
+    try:
+        image_data, image_mime_type, image_filename = save_type_image_upload(image_file)
+    except ValueError as error:
+        return redirect(url_for("admin_types_page", type_error=str(error)))
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT image_data, image_mime_type, image_filename FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                (type_id, current_admin_account_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                abort(403)
+            cur.execute(
+                """
+                    UPDATE reservation_types
+                    SET image_data = %s,
+                        image_mime_type = %s,
+                        image_filename = %s
+                    WHERE id = %s AND owner_admin_id = %s
+                """,
+                (
+                    image_data or None,
+                    image_mime_type,
+                    image_filename,
+                    type_id,
+                    current_admin_account_id,
+                ),
+            )
+            if cur.rowcount == 0:
+                abort(403)
+            conn.commit()
+    return redirect(url_for("admin_types_page", type_success="画像を更新しました。"))
+
+
 @app.route("/admin/types/delete/<int:type_id>", methods=["POST"])
 def admin_types_delete(type_id):
     if not is_admin_authenticated():
@@ -2034,6 +2564,11 @@ def admin_types_delete(type_id):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "SELECT image_data, image_mime_type, image_filename FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
+                (type_id, current_admin_account_id),
+            )
+            row = cur.fetchone()
             try:
                 cur.execute(
                     "DELETE FROM reservation_types WHERE id = %s AND owner_admin_id = %s",
@@ -2125,12 +2660,12 @@ def admin_history():
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
             params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-            where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+            where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
             order_map = {
-                "id": "r.id",
+                "id": "COALESCE(r.reservation_no, r.id)",
                 "status": "r.status",
                 "type": "t.name",
                 "created_at": "r.created_at",
@@ -2141,6 +2676,7 @@ def admin_history():
                 f"""
                 SELECT
                     r.id,
+                    COALESCE(r.reservation_no, r.id) AS display_no,
                     r.status,
                     t.name,
                     t.id,
@@ -2164,10 +2700,11 @@ def admin_history():
                     row[1],
                     row[2],
                     row[3],
-                    format_dt(row[4]),
+                    row[4],
                     format_dt(row[5]),
                     format_dt(row[6]),
-                    row[7],
+                    format_dt(row[7]),
+                    row[8],
                 )
                 for row in rows
             ]
@@ -2211,12 +2748,12 @@ def admin_history_export():
         sort_order = "desc"
 
     params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-    where = "WHERE r.status IN (%s, %s) AND t.owner_admin_id = %s"
+    where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
     order_map = {
-        "id": "r.id",
+        "id": "COALESCE(r.reservation_no, r.id)",
         "status": "r.status",
         "type": "t.name",
         "created_at": "r.created_at",
@@ -2252,6 +2789,7 @@ def admin_history_export():
                     f"""
                         SELECT
                             r.id,
+                            COALESCE(r.reservation_no, r.id) AS display_no,
                             COALESCE(t.name, ''),
                             r.status,
                             r.created_at,
@@ -2270,15 +2808,15 @@ def admin_history_export():
                 for row in cur:
                     writer.writerow(
                         [
-                            row[0],
                             row[1],
                             row[2],
-                            format_dt(row[3]),
+                            row[3],
                             format_dt(row[4]),
                             format_dt(row[5]),
-                            format_duration_from_seconds(row[6]) or "-",
+                            format_dt(row[6]),
                             format_duration_from_seconds(row[7]) or "-",
                             format_duration_from_seconds(row[8]) or "-",
+                            format_duration_from_seconds(row[9]) or "-",
                         ]
                     )
                     yield output.getvalue()
@@ -2308,21 +2846,21 @@ def admin_call(res_id):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE reservations
+                    UPDATE reservations r
                     SET status = %s, called_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                      AND status = %s
-                      AND type_id IN (
-                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
-                      )
-                    RETURNING user_id
+                    FROM reservation_types t
+                    WHERE r.id = %s
+                      AND r.status = %s
+                      AND r.type_id = t.id
+                      AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
+                    RETURNING user_id, COALESCE(reservation_no, id)
                 """,
                 (STATUS_CALLED, res_id, STATUS_WAITING, current_admin_account_id),
             )
             row = cur.fetchone()
             if not row:
                 cur.execute(
-                    "SELECT status FROM reservations WHERE id = %s",
+                    "SELECT status, COALESCE(reservation_no, id) FROM reservations WHERE id = %s",
                     (res_id,),
                 )
                 existing = cur.fetchone()
@@ -2331,15 +2869,16 @@ def admin_call(res_id):
                     return redirect(
                         url_for(
                             "admin_page",
-                            call_error=f"予約番号 {res_id} は直前にキャンセルされたため呼出できませんでした。",
+                            call_error=f"受付番号 {existing[1] or res_id} は直前にキャンセルされたため呼出できませんでした。",
                         )
                     )
                 abort(404)
             user_id = row[0]
+            display_no = row[1] or res_id
             conn.commit()
 
     try:
-        send_push_message(user_id, build_call_message(res_id))
+        send_push_message(user_id, build_call_message(display_no))
     except Exception:
         app.logger.exception(
             "Failed to send LINE push message for reservation %s user_id=%s",
@@ -2370,13 +2909,13 @@ def admin_finish(res_id):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE reservations
+                    UPDATE reservations r
                     SET status = %s, completed_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                      AND status = %s
-                      AND type_id IN (
-                          SELECT id FROM reservation_types WHERE owner_admin_id = %s
-                      )
+                    FROM reservation_types t
+                    WHERE r.id = %s
+                      AND r.status = %s
+                      AND r.type_id = t.id
+                      AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                     RETURNING id
                 """,
                 (STATUS_DONE, res_id, STATUS_CALLED, current_admin_account_id),
@@ -2500,7 +3039,11 @@ def process_reservation(event, user_id, user_message):
                         )
                         return
                     cur.execute(
-                        "SELECT id, name, accepting, owner_admin_id, flavor_text FROM reservation_types WHERE name = %s",
+                        """
+                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type
+                            FROM reservation_types
+                            WHERE name = %s
+                        """,
                         (requested_type_name,),
                     )
                     type_row = cur.fetchone()
@@ -2515,7 +3058,15 @@ def process_reservation(event, user_id, user_message):
                             body = "予約の種類がまだ登録されていません。管理画面で追加してください。"
                         send_flex_notice(event.reply_token, "種類がありません", body)
                         return
-                    type_id, type_name, type_accepting, type_owner_admin_id, type_flavor_text = type_row
+                    (
+                        type_id,
+                        type_name,
+                        type_accepting,
+                        type_owner_admin_id,
+                        type_flavor_text,
+                        type_image_mime_type,
+                    ) = type_row
+                    type_image_url = build_type_image_url(type_id)
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
@@ -2536,7 +3087,11 @@ def process_reservation(event, user_id, user_message):
                         return
                 else:
                     cur.execute(
-                        "SELECT name, flavor_text, accepting FROM reservation_types ORDER BY id ASC"
+                        """
+                            SELECT id, name, flavor_text, accepting, image_mime_type
+                            FROM reservation_types
+                            ORDER BY id ASC
+                        """
                     )
                     type_rows = cur.fetchall()
                     if not type_rows:
@@ -2548,7 +3103,8 @@ def process_reservation(event, user_id, user_message):
                         return
                     
                     carousel_bubbles = []
-                    for name, flavor_text, accepting in type_rows[:10]:
+                    for type_id, name, flavor_text, accepting, image_mime_type in type_rows[:10]:
+                        image_url = build_type_image_url(type_id) if image_mime_type else None
                         # header box
                         header = {
                             "type": "box",
@@ -2673,6 +3229,14 @@ def process_reservation(event, user_id, user_message):
                             "body": body,
                             "footer": footer,
                         }
+                        if image_url:
+                            bubble["hero"] = {
+                                "type": "image",
+                                "url": image_url,
+                                "size": "full",
+                                "aspectRatio": "16:9",
+                                "aspectMode": "cover",
+                            }
                         carousel_bubbles.append(bubble)
                     
                     flex_msg = {
@@ -2688,7 +3252,7 @@ def process_reservation(event, user_id, user_message):
 
                 cur.execute(
                     """
-                        SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                        SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, r.type_id, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -2700,6 +3264,7 @@ def process_reservation(event, user_id, user_message):
                 if existing:
                     (
                         res_id,
+                        display_no,
                         status,
                         existing_type_id,
                         existing_type_name,
@@ -2712,32 +3277,40 @@ def process_reservation(event, user_id, user_message):
                                 reservation_id=res_id,
                                 owner_admin_id=existing_owner_admin_id,
                             )
-                            body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                            body = f"予約済みです。番号: {display_no} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute(
                                 "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                 (STATUS_WAITING, res_id),
                             )
-                            body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                            body = f"予約済みです。番号: {display_no} / 待ち: {cur.fetchone()[0]}人"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
-                            body = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                            body = f"【呼出中】番号: {display_no} / 種類: {existing_type_name} 会場へお越しください！"
                         else:
-                            body = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                            body = f"【呼出中】番号: {display_no} 会場へお越しください！"
                     send_flex_notice(event.reply_token, "予約状況", body)
                     return
                 else:
                     try:
+                        reservation_no = allocate_admin_reservation_no(
+                            cur, type_owner_admin_id
+                        )
                         cur.execute(
-                            "INSERT INTO reservations (user_id, message, type_id) VALUES (%s, %s, %s) RETURNING id",
-                            (user_id, "", type_id),
+                            """
+                                INSERT INTO reservations (
+                                    user_id, message, type_id, owner_admin_id, reservation_no
+                                ) VALUES (%s, %s, %s, %s, %s)
+                                RETURNING id
+                            """,
+                            (user_id, "", type_id, type_owner_admin_id, reservation_no),
                         )
                         new_id = cur.fetchone()[0]
                     except psycopg2.IntegrityError:
                         conn.rollback()
                         cur.execute(
                             """
-                                SELECT r.id, r.status, r.type_id, t.name, t.owner_admin_id
+                                SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, r.type_id, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
                                 FROM reservations r
                                 LEFT JOIN reservation_types t ON r.type_id = t.id
                                 WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -2749,6 +3322,7 @@ def process_reservation(event, user_id, user_message):
                         if existing_after_conflict:
                             (
                                 res_id,
+                                display_no,
                                 status,
                                 _existing_type_id,
                                 existing_type_name,
@@ -2763,18 +3337,18 @@ def process_reservation(event, user_id, user_message):
                                             owner_admin_id=existing_owner_admin_id,
                                         )
                                     )
-                                    body = f"予約済みです。番号: {res_id} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                    body = f"予約済みです。番号: {display_no} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
                                     cur.execute(
                                         "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                         (STATUS_WAITING, res_id),
                                     )
-                                    body = f"予約済みです。番号: {res_id} / 待ち: {cur.fetchone()[0]}人"
+                                    body = f"予約済みです。番号: {display_no} / 待ち: {cur.fetchone()[0]}人"
                             elif status == STATUS_CALLED:
                                 if existing_type_name:
-                                    body = f"【呼出中】番号: {res_id} / 種類: {existing_type_name} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {display_no} / 種類: {existing_type_name} 会場へお越しください！"
                                 else:
-                                    body = f"【呼出中】番号: {res_id} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {display_no} 会場へお越しください！"
                             send_flex_notice(event.reply_token, "予約状況", body)
                             return
                         raise
@@ -2791,20 +3365,25 @@ def process_reservation(event, user_id, user_message):
                             reservation_id=new_id,
                             owner_admin_id=type_owner_admin_id,
                         )
-                        body = f"【受付完了】番号: {new_id} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute(
                             "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                             (STATUS_WAITING, new_id),
                         )
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
-                        body = f"【受付完了】番号: {new_id} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {reservation_no} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(
                         waiting_people_ahead
                     )
                     body += f"\n現在の目安待ち時間: {estimated_minutes}分"
-                    send_flex_notice(event.reply_token, "受付完了", body)
+                    send_flex_notice(
+                        event.reply_token,
+                        "受付完了",
+                        body,
+                        hero_url=type_image_url,
+                    )
                     return
             elif normalized == "キャンセル":
                 cur.execute(
@@ -2815,7 +3394,7 @@ def process_reservation(event, user_id, user_message):
                             WHERE user_id = %s AND status IN (%s, %s)
                             ORDER BY id DESC LIMIT 1
                         )
-                        RETURNING id
+                        RETURNING id, COALESCE(reservation_no, id)
                     """,
                     (STATUS_CANCELLED, user_id, STATUS_WAITING, STATUS_CALLED),
                 )
@@ -2825,7 +3404,7 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(
                         event.reply_token,
                         "キャンセル完了",
-                        f"予約番号 {cancelled[0]} をキャンセルしました。",
+                        f"受付番号 {cancelled[1] or cancelled[0]} をキャンセルしました。",
                     )
                 else:
                     send_flex_notice(
@@ -2837,7 +3416,7 @@ def process_reservation(event, user_id, user_message):
             elif normalized == "待ち時間":
                 cur.execute(
                     """
-                        SELECT r.id, r.status, t.name, t.owner_admin_id
+                        SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
                         FROM reservations r
                         LEFT JOIN reservation_types t ON r.type_id = t.id
                         WHERE r.user_id = %s AND r.status IN (%s, %s)
@@ -2853,7 +3432,7 @@ def process_reservation(event, user_id, user_message):
                         "待ち時間を確認できる予約がありません。まず「予約 種類名」と送信してください。",
                     )
                 else:
-                    res_id, status, type_name, owner_admin_id = existing
+                    res_id, display_no, status, type_name, owner_admin_id = existing
                     if status == STATUS_WAITING:
                         if owner_admin_id is not None:
                             waiting_people_ahead = count_waiting_people_ahead_by_owner(
@@ -2872,12 +3451,12 @@ def process_reservation(event, user_id, user_message):
                         )
                         if type_name:
                             body = (
-                                f"番号: {res_id} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
+                                f"番号: {display_no} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         else:
                             body = (
-                                f"番号: {res_id} / あなたの前: {waiting_people_ahead}人"
+                                f"番号: {display_no} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         send_flex_notice(event.reply_token, "待ち時間", body)
@@ -2885,7 +3464,7 @@ def process_reservation(event, user_id, user_message):
                         send_flex_notice(
                             event.reply_token,
                             "呼出中",
-                            f"【呼出中】番号: {res_id} です。会場へお越しください。",
+                            f"【呼出中】番号: {display_no} です。会場へお越しください。",
                         )
                 return
             else:

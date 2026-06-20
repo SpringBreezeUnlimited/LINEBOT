@@ -60,6 +60,7 @@
             <div class="alert alert-success">{{ schedule_success }}</div>
             {% endif %}
             <form method="POST" action="/admin/types" class="row g-2 align-items-center"
+                enctype="multipart/form-data"
                 data-ajax-post="true"
                 data-inline-confirm="この内容で種類を追加しますか？">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
@@ -68,6 +69,9 @@
                 </div>
                 <div class="col-12 mt-2">
                     <input type="text" name="flavor_text" class="form-control" placeholder="説明（任意）">
+                </div>
+                <div class="col-12 mt-2">
+                    <input type="file" name="image" class="form-control" accept="image/*">
                 </div>
                 <div class="col-sm-4 d-grid">
                     <button type="submit" class="btn btn-primary">追加</button>
@@ -87,6 +91,11 @@
                                 <div>
                                     <div class="types-card__label">種類</div>
                                     <div class="types-card__value">{{ t[1] }}</div>
+                                    {% if t[4] %}
+                                    <div class="types-card__image-preview">
+                                        <img src="{{ url_for('reservation_type_image', type_id=t[0]) }}" alt="{{ t[1] }}の画像">
+                                    </div>
+                                    {% endif %}
                                     <div class="types-card__flavor-edit">
                                         <form method="POST" action="/admin/types/{{ t[0] }}/flavor"
                                             class="types-flavor-form"
@@ -100,6 +109,18 @@
                                             <button type="submit"
                                                 class="btn btn-sm btn-outline-secondary mt-1 types-card__flavor-save-btn"
                                                 style="display: none;" disabled>保存</button>
+                                        </form>
+                                    </div>
+                                    <div class="types-card__image-edit">
+                                        <form method="POST" action="/admin/types/{{ t[0] }}/image"
+                                            enctype="multipart/form-data"
+                                            class="types-image-form"
+                                            data-inline-confirm="画像を更新しますか？"
+                                            data-confirm-btn-text="更新する">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                            <input type="file" name="image" class="form-control form-control-sm"
+                                                accept="image/*" required>
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary mt-1">画像を更新</button>
                                         </form>
                                     </div>
                                 </div>

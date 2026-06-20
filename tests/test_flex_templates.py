@@ -14,6 +14,11 @@ def test_reservation_confirmation_structure():
     assert "contents" in d
 
 
+def test_reservation_confirmation_supports_hero_image():
+    d = reservation_confirmation(123, "相談", 3, 4, "https://example.com/type.png")
+    assert d["contents"]["hero"]["url"] == "https://example.com/type.png"
+
+
 def test_call_notification_structure():
     d = call_notification(123, "15:30", 15)
     assert isinstance(d, dict)

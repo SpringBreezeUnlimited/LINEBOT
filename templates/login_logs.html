@@ -8,6 +8,8 @@
 
 {% block body_class %}bg-light sidebar-layout{% endblock %}
 
+{% block body_attrs %}data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}"{% endblock %}
+
 {% block navbar %}
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
@@ -121,12 +123,13 @@
                         <th>ID</th>
                         <th>結果</th>
                         <th>権限</th>
+                        <th>ログインID</th>
                         <th>IPアドレス</th>
                         <th>ユーザーエージェント</th>
                         <th>ログイン時刻</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="login-log-rows">
                     {% for row in rows %}
                     <tr>
                         <td>{{ row[0] }}</td>
@@ -148,11 +151,12 @@
                         </td>
                         <td>{{ row[3] or '-' }}</td>
                         <td>{{ row[4] or '-' }}</td>
-                        <td>{{ row[5] if row[5] else '-' }}</td>
+                        <td>{{ row[5] or '-' }}</td>
+                        <td>{{ row[6] if row[6] else '-' }}</td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="text-center">ログイン履歴はまだありません。</td>
+                        <td colspan="7" class="text-center">ログイン履歴はまだありません。</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -160,4 +164,8 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/login_logs.js') }}" defer></script>
 {% endblock %}

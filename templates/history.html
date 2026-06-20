@@ -72,20 +72,21 @@
             <div class="history-scroll">
                 <div class="history-card-list" id="history-rows">
                     {% for row in rows %}
-                    <article class="history-card" data-id="{{ row[0] }}" data-type-id="{{ row[3] or '' }}"
-                        data-type="{{ row[2] or '' }}" data-status="{{ row[1] }}"
-                        data-created-at="{{ row[4] if row[4] else '' }}"
-                        data-service-duration="{{ row[7] if row[7] is not none else '' }}"
-                        data-service-duration-label="{{ format_duration(row[7]) if row[7] is not none else '-' }}">
+                    <article class="history-card" data-id="{{ row[0] }}" data-type-id="{{ row[4] or '' }}"
+                        data-display-no="{{ row[1] }}"
+                        data-type="{{ row[3] or '' }}" data-status="{{ row[2] }}"
+                        data-created-at="{{ row[5] if row[5] else '' }}"
+                        data-service-duration="{{ row[8] if row[8] is not none else '' }}"
+                        data-service-duration-label="{{ format_duration(row[8]) if row[8] is not none else '-' }}">
                         <div class="history-card__header">
                             <div>
                                 <div class="history-card__label">番号</div>
-                                <div class="history-card__value">{{ row[0] }}</div>
+                                <div class="history-card__value">{{ row[1] }}</div>
                             </div>
                             <div class="history-card__status">
-                                {% if row[1] == 'done' %}
+                                {% if row[2] == 'done' %}
                                 <span class="badge bg-primary">確認完了</span>
-                                {% elif row[1] == 'cancelled' %}
+                                {% elif row[2] == 'cancelled' %}
                                 <span class="badge bg-secondary">キャンセル</span>
                                 {% else %}
                                 <span class="badge bg-success">呼出中</span>
@@ -95,15 +96,15 @@
                         <dl class="history-card__meta">
                             <div>
                                 <dt>受付時刻</dt>
-                                <dd>{{ row[4] if row[4] else '-' }}</dd>
+                                <dd>{{ row[5] if row[5] else '-' }}</dd>
                             </div>
                             <div>
                                 <dt>種類</dt>
-                                <dd>{{ row[2] or '-' }}</dd>
+                                <dd>{{ row[3] or '-' }}</dd>
                             </div>
                             <div>
                                 <dt>呼出から完了</dt>
-                                <dd>{{ format_duration(row[7]) if row[7] is not none else '-' }}</dd>
+                                <dd>{{ format_duration(row[8]) if row[8] is not none else '-' }}</dd>
                             </div>
                         </dl>
                     </article>
