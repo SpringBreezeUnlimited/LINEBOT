@@ -117,8 +117,8 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.143"
-APP_RELEASED_AT = "2026-06-06 00:00 JST"
+APP_VERSION = "v1.0.144"
+APP_RELEASED_AT = "2026-06-21 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 FLEX_SAFE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
@@ -1433,6 +1433,50 @@ def authenticate_admin_account(login_id: str, candidate: str):
         return None
 
 
+def get_admin_account_by_id(account_id: int):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        SELECT id, login_id, role, active
+                        FROM admin_accounts
+                        WHERE id = %s
+                        LIMIT 1
+                    """,
+                    (account_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                return {
+                    "id": row[0],
+                    "login_id": row[1],
+                    "role": row[2],
+                    "active": bool(row[3]),
+                }
+    except Exception:
+        app.logger.exception("Failed to fetch admin account id=%s", account_id)
+        return None
+
+
+def get_active_admin_count(role: str | None = None) -> int:
+    query = "SELECT COUNT(*) FROM admin_accounts WHERE active = TRUE"
+    params = ()
+    if role is not None:
+        query += " AND role = %s"
+        params = (role,)
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                row = cur.fetchone()
+                return int(row[0] if row else 0)
+    except Exception:
+        app.logger.exception("Failed to count active admin accounts role=%s", role)
+        return 0
+
+
 def has_audit_admin_account() -> bool:
     try:
         with get_connection() as conn:
@@ -1503,6 +1547,12 @@ def is_authenticated_as(role: str, update_activity: bool = True) -> bool:
         return False
     last_activity = session.get("last_activity")
     if not isinstance(last_activity, (int, float)):
+        session.clear()
+        return False
+    current_account = get_admin_account_by_id(admin_account_id)
+    if not current_account or not current_account["active"] or (
+        current_account["role"] != role
+    ):
         session.clear()
         return False
     now = time.time()
@@ -2145,6 +2195,7 @@ def admin_login_logs_page():
         admin_accounts=admin_accounts,
         account_error=account_error,
         account_success=account_success,
+        current_admin_account_id=get_current_admin_account_id(),
         admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token(),
     )
@@ -2342,6 +2393,129 @@ def admin_accounts_update_login_id(account_id):
         url_for(
             "admin_login_logs_page",
             account_success=f"ログインIDを「{login_id}」に更新しました。",
+        )
+    )
+
+
+@app.route("/admin/admin-accounts/<int:account_id>/active", methods=["POST"])
+def admin_accounts_toggle_active(account_id):
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+
+    current_admin_account_id = get_current_admin_account_id()
+    if current_admin_account_id == account_id:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="自分のアカウントは無効化できません。",
+            )
+        )
+
+    account = get_admin_account_by_id(account_id)
+    if not account:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="対象アカウントが存在しません。",
+            )
+        )
+
+    if account["active"]:
+        if account["role"] == ROLE_AUDIT_ADMIN and get_active_admin_count(ROLE_AUDIT_ADMIN) <= 1:
+            return redirect(
+                url_for(
+                    "admin_login_logs_page",
+                    account_error="最後の監査管理者は無効化できません。",
+                )
+            )
+        new_active = False
+        success_message = f"アカウント「{account['login_id']}」を無効化しました。"
+    else:
+        new_active = True
+        success_message = f"アカウント「{account['login_id']}」を有効化しました。"
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE admin_accounts SET active = %s WHERE id = %s",
+                    (new_active, account_id),
+                )
+                if cur.rowcount == 0:
+                    return redirect(
+                        url_for(
+                            "admin_login_logs_page",
+                            account_error="対象アカウントが存在しません。",
+                        )
+                    )
+                conn.commit()
+    except psycopg2.IntegrityError:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="このアカウントは参照中データがあるため更新できません。",
+            )
+        )
+
+    return redirect(
+        url_for("admin_login_logs_page", account_success=success_message)
+    )
+
+
+@app.route("/admin/admin-accounts/<int:account_id>/delete", methods=["POST"])
+def admin_accounts_delete(account_id):
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+
+    current_admin_account_id = get_current_admin_account_id()
+    if current_admin_account_id == account_id:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="自分のアカウントは削除できません。",
+            )
+        )
+
+    account = get_admin_account_by_id(account_id)
+    if not account:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="対象アカウントが存在しません。",
+            )
+        )
+    if account["role"] == ROLE_AUDIT_ADMIN and get_active_admin_count(ROLE_AUDIT_ADMIN) <= 1:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="最後の監査管理者は削除できません。",
+            )
+        )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM admin_accounts WHERE id = %s", (account_id,))
+                if cur.rowcount == 0:
+                    return redirect(
+                        url_for(
+                            "admin_login_logs_page",
+                            account_error="対象アカウントが存在しません。",
+                        )
+                    )
+                conn.commit()
+    except psycopg2.IntegrityError:
+        return redirect(
+            url_for(
+                "admin_login_logs_page",
+                account_error="このアカウントは参照中データがあるため削除できません。",
+            )
+        )
+
+    return redirect(
+        url_for(
+            "admin_login_logs_page",
+            account_success=f"アカウント「{account['login_id']}」を削除しました。",
         )
     )
 

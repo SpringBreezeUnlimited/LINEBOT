@@ -72,6 +72,7 @@
                         <th>編集</th>
                         <th>権限</th>
                         <th>状態</th>
+                        <th>操作</th>
                         <th>作成時刻</th>
                     </tr>
                 </thead>
@@ -103,11 +104,26 @@
                             <span class="badge bg-danger">無効</span>
                             {% endif %}
                         </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-2">
+                                <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/active" class="d-inline">
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm {% if account[3] %}btn-outline-warning{% else %}btn-outline-success{% endif %}" {% if current_admin_account_id == account[0] %}disabled{% endif %}>
+                                        {% if account[3] %}無効化{% else %}有効化{% endif %}
+                                    </button>
+                                </form>
+                                <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/delete" class="d-inline"
+                                      onsubmit="return confirm('アカウント「{{ account[1] }}」を削除します。よろしいですか？');">
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" {% if current_admin_account_id == account[0] %}disabled{% endif %}>削除</button>
+                                </form>
+                            </div>
+                        </td>
                         <td>{{ account[4] if account[4] else '-' }}</td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="text-center">管理者アカウントはまだありません。</td>
+                        <td colspan="7" class="text-center">管理者アカウントはまだありません。</td>
                     </tr>
                     {% endfor %}
                 </tbody>

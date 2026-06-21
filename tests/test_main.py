@@ -766,32 +766,73 @@ def test_admin_post_with_active_session_still_rejects_invalid_csrf(
         assert response.headers["Location"].startswith("/login")
 
 
-def test_is_authenticated_as_success(app_module):
+def test_is_authenticated_as_success(app_module, monkeypatch):
     with app_module.app.test_request_context("/"):
         now = 1000.0
         app_module.session["logged_in"] = True
         app_module.session["admin_role"] = app_module.ROLE_ADMIN
         app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(app_module.time, "time", lambda: now + 10)
-            assert app_module.is_authenticated_as(app_module.ROLE_ADMIN) is True
+        app_module.session["_csrf_token"] = "token"
+        monkeypatch.setattr(
+            app_module,
+            "get_admin_account_by_id",
+            lambda _account_id: {
+                "id": 1,
+                "login_id": "admin",
+                "role": app_module.ROLE_ADMIN,
+                "active": True,
+            },
+        )
+        monkeypatch.setattr(app_module.time, "time", lambda: now + 10)
+        assert app_module.is_authenticated_as(app_module.ROLE_ADMIN) is True
 
 
-def test_is_authenticated_as_timeout_clears_session(app_module):
+def test_is_authenticated_as_timeout_clears_session(app_module, monkeypatch):
     with app_module.app.test_request_context("/"):
         now = 1000.0
         app_module.session["logged_in"] = True
         app_module.session["admin_role"] = app_module.ROLE_ADMIN
         app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                app_module.time,
-                "time",
-                lambda: now + app_module.SESSION_IDLE_TIMEOUT_SECONDS + 1,
-            )
-            assert app_module.is_authenticated_as(app_module.ROLE_ADMIN) is False
+        monkeypatch.setattr(
+            app_module,
+            "get_admin_account_by_id",
+            lambda _account_id: {
+                "id": 1,
+                "login_id": "admin",
+                "role": app_module.ROLE_ADMIN,
+                "active": True,
+            },
+        )
+        monkeypatch.setattr(
+            app_module.time,
+            "time",
+            lambda: now + app_module.SESSION_IDLE_TIMEOUT_SECONDS + 1,
+        )
+        assert app_module.is_authenticated_as(app_module.ROLE_ADMIN) is False
+        assert app_module.session.get("logged_in") is None
+
+
+def test_is_authenticated_as_inactive_account_clears_session(app_module, monkeypatch):
+    with app_module.app.test_request_context("/"):
+        now = 1000.0
+        app_module.session["logged_in"] = True
+        app_module.session["admin_role"] = app_module.ROLE_ADMIN
+        app_module.session["admin_account_id"] = 1
+        app_module.session["last_activity"] = now
+        monkeypatch.setattr(
+            app_module,
+            "get_admin_account_by_id",
+            lambda _account_id: {
+                "id": 1,
+                "login_id": "admin",
+                "role": app_module.ROLE_ADMIN,
+                "active": False,
+            },
+        )
+        monkeypatch.setattr(app_module.time, "time", lambda: now + 10)
+        assert app_module.is_authenticated_as(app_module.ROLE_ADMIN) is False
         assert app_module.session.get("logged_in") is None
 
 
@@ -1517,6 +1558,130 @@ def test_admin_accounts_update_login_id_duplicate(app_module, monkeypatch):
         data={"login_id": "manager02"},
     ):
         response = app_module.admin_accounts_update_login_id(1)
+
+    assert response.status_code == 302
+    assert "account_error" in response.headers["Location"]
+
+
+def test_admin_accounts_toggle_active_success(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 9)
+    monkeypatch.setattr(
+        app_module,
+        "get_admin_account_by_id",
+        lambda account_id: {
+            "id": account_id,
+            "login_id": "manager01",
+            "role": app_module.ROLE_ADMIN,
+            "active": True,
+        },
+    )
+    monkeypatch.setattr(app_module, "get_active_admin_count", lambda role=None: 2)
+
+    calls = []
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts/1/active",
+        method="POST",
+    ):
+        response = app_module.admin_accounts_toggle_active(1)
+
+    assert response.status_code == 302
+    assert "account_success" in response.headers["Location"]
+    assert any("UPDATE admin_accounts SET active = %s" in query for query, _ in calls)
+
+
+def test_admin_accounts_delete_success(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 9)
+    monkeypatch.setattr(
+        app_module,
+        "get_admin_account_by_id",
+        lambda account_id: {
+            "id": account_id,
+            "login_id": "manager01",
+            "role": app_module.ROLE_ADMIN,
+            "active": True,
+        },
+    )
+    monkeypatch.setattr(app_module, "get_active_admin_count", lambda role=None: 2)
+
+    calls = []
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            calls.append((query, params))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts/1/delete",
+        method="POST",
+    ):
+        response = app_module.admin_accounts_delete(1)
+
+    assert response.status_code == 302
+    assert "account_success" in response.headers["Location"]
+    assert any("DELETE FROM admin_accounts WHERE id = %s" in query for query, _ in calls)
+
+
+def test_admin_accounts_delete_blocks_self(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    with app_module.app.test_request_context(
+        "/admin/admin-accounts/1/delete",
+        method="POST",
+    ):
+        response = app_module.admin_accounts_delete(1)
 
     assert response.status_code == 302
     assert "account_error" in response.headers["Location"]
