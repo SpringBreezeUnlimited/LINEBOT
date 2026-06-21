@@ -1687,6 +1687,51 @@ def test_admin_accounts_delete_blocks_self(app_module, monkeypatch):
     assert "account_error" in response.headers["Location"]
 
 
+def test_admin_login_logs_page_shows_account_creation_ui(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "has_audit_admin_account", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            if "FROM admin_login_logs" in query:
+                self._rows = []
+            elif "FROM admin_accounts" in query:
+                self._rows = [(1, "admin", "admin", True, datetime(2026, 6, 21, 0, 0))]
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    response = client.get("/admin/login-logs")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "単発作成" in body
+    assert "一括作成" in body
+    assert "この内容で作成" in body
+    assert "一括で作成" in body
+
+
 def test_admin_data_unauthorized(client):
     response = client.get("/admin/data")
     assert response.status_code == 401
