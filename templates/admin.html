@@ -29,6 +29,10 @@
                 <span>ログ</span>
                 <span class="visually-hidden">過去ログ</span>
             </a>
+            <a href="/admin/backup" class="btn btn-outline-light btn-sm" aria-label="バックアップ" title="バックアップ">
+                <span>💾</span>
+                <span>バックアップ</span>
+            </a>
             <form method="POST" action="/logout" class="mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>

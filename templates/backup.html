@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}バックアップ{% endblock %}
+
+{% block body_class %}bg-light sidebar-layout{% endblock %}
+
+{% block navbar %}
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container">
+        <span class="navbar-brand">
+            <span class="responsive-label-full">バックアップ</span>
+            <span class="responsive-label-short">バックアップ</span>
+        </span>
+        <div class="sidebar-nav-actions d-flex gap-2">
+            <a href="/admin" class="btn btn-outline-light btn-sm">管理画面</a>
+            <a href="/admin/types" class="btn btn-outline-light btn-sm" aria-label="種類" title="種類">
+                <img src="{{ url_for('static', filename='img/code_reader_fill.svg') }}" alt="" aria-hidden="true"
+                    class="nav-icon nav-icon-type">
+                <span>種類</span>
+            </a>
+            <a href="/admin/history" class="btn btn-outline-light btn-sm" aria-label="過去ログ" title="過去ログ">
+                <img src="{{ url_for('static', filename='img/history_fill.svg') }}" alt="" aria-hidden="true"
+                    class="nav-icon nav-icon-history">
+                <span>ログ</span>
+                <span class="visually-hidden">過去ログ</span>
+            </a>
+            <form method="POST" action="/logout" class="mb-0">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
+            </form>
+            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeP882d3sYWv9PTTpdkbwY1qywZnPNczvJ9RqLa44BbSxTXOQ/viewform"
+                class="btn btn-outline-light btn-sm" target="_blank" rel="noopener noreferrer">お問い合わせ</a>
+        </div>
+    </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+    {% if import_error %}
+    <div class="alert alert-warning mb-3" role="alert">{{ import_error }}</div>
+    {% endif %}
+
+    {% if import_success %}
+    <div class="alert alert-success mb-3" role="alert">{{ import_success }}</div>
+    {% endif %}
+
+    <!-- エクスポート -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="h5 mb-0">💾 エクスポート（バックアップをダウンロード）</h2>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                現在のデータベースの内容を JSON ファイルとしてダウンロードします。<br>
+                定期的にバックアップを取得することを推奨します。
+            </p>
+            <a href="/admin/backup/export" class="btn btn-primary" id="backup-export-btn">
+                💾 バックアップをダウンロード
+            </a>
+        </div>
+    </div>
+
+    <!-- インポート -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="h5 mb-0">📂 インポート（バックアップから復元）</h2>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-danger mb-3" role="alert">
+                <strong>⚠️ 注意：</strong>
+                インポートを実行すると、<strong>現在のデータがすべて上書き（削除）</strong>されます。<br>
+                復元後はログアウトされます。この操作は元に戻せません。
+            </div>
+            <form method="POST" action="/admin/backup/import" enctype="multipart/form-data"
+                id="backup-import-form">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <div class="mb-3">
+                    <label for="backup-file-input" class="form-label">バックアップファイル (.json)</label>
+                    <input type="file" class="form-control" id="backup-file-input"
+                        name="backup_file" accept=".json" required>
+                </div>
+                <button type="submit" class="btn btn-danger" id="backup-import-btn"
+                    onclick="return confirm('本当にインポートしますか？現在のデータはすべて上書きされます。')">
+                    📂 インポートして復元
+                </button>
+            </form>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -1,3 +1,4 @@
+import base64
 import csv
 import mimetypes
 import json
@@ -3310,6 +3311,226 @@ def process_call_queue_task():
         abort(403)
     result = process_queued_calls()
     return jsonify(result)
+
+
+# --- バックアップ・リストア ---
+
+BACKUP_TABLES = [
+    "reservation_types",
+    "admin_accounts",
+    "reservations",
+    "app_settings",
+    "admin_login_logs",
+    "login_attempt_records",
+    "webhook_request_records",
+]
+
+
+def _serialize_value(val):
+    """DB から取得した値を JSON シリアライズ可能な形式に変換する。
+    bytes は base64 文字列に、datetime/date は ISO 形式文字列に変換する。
+    """
+    if isinstance(val, (bytes, memoryview)):
+        raw = bytes(val) if isinstance(val, memoryview) else val
+        return {"__type__": "bytes", "data": base64.b64encode(raw).decode("ascii")}
+    if isinstance(val, datetime):
+        return {"__type__": "datetime", "data": val.isoformat()}
+    # date のみの場合（datetime のサブクラスでないもの）
+    try:
+        from datetime import date as _date
+        if type(val) is _date:
+            return {"__type__": "date", "data": val.isoformat()}
+    except ImportError:
+        pass
+    return val
+
+
+def _deserialize_value(val):
+    """JSON からロードした値をDB挿入用の Python オブジェクトに戻す。"""
+    if not isinstance(val, dict):
+        return val
+    type_tag = val.get("__type__")
+    if type_tag == "bytes":
+        return base64.b64decode(val["data"])
+    if type_tag == "datetime":
+        return datetime.fromisoformat(val["data"])
+    if type_tag == "date":
+        from datetime import date as _date
+        return _date.fromisoformat(val["data"])
+    return val
+
+
+def _export_table(table_name: str):
+    """指定テーブルの全行を [{col: val, ...}, ...] で返す。"""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT * FROM {table_name} ORDER BY id ASC")
+            cols = [desc[0] for desc in cur.description]
+            rows = []
+            for row in cur.fetchall():
+                rows.append(
+                    {col: _serialize_value(val) for col, val in zip(cols, row)}
+                )
+    return {"columns": cols, "rows": rows}
+
+
+def _import_table(cur, table_name: str, table_data: dict):
+    """テーブルをトランケートしてバックアップデータを挿入する。"""
+    if not isinstance(table_data, dict):
+        raise ValueError(f"Invalid backup data for table {table_name}")
+    columns = table_data.get("columns", [])
+    rows = table_data.get("rows", [])
+    # 外部キー制約の順序を考慮して CASCADE TRUNCATE を使用する
+    cur.execute(f"TRUNCATE TABLE {table_name} RESTART IDENTITY CASCADE")
+    if not columns or not rows:
+        return
+    col_list = ", ".join(f'"{c}"' for c in columns)
+    placeholders = ", ".join(["%s"] * len(columns))
+    insert_sql = (
+        f"INSERT INTO {table_name} ({col_list}) VALUES ({placeholders})"
+        f" ON CONFLICT DO NOTHING"
+    )
+    for row_dict in rows:
+        values = tuple(
+            _deserialize_value(row_dict.get(col)) for col in columns
+        )
+        cur.execute(insert_sql, values)
+
+
+def _reset_sequence(cur, table_name: str):
+    """テーブルの SERIAL シーケンスを最大 id 値にリセットする。"""
+    cur.execute(
+        f"""
+            SELECT setval(
+                pg_get_serial_sequence('{table_name}', 'id'),
+                COALESCE((SELECT MAX(id) FROM {table_name}), 0) + 1,
+                false
+            )
+        """
+    )
+
+
+@app.route("/admin/backup")
+def admin_backup_page():
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    import_error = request.args.get("import_error")
+    import_success = request.args.get("import_success")
+    return render_template(
+        "backup.html",
+        import_error=import_error,
+        import_success=import_success,
+        csrf_token=get_csrf_token(),
+    )
+
+
+@app.route("/admin/backup/export")
+def admin_backup_export():
+    if not is_admin_authenticated():
+        return jsonify({"error": "unauthorized"}), 401
+
+    export_data = {
+        "version": APP_VERSION,
+        "exported_at": datetime.now(JST).isoformat(),
+        "tables": {},
+    }
+    for table_name in BACKUP_TABLES:
+        try:
+            export_data["tables"][table_name] = _export_table(table_name)
+        except Exception:
+            app.logger.exception("Failed to export table %s", table_name)
+            export_data["tables"][table_name] = {"columns": [], "rows": []}
+
+    filename = f"backup-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
+    return Response(
+        json_bytes,
+        mimetype="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route("/admin/backup/import", methods=["POST"])
+def admin_backup_import():
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+
+    uploaded_file = request.files.get("backup_file")
+    if not uploaded_file or not getattr(uploaded_file, "filename", "").strip():
+        return redirect(
+            url_for("admin_backup_page", import_error="バックアップファイルを選択してください。")
+        )
+
+    filename = uploaded_file.filename or ""
+    if not filename.lower().endswith(".json"):
+        return redirect(
+            url_for("admin_backup_page", import_error="JSONファイル (.json) を選択してください。")
+        )
+
+    try:
+        raw = uploaded_file.read()
+        backup_data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return redirect(
+            url_for("admin_backup_page", import_error="ファイルの読み込みに失敗しました。有効なJSONファイルを選択してください。")
+        )
+
+    if not isinstance(backup_data, dict) or "tables" not in backup_data:
+        return redirect(
+            url_for("admin_backup_page", import_error="バックアップの形式が無効です。")
+        )
+
+    tables = backup_data["tables"]
+    if not isinstance(tables, dict):
+        return redirect(
+            url_for("admin_backup_page", import_error="バックアップの形式が無効です。")
+        )
+
+    # インポート順序: 外部キーの親テーブルから先に復元する
+    import_order = [
+        "admin_accounts",
+        "reservation_types",
+        "reservations",
+        "app_settings",
+        "admin_login_logs",
+        "login_attempt_records",
+        "webhook_request_records",
+    ]
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for table_name in import_order:
+                    if table_name in tables:
+                        _import_table(cur, table_name, tables[table_name])
+                # シーケンスをリセット（id を持つテーブル）
+                for table_name in import_order:
+                    if table_name in tables:
+                        try:
+                            _reset_sequence(cur, table_name)
+                        except Exception:
+                            # シーケンスが存在しないテーブル（app_settings など）は無視
+                            app.logger.debug(
+                                "Sequence reset skipped for table %s", table_name
+                            )
+            conn.commit()
+    except Exception:
+        app.logger.exception("Failed to import backup")
+        return redirect(
+            url_for("admin_backup_page", import_error="インポートに失敗しました。バックアップファイルを確認してください。")
+        )
+
+    # スキーマキャッシュをリセットしてログアウト
+    global SCHEMA_READY
+    SCHEMA_READY = False
+    session.clear()
+
+    return redirect(
+        url_for(
+            "login",
+            notice="backup_restored",
+        )
+    )
 
 
 # --- LINE Webhook ---
