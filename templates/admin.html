@@ -46,8 +46,16 @@
 
 {% block content %}
 <div class="container">
+    <div class="hero-panel">
+        <div class="hero-kicker">Live dashboard</div>
+        <h1>管理画面</h1>
+        <p>上から順に、受付の状態確認、人数の調整、個別の呼出を行います。初めての人は「受付中」「呼出」「確認完了」の流れだけ見れば大丈夫です。</p>
+    </div>
+    <div class="section-intro">
+        <h2>今の受付状況</h2>
+        <p>並び順や種類で絞り込んで、必要な人だけを素早く見つけられます。</p>
+    </div>
     <div>
-        <div>
             <div class="row g-2 align-items-center">
                 {% if call_error %}
                 <div class="col-12">

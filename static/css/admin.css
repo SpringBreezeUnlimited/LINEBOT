@@ -1,17 +1,17 @@
 :root {
-    --color-bg: #ffffff;
+    --color-bg: #f2f0eb;
     --color-surface: #ffffff;
-    --color-surface-subtle: #f8fafc;
-    --color-border: #e5e7eb;
-    --color-border-strong: #d1d5db;
-    --color-text: #3f3f46;
-    --color-text-muted: #71717a;
-    --color-primary: #3b82f6;
-    --color-primary-hover: #2563eb;
-    --color-success: #22c55e;
-    --color-success-hover: #16a34a;
-    --color-danger: #ef4444;
-    --color-danger-hover: #dc2626;
+    --color-surface-subtle: #edebe9;
+    --color-border: rgba(30, 57, 50, 0.12);
+    --color-border-strong: rgba(30, 57, 50, 0.2);
+    --color-text: rgba(0, 0, 0, 0.87);
+    --color-text-muted: rgba(0, 0, 0, 0.58);
+    --color-primary: #00754A;
+    --color-primary-hover: #006241;
+    --color-success: #00754A;
+    --color-success-hover: #006241;
+    --color-danger: #c82014;
+    --color-danger-hover: #a51810;
     --color-info: #38bdf8;
     --color-warning: #facc15;
     --color-warning-text: #1f1300;
@@ -43,10 +43,10 @@ html {
 }
 
 body {
-    --color-nav: #334155;
+    --color-nav: #1E3932;
     color: var(--color-text);
     background:
-        linear-gradient(180deg, rgba(59, 130, 246, 0.05), rgba(59, 130, 246, 0) 220px),
+        linear-gradient(180deg, rgba(0, 98, 65, 0.08), rgba(0, 98, 65, 0) 220px),
         var(--color-bg);
     font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
     line-height: 1.6;
@@ -152,7 +152,7 @@ select {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    background: linear-gradient(180deg, #ffffff 0%, #f2f0eb 100%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-1);
@@ -263,7 +263,7 @@ select {
 
 .form-select:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
+    box-shadow: 0 0 0 4px rgba(0, 117, 74, 0.16);
 }
 
 .form-control {
@@ -280,7 +280,7 @@ select {
 
 .form-control:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
+    box-shadow: 0 0 0 4px rgba(0, 117, 74, 0.16);
 }
 
 .btn {

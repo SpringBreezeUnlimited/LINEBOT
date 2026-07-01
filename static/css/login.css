@@ -1,11 +1,11 @@
 :root {
-    --color-bg: #ffffff;
+    --color-bg: #f2f0eb;
     --color-surface: #ffffff;
-    --color-border: #e5e7eb;
-    --color-text: #3f3f46;
-    --color-text-muted: #71717a;
-    --color-primary: #3b82f6;
-    --color-primary-hover: #2563eb;
+    --color-border: rgba(30, 57, 50, 0.12);
+    --color-text: rgba(0, 0, 0, 0.87);
+    --color-text-muted: rgba(0, 0, 0, 0.58);
+    --color-primary: #00754A;
+    --color-primary-hover: #006241;
     --color-danger-bg: #fef2f2;
     --color-danger-border: #fecaca;
     --color-danger-text: #991b1b;
@@ -39,7 +39,7 @@ body {
     min-height: 100vh;
     color: var(--color-text);
     background:
-        linear-gradient(180deg, rgba(59, 130, 246, 0.05), rgba(59, 130, 246, 0) 220px),
+        linear-gradient(180deg, rgba(0, 98, 65, 0.08), rgba(0, 98, 65, 0) 220px),
         var(--color-bg);
     font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
     line-height: 1.6;
@@ -103,7 +103,7 @@ input {
 
 .form-control:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
+    box-shadow: 0 0 0 4px rgba(0, 117, 74, 0.16);
 }
 
 .btn {
@@ -145,7 +145,7 @@ input {
 }
 
 .btn-outline-secondary:hover {
-    background: #f8fafc;
+    background: #f2f0eb;
 }
 
 .w-100 {

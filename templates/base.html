@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
 </head>
 
-<body class="{% block body_class %}bg-light{% endblock %}" {% block body_attrs %}{% endblock %}>
+<body class="{% block body_class %}app-shell{% endblock %}" {% block body_attrs %}{% endblock %}>
     {% block navbar %}{% endblock %}
     {% block content %}{% endblock %}
     <footer class="site-footer">

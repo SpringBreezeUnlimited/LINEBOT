@@ -7,13 +7,14 @@
 {% endblock %}
 
 {% block content %}
-<div class="container mt-5 login-container">
-    <div class="card shadow">
-        <div>
-            <h3 class="text-center mb-4">
-                <span class="responsive-label-full">管理者ログイン</span>
-                <span class="responsive-label-short">管理者ログイン</span>
-            </h3>
+<div class="container login-container">
+    <div class="hero-panel">
+        <div class="hero-kicker">Staff access</div>
+        <h1>管理者ログイン</h1>
+        <p>会場運営用の管理画面です。まずはログインして、種類の受付や呼出状況を確認してください。</p>
+    </div>
+    <div class="card login-card">
+        <div class="card-body">
             {% if notice == "session_expired" %}
             <div class="alert alert-warning">セッションの有効期限が切れたため、再度ログインしてください。</div>
             {% endif %}
@@ -35,6 +36,7 @@
                 </div>
                 <button type="submit" class="btn btn-primary w-100" id="login-submit">ログイン</button>
             </form>
+            <p class="helper-text mt-3 mb-0">IDとパスワードを入力したら、下のボタンを押してください。</p>
         </div>
     </div>
 </div>
