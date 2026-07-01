@@ -6,39 +6,73 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
 {% endblock %}
 
-{% block content %}
-<div class="container login-container">
-    <div class="hero-panel">
-        <div class="hero-kicker">Staff access</div>
-        <h1>管理者ログイン</h1>
-        <p>会場運営用の管理画面です。まずはログインして、種類の受付や呼出状況を確認してください。</p>
+{% block navbar %}
+<header class="global-nav global-nav--login">
+    <div class="container global-nav__inner">
+        <a class="brand-lockup" href="/login" aria-label="LINEBOT 管理画面">
+            <span class="brand-lockup__mark">LINEBOT</span>
+            <span class="brand-lockup__title">festival queue</span>
+        </a>
+        <div class="nav-actions">
+            <span class="status-chip">会場運営向け</span>
+        </div>
     </div>
-    <div class="card login-card">
-        <div class="card-body">
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="container page-stack login-layout">
+    <section class="hero-panel hero-panel--split">
+        <div class="hero-copy">
+            <div class="hero-kicker">Staff access</div>
+            <h1>管理者ログイン</h1>
+            <p>会場運営用の管理画面です。まずはログインして、種類の受付や呼出状況を確認してください。</p>
+            <div class="hero-actions">
+                <span class="info-chip">はじめてでも迷いにくい導線</span>
+                <span class="info-chip">受付状況がひと目で分かる</span>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="hero-visual__panel">
+                <div class="hero-visual__label">運営の流れ</div>
+                <ol class="hero-steps">
+                    <li>ログインする</li>
+                    <li>受付中か確認する</li>
+                    <li>種類と呼出を整える</li>
+                </ol>
+            </div>
+        </div>
+    </section>
+    <section class="card login-card section-card">
+        <div class="card-body section-card__body">
+            <div class="section-intro">
+                <h2>ログイン情報を入力</h2>
+                <p>ID とパスワードを入れたら、そのまま進めます。</p>
+            </div>
             {% if notice == "session_expired" %}
             <div class="alert alert-warning">セッションの有効期限が切れたため、再度ログインしてください。</div>
             {% endif %}
             {% if error %}
             <div class="alert alert-danger">{{ error }}</div>
             {% endif %}
-            <form id="login-form" method="POST" novalidate>
+            <form id="login-form" method="POST" novalidate class="stack-form">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 {% if next_path %}
                 <input type="hidden" name="next" value="{{ next_path }}">
                 {% endif %}
-                <div class="mb-3">
+                <div class="field-stack">
                     <label class="form-label">ログインID</label>
                     <input type="text" name="login_id" class="form-control" autocomplete="username" spellcheck="false" required>
                 </div>
-                <div class="mb-3">
+                <div class="field-stack">
                     <label class="form-label">パスワード</label>
                     <input type="password" name="password" class="form-control" autocomplete="current-password" required>
                 </div>
-                <button type="submit" class="btn btn-primary w-100" id="login-submit">ログイン</button>
+                <button type="submit" class="btn btn-primary w-100 btn-large" id="login-submit">ログイン</button>
             </form>
-            <p class="helper-text mt-3 mb-0">IDとパスワードを入力したら、下のボタンを押してください。</p>
+            <p class="helper-text mt-3 mb-0">入力したら、下のログインボタンを押してください。</p>
         </div>
-    </div>
+    </section>
 </div>
 {% endblock %}
 

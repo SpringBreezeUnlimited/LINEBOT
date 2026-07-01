@@ -6,29 +6,36 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}">
 {% endblock %}
 
-{% block body_class %}bg-light sidebar-layout{% endblock %}
+{% block body_class %}app-shell{% endblock %}
 
 {% block body_attrs %}data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}"{% endblock %}
 
 {% block navbar %}
-<nav class="navbar navbar-dark bg-dark mb-4">
-    <div class="container">
-        <span class="navbar-brand">
-            <span class="responsive-label-full">ログイン履歴</span>
-            <span class="responsive-label-short">ログイン履歴</span>
-        </span>
-        <div class="sidebar-nav-actions d-flex gap-2">
+<header class="global-nav">
+    <div class="container global-nav__inner">
+        <a class="brand-lockup" href="/admin" aria-label="管理画面">
+            <span class="brand-lockup__mark">LINEBOT</span>
+            <span class="brand-lockup__title">festival queue</span>
+        </a>
+        <nav class="nav-pills" aria-label="管理ページ">
+            <a class="nav-pill" href="/admin">受付</a>
+            <a class="nav-pill" href="/admin/types">種類</a>
+            <a class="nav-pill" href="/admin/history">過去ログ</a>
+            <a class="nav-pill" href="/admin/backup">バックアップ</a>
+            <a class="nav-pill is-active" href="/admin/login-logs">ログ履歴</a>
+        </nav>
+        <div class="nav-actions">
             <form method="POST" action="/logout" class="mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-outline-light btn-sm">ログアウト</button>
+                <button type="submit" class="btn btn-outline-light btn-sm nav-action-btn">ログアウト</button>
             </form>
         </div>
     </div>
-</nav>
+</header>
 {% endblock %}
 
 {% block content %}
-<div class="container">
+<div class="container page-stack">
     <div class="hero-panel">
         <div class="hero-kicker">Accounts</div>
         <h1>ログイン履歴</h1>
