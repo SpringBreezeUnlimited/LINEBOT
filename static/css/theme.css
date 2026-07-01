@@ -1,7 +1,7 @@
 html {
     /* スクロールバー有無でレイアウトが左右に揺れないようにする */
     scrollbar-gutter: stable both-edges;
-    font-size: 62.5%;
+    font-size: 75%;
 }
 
 :root {
