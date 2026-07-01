@@ -1707,6 +1707,41 @@ def security_preflight():
         return secure_redirect
 
 
+@app.after_request
+def apply_security_headers(response):
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=()"
+    )
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+    if request.endpoint != "static" and (
+        request.path == "/login" or request.path.startswith("/admin")
+    ):
+        response.headers["Cache-Control"] = "no-store"
+
+    forwarded_proto = (
+        (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    )
+    if request.is_secure or forwarded_proto == "https":
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
+    return response
+
+
 @app.before_request
 def initialize_database_once():
     if request.endpoint == "static":
