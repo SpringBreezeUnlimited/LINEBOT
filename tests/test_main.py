@@ -2003,6 +2003,144 @@ def test_expire_called_reservations_ignores_push_failure(app_module, monkeypatch
     assert app_module.expire_called_reservations() == 1
 
 
+def test_cancel_active_reservations_without_notification_updates_active_rows(
+    app_module, monkeypatch
+):
+    class FakeCursor:
+        def __init__(self):
+            self._rows = [(30,), (31,), (32,)]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            assert "UPDATE reservations" in query
+            assert "WHERE status IN" in query
+            assert params == (
+                app_module.STATUS_CANCELLED,
+                app_module.STATUS_WAITING,
+                app_module.STATUS_CALLED,
+            )
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    sent_messages = []
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(
+        app_module,
+        "send_push_message",
+        lambda user_id, message: sent_messages.append((user_id, message)),
+    )
+
+    assert app_module.cancel_active_reservations_without_notification() == 3
+    assert sent_messages == []
+
+
+def test_process_queued_calls_midnight_cancels_without_push(app_module, monkeypatch):
+    executed = []
+    sent_messages = []
+
+    class FakeCursor:
+        def __init__(self):
+            self._rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            normalized_query = " ".join(query.split())
+            executed.append((normalized_query, params))
+            if "WHERE status IN" in normalized_query:
+                self._rows = [(40,), (41,)]
+            elif "RETURNING id, user_id" in normalized_query:
+                self._rows = []
+            else:
+                self._rows = []
+
+        def fetchall(self):
+            return self._rows
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
+    monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 99)
+    monkeypatch.setattr(
+        app_module,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 2分",
+            "estimated_seconds": 120,
+        },
+    )
+    monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
+    monkeypatch.setattr(
+        app_module,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 0,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    monkeypatch.setattr(app_module, "set_settings", lambda _values: None)
+    monkeypatch.setattr(
+        app_module,
+        "send_push_message",
+        lambda user_id, text: sent_messages.append((user_id, text)),
+    )
+
+    now = datetime(2026, 4, 16, 0, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    result = app_module.process_queued_calls(now=now)
+
+    assert result["midnight_cancel_count"] == 2
+    assert result["timed_out_count"] == 0
+    assert sent_messages == []
+    assert any("WHERE status IN" in query for query, _ in executed)
+    assert all("called_at <=" not in query for query, _ in executed)
+
+
 def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: False)
     monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 2)

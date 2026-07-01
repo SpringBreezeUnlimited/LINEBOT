@@ -117,8 +117,8 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.145"
-APP_RELEASED_AT = "2026-06-21 00:00 JST"
+APP_VERSION = "v1.0.146"
+APP_RELEASED_AT = "2026-07-01 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 FLEX_SAFE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
@@ -736,6 +736,11 @@ def should_run_call_batch(now=None) -> bool:
     return current.tm_min % 5 == 0
 
 
+def should_run_midnight_cancel(now=None) -> bool:
+    current = now or time.localtime()
+    return current.tm_hour == 0 and current.tm_min == 0
+
+
 def build_call_message(reservation_no: int, called_at=None) -> dict:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
@@ -762,7 +767,12 @@ def expire_called_reservations() -> int:
                 )
                 timed_out_rows = cur.fetchall()
                 conn.commit()
-        for reservation_id, user_id, reservation_no in timed_out_rows:
+        for timed_out_row in timed_out_rows:
+            reservation_id = timed_out_row[0]
+            user_id = timed_out_row[1]
+            reservation_no = (
+                timed_out_row[2] if len(timed_out_row) > 2 else reservation_id
+            )
             try:
                 flex = auto_cancel_notification(reservation_no or reservation_id)
                 send_push_message(user_id, flex)
@@ -781,12 +791,38 @@ def expire_called_reservations() -> int:
         return 0
 
 
+def cancel_active_reservations_without_notification() -> int:
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                        UPDATE reservations
+                        SET status = %s
+                        WHERE status IN (%s, %s)
+                        RETURNING id
+                    """,
+                    (STATUS_CANCELLED, STATUS_WAITING, STATUS_CALLED),
+                )
+                cancelled_rows = cur.fetchall()
+                conn.commit()
+        return len(cancelled_rows)
+    except Exception:
+        app.logger.exception("Failed to cancel active reservations at midnight")
+        return 0
+
+
 def process_queued_calls(now=None):
     # 日本時間で現在時刻を取得
     current_dt = datetime.now(JST) if now is None else now
     current = current_dt.timetuple()
     minute_label = current_dt.strftime("%m-%d %H:%M")
-    timed_out_count = expire_called_reservations()
+    midnight_cancel_count = 0
+    timed_out_count = 0
+    if should_run_midnight_cancel(current):
+        midnight_cancel_count = cancel_active_reservations_without_notification()
+    else:
+        timed_out_count = expire_called_reservations()
     cleanup_rate_limit_records()
     latest_wait_time = refresh_wait_time_estimate(current_dt)
     if not should_run_call_batch(current):
@@ -795,6 +831,7 @@ def process_queued_calls(now=None):
             "reason": "not_due",
             "minute": minute_label,
             "timed_out_count": timed_out_count,
+            "midnight_cancel_count": midnight_cancel_count,
             "sent_count": 0,
             "failed_count": 0,
             "wait_time": latest_wait_time,
@@ -834,7 +871,10 @@ def process_queued_calls(now=None):
 
     sent_ids = []
     failed_ids = []
-    for res_id, user_id, reservation_no in auto_rows:
+    for auto_row in auto_rows:
+        res_id = auto_row[0]
+        user_id = auto_row[1]
+        reservation_no = auto_row[2] if len(auto_row) > 2 else res_id
         try:
             # Build Flex call notification; alt text will be used as fallback when needed
             timeout_at = (
@@ -894,6 +934,7 @@ def process_queued_calls(now=None):
         "reason": "ok",
         "minute": minute_label,
         "timed_out_count": timed_out_count,
+        "midnight_cancel_count": midnight_cancel_count,
         "auto_call_count": auto_call_count,
         "auto_selected_count": len(auto_rows),
         "sent_count": len(sent_ids),

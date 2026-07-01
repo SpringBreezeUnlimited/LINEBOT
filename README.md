@@ -20,6 +20,7 @@
    - `BATCH_CALL_RUNNER_TOKEN`: アプリ環境変数と同じ値
    - `CALL_QUEUE_TASK_URL`: `https://your-app.example.com/tasks/process-call-queue`
 3. ワークフロー `.github/workflows/process-call-queue.yml` は 1 分ごとに実行され、GitHub Actions から手動実行も可能です。
+4. 毎日 0:00 JST に待機中・呼出中の予約は自動でキャンセルされます。この深夜キャンセルではユーザー通知は送りません。
 
 ## セキュリティ
 - セキュリティ強化の概要と運用チェックリスト: `SECURITY_HARDENING.md`
