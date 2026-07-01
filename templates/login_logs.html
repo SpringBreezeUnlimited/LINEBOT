@@ -39,14 +39,12 @@
     <div class="hero-panel">
         <div class="hero-kicker">Accounts</div>
         <h1>ログイン履歴</h1>
-        <p>管理者アカウントの作成と、ログイン成功・失敗の履歴を確認できます。迷ったら上から順に見れば十分です。</p>
     </div>
     <div class="card mb-4 admin-create-card">
         <div class="card-body">
             <div class="admin-create-header">
                 <div>
                     <h5 class="card-title mb-1">管理者アカウント作成</h5>
-                    <p class="text-muted small mb-0">単発作成と一括作成を分けて、入力の迷いを減らしました。</p>
                 </div>
                 <span class="badge bg-info text-dark">ロール: 通常管理者</span>
             </div>
@@ -60,19 +58,16 @@
                 <section class="admin-create-panel">
                     <div class="admin-create-panel__header">
                         <h6 class="mb-1">単発作成</h6>
-                        <p class="text-muted small mb-0">1件だけ追加するときに使います。</p>
                     </div>
                     <form method="POST" action="/admin/admin-accounts" class="admin-create-form">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                         <div class="field-stack">
                             <label class="form-label" for="login_id">ログインID</label>
                             <input id="login_id" type="text" name="login_id" class="form-control" placeholder="例: manager01" autocomplete="off" autocapitalize="none" spellcheck="false">
-                            <p class="text-muted small mb-0">3〜32文字。英小文字・数字・`-`・`_` が使えます。</p>
                         </div>
                         <div class="field-stack">
                             <label class="form-label" for="password">初期パスワード</label>
                             <input id="password" type="password" name="password" class="form-control" minlength="8" autocomplete="new-password">
-                            <p class="text-muted small mb-0">8文字以上にしてください。</p>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary btn-lg">この内容で作成</button>
@@ -83,7 +78,6 @@
                 <section class="admin-create-panel admin-create-panel--bulk">
                     <div class="admin-create-panel__header">
                         <h6 class="mb-1">一括作成</h6>
-                        <p class="text-muted small mb-0">CSV風にまとめて貼り付けるだけで追加できます。</p>
                     </div>
                     <form method="POST" action="/admin/admin-accounts" class="admin-create-form">
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
@@ -91,12 +85,6 @@
                             <label class="form-label" for="bulk_accounts">アカウント一覧</label>
                             <textarea id="bulk_accounts" name="bulk_accounts" class="form-control admin-create-textarea" rows="8"
                                 placeholder="manager01,superpower01&#10;manager02,superpower02"></textarea>
-                            <p class="text-muted small mb-0">1行1アカウントで `login_id,password` 形式。入力した場合は一括作成を優先します。</p>
-                        </div>
-                        <div class="admin-create-example">
-                            <div class="small text-muted mb-1">入力例</div>
-                            <code>manager01,superpower01</code>
-                            <code>manager02,superpower02</code>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-outline-primary btn-lg">一括で作成</button>

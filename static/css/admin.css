@@ -1,26 +1,26 @@
 :root {
-    --color-bg: #f2f0eb;
+    --color-bg: #f4f7fb;
     --color-surface: #ffffff;
-    --color-surface-subtle: #edebe9;
-    --color-border: rgba(30, 57, 50, 0.12);
-    --color-border-strong: rgba(30, 57, 50, 0.2);
-    --color-text: rgba(0, 0, 0, 0.87);
-    --color-text-muted: rgba(0, 0, 0, 0.58);
-    --color-primary: #00754A;
-    --color-primary-hover: #006241;
-    --color-success: #00754A;
-    --color-success-hover: #006241;
+    --color-surface-subtle: #f8fafc;
+    --color-border: rgba(15, 23, 42, 0.12);
+    --color-border-strong: rgba(15, 23, 42, 0.18);
+    --color-text: rgba(17, 24, 39, 0.92);
+    --color-text-muted: rgba(75, 85, 99, 0.82);
+    --color-primary: #1a73e8;
+    --color-primary-hover: #1558b0;
+    --color-success: #1e8e3e;
+    --color-success-hover: #166c2a;
     --color-danger: #c82014;
     --color-danger-hover: #a51810;
-    --color-info: #38bdf8;
-    --color-warning: #facc15;
+    --color-info: #0ea5e9;
+    --color-warning: #f4b400;
     --color-warning-text: #1f1300;
-    --color-secondary: #71717a;
-    --color-secondary-hover: #52525b;
-    --color-nav: #97a7c9;
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
+    --color-secondary: #475569;
+    --color-secondary-hover: #334155;
+    --color-nav: #0f172a;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -28,8 +28,8 @@
     --space-5: 24px;
     --space-6: 32px;
     --space-7: 40px;
-    --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.08);
-    --shadow-2: 0 10px 24px rgba(15, 23, 42, 0.08);
+    --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --shadow-2: 0 12px 28px rgba(15, 23, 42, 0.10);
 }
 
 *,
@@ -43,12 +43,12 @@ html {
 }
 
 body {
-    --color-nav: #1E3932;
     color: var(--color-text);
     background:
-        linear-gradient(180deg, rgba(0, 98, 65, 0.08), rgba(0, 98, 65, 0) 220px),
+        radial-gradient(circle at top left, rgba(26, 115, 232, 0.12), transparent 28%),
+        linear-gradient(180deg, rgba(26, 115, 232, 0.04), rgba(26, 115, 232, 0) 220px),
         var(--color-bg);
-    font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
+    font-family: "Roboto", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
     line-height: 1.6;
 }
 
@@ -71,9 +71,11 @@ select {
 .navbar {
     margin-bottom: var(--space-6);
     padding: var(--space-4) 0;
-    color: #fff;
-    background: var(--color-nav);
-    box-shadow: var(--shadow-1);
+    color: var(--color-text);
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: var(--shadow-2);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .navbar .container {
@@ -91,7 +93,7 @@ select {
 
 .card {
     background: var(--color-surface);
-    border: none;
+    border: 1px solid rgba(15, 23, 42, 0.08);
     border-radius: var(--radius-lg);
     overflow: hidden;
 }
@@ -152,9 +154,9 @@ select {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    background: linear-gradient(180deg, #ffffff 0%, #f2f0eb 100%);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 1.6rem;
     box-shadow: var(--shadow-1);
     scroll-snap-align: start;
 }
@@ -177,7 +179,7 @@ select {
     font-size: 2.5rem;
     font-weight: 800;
     line-height: 1;
-    color: var(--color-nav);
+    color: var(--color-primary);
 }
 
 @media (max-width: 480px) {
@@ -263,7 +265,7 @@ select {
 
 .form-select:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(0, 117, 74, 0.16);
+    box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.14);
 }
 
 .form-control {
@@ -280,7 +282,7 @@ select {
 
 .form-control:focus {
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(0, 117, 74, 0.16);
+    box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.14);
 }
 
 .btn {
@@ -343,13 +345,13 @@ select {
 }
 
 .btn-outline-light {
-    color: #fff;
+    color: var(--color-text);
     background: transparent;
-    border-color: transparent;
+    border-color: rgba(15, 23, 42, 0.12);
 }
 
 .btn-outline-light:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(26, 115, 232, 0.08);
 }
 
 .btn-outline-secondary {
@@ -591,9 +593,9 @@ select {
 .call-notification {
     margin: var(--space-4) var(--space-5) 0;
     padding: var(--space-3) var(--space-4);
-    color: #1d5d34;
-    background: #eef8f0;
-    border: 1px solid #b9dfc0;
+    color: #0f5132;
+    background: #ecfdf3;
+    border: 1px solid #bbf7d0;
     border-radius: var(--radius-md);
     font-weight: 700;
 }

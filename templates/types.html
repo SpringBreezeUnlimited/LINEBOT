@@ -36,17 +36,15 @@
 <div class="container page-stack" id="types-container">
     <div class="hero-panel">
         <div class="hero-kicker">Menu setup</div>
-        <h1>予約種類管理</h1>
-        <p>初めての人でも、まずは「種類を追加」してから、受付の開始・停止を切り替えれば使えます。画像を入れると見分けやすくなります。</p>
+        <h1>種類管理</h1>
     </div>
     <div class="card mb-4">
         <div class="card-body">
             <div class="section-intro">
                 <h2>種類を追加</h2>
-                <p>名前・価格・説明・画像をまとめて登録できます。</p>
             </div>
             <div class="mb-3">
-                <span class="me-2">全体の新規受付</span>
+                <span class="me-2">受付状態</span>
                 {% if accepting_new %}
                 <span id="global-accepting-badge" class="badge bg-success" data-accepting-new="true">受付中</span>
                 {% else %}
@@ -92,7 +90,6 @@
         <div class="card-body">
             <div class="section-intro">
                 <h2>登録済みの種類</h2>
-                <p>各種類ごとに、受付の停止、名前変更、価格変更、画像更新ができます。</p>
             </div>
             <div class="types-card-shell">
                 <div class="types-scroll">

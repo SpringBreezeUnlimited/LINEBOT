@@ -33,7 +33,6 @@
     <div class="hero-panel">
         <div class="hero-kicker">Backup</div>
         <h1>バックアップ</h1>
-        <p>データを保存したり、復元したりする画面です。復元は全件上書きなので、実行前に必ず確認してください。</p>
     </div>
 
     {% if import_error %}
@@ -49,11 +48,8 @@
         <div class="card-body">
             <div class="section-intro">
                 <h2>エクスポート</h2>
-                <p>現在のデータを JSON で保存します。定期的な保管用です。</p>
             </div>
-            <a href="/admin/backup/export" class="btn btn-primary" id="backup-export-btn">
-                💾 バックアップをダウンロード
-            </a>
+            <a href="/admin/backup/export" class="btn btn-primary" id="backup-export-btn">ダウンロード</a>
         </div>
     </div>
 
@@ -62,12 +58,9 @@
         <div class="card-body">
             <div class="section-intro">
                 <h2>インポート</h2>
-                <p>バックアップから復元します。現在のデータは上書きされます。</p>
             </div>
             <div class="alert alert-danger mb-3" role="alert">
-                <strong>⚠️ 注意：</strong>
-                インポートを実行すると、<strong>現在のデータがすべて上書き（削除）</strong>されます。<br>
-                復元後はログアウトされます。この操作は元に戻せません。
+                インポートすると現在のデータを上書きします。復元後はログアウトされます。
             </div>
             <form method="POST" action="/admin/backup/import" enctype="multipart/form-data"
                 id="backup-import-form">
@@ -79,7 +72,7 @@
                 </div>
                 <button type="submit" class="btn btn-danger" id="backup-import-btn"
                     onclick="return confirm('本当にインポートしますか？現在のデータはすべて上書きされます。')">
-                    📂 インポートして復元
+                    復元
                 </button>
             </form>
         </div>
