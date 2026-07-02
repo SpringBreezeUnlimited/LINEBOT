@@ -21,13 +21,11 @@
             <a class="nav-pill is-active" href="/admin/history">過去ログ</a>
             <a class="nav-pill" href="/admin/backup">バックアップ</a>
             <a class="nav-pill" href="/admin/login-logs">ログ履歴</a>
-        </nav>
-        <div class="nav-actions">
             <form method="POST" action="/logout" class="mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-outline-light btn-sm nav-action-btn">ログアウト</button>
+                <button type="submit" class="nav-pill">ログアウト</button>
             </form>
-        </div>
+        </nav>
     </div>
 </header>
 {% endblock %}
@@ -76,8 +74,7 @@
                 <div class="history-card-list" id="history-rows">
                     {% for row in rows %}
                     <article class="history-card" data-id="{{ row[0] }}" data-type-id="{{ row[4] or '' }}"
-                        data-display-no="{{ row[1] }}"
-                        data-type="{{ row[3] or '' }}" data-status="{{ row[2] }}"
+                        data-display-no="{{ row[1] }}" data-type="{{ row[3] or '' }}" data-status="{{ row[2] }}"
                         data-created-at="{{ row[5] if row[5] else '' }}"
                         data-service-duration="{{ row[8] if row[8] is not none else '' }}"
                         data-service-duration-label="{{ format_duration(row[8]) if row[8] is not none else '-' }}">

@@ -23,13 +23,11 @@
             <a class="nav-pill" href="/admin/history">過去ログ</a>
             <a class="nav-pill" href="/admin/backup">バックアップ</a>
             <a class="nav-pill" href="/admin/login-logs">ログ履歴</a>
-        </nav>
-        <div class="nav-actions">
             <form method="POST" action="/logout" class="mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-outline-light btn-sm nav-action-btn">ログアウト</button>
+                <button type="submit" class="nav-pill">ログアウト</button>
             </form>
-        </div>
+        </nav>
     </div>
 </header>
 {% endblock %}
@@ -44,145 +42,135 @@
         <h2>受付状況</h2>
     </div>
     <div>
-            <div class="row g-2 align-items-center">
-                {% if call_error %}
-                <div class="col-12">
-                    <div class="alert alert-warning mb-0">{{ call_error }}</div>
-                </div>
+        <div class="row g-2 align-items-center">
+            {% if call_error %}
+            <div class="col-12">
+                <div class="alert alert-warning mb-0">{{ call_error }}</div>
+            </div>
+            {% endif %}
+            <div class="col-sm-6">
+                <label class="form-label">種類で絞り込み</label>
+                <select id="type-filter" class="form-select">
+                    <option value="">すべて</option>
+                    {% for t in types %}
+                    <option value="{{ t[0] }}" {% if current_type_id==t[0] %}selected{% endif %}>{{ t[1] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6">
+                <label class="form-label">並べ替え</label>
+                <select id="sort-by" class="form-select">
+                    <option value="id" {% if sort_by=='id' %}selected{% endif %}>番号</option>
+                    <option value="status" {% if sort_by=='status' %}selected{% endif %}>状態</option>
+                    <option value="type" {% if sort_by=='type' %}selected{% endif %}>種類</option>
+                </select>
+            </div>
+        </div>
+        <div class="row g-2 align-items-start mt-2 controls-row">
+            <div class="col-sm-6 control-col">
+                <label class="form-label">新規受付</label>
+                {% if accepting_new %}
+                <form method="POST" action="/admin/toggle-accepting" class="d-grid" data-ajax-post="true"
+                    data-inline-confirm="新規受付を停止しますか？">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-success w-100" id="accepting-toggle-button">受付中（停止する）</button>
+                </form>
+                {% else %}
+                <form method="POST" action="/admin/toggle-accepting" class="d-grid" data-ajax-post="true"
+                    data-inline-confirm="新規受付を再開しますか？">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-danger w-100" id="accepting-toggle-button">受付停止中（再開する）</button>
+                </form>
                 {% endif %}
-                <div class="col-sm-6">
-                    <label class="form-label">種類で絞り込み</label>
-                    <select id="type-filter" class="form-select">
-                        <option value="">すべて</option>
-                        {% for t in types %}
-                        <option value="{{ t[0] }}" {% if current_type_id==t[0] %}selected{% endif %}>{{ t[1] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-sm-6">
-                    <label class="form-label">並べ替え</label>
-                    <select id="sort-by" class="form-select">
-                        <option value="id" {% if sort_by=='id' %}selected{% endif %}>番号</option>
-                        <option value="status" {% if sort_by=='status' %}selected{% endif %}>状態</option>
-                        <option value="type" {% if sort_by=='type' %}selected{% endif %}>種類</option>
-                    </select>
-                </div>
             </div>
-            <div class="row g-2 align-items-start mt-2 controls-row">
-                <div class="col-sm-6 control-col">
-                    <label class="form-label">新規受付</label>
-                    {% if accepting_new %}
-                    <form method="POST" action="/admin/toggle-accepting" class="d-grid"
-                        data-ajax-post="true"
-                        data-inline-confirm="新規受付を停止しますか？">
-                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-success w-100"
-                            id="accepting-toggle-button">受付中（停止する）</button>
-                    </form>
-                    {% else %}
-                    <form method="POST" action="/admin/toggle-accepting" class="d-grid"
-                        data-ajax-post="true"
-                        data-inline-confirm="新規受付を再開しますか？">
-                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-danger w-100"
-                            id="accepting-toggle-button">受付停止中（再開する）</button>
-                    </form>
-                    {% endif %}
-                </div>
-                <div class="col-sm-6 control-col">
-                    <label class="form-label auto-call-label">5分ごとの自動呼出人数</label>
-                    <form method="POST" action="/admin/auto-call-count" class="auto-call-form"
-                        data-ajax-post="true">
-                        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                        <input type="number" name="auto_call_count" min="0" max="50" step="1"
-                            value="{{ auto_call_count }}" class="form-control" id="auto-call-count-input">
-                        <button type="submit" class="btn btn-primary">保存</button>
-                        </form>
-                </div>
-            </div>
-            <div class="type-count-summary-row mt-2">
-                <div class="type-counts-block">
-                    <label class="form-label">待機数（種類別）</label>
-                    <div id="type-counts" class="d-flex flex-wrap gap-2">
-                        {% for c in type_counts %}
-                        <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="auto-call-summary">
-                    <div class="auto-call-summary-label">前回の自動呼出</div>
-                    <div id="last-auto-call-message" class="auto-call-summary-value">{{ last_auto_call.message }}</div>
-                </div>
+            <div class="col-sm-6 control-col">
+                <label class="form-label auto-call-label">5分ごとの自動呼出人数</label>
+                <form method="POST" action="/admin/auto-call-count" class="auto-call-form" data-ajax-post="true">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <input type="number" name="auto_call_count" min="0" max="50" step="1" value="{{ auto_call_count }}"
+                        class="form-control" id="auto-call-count-input">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </form>
             </div>
         </div>
-    </div>
-    <div>
-        <div id="call-notification" class="call-notification" hidden></div>
-        <div class="list-meta">
-            <span class="list-meta-label">リスト最終更新</span>
-            <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
-        </div>
-        <div class="p-0 admin-card-shell">
-            <div class="admin-scroll">
-                <div class="admin-card-list" id="active-rows">
-                    {% for row in rows %}
-                    <article class="admin-reservation-card" data-id="{{ row.id }}"
-                        data-display-no="{{ row.display_no }}"
-                        data-created-at="{{ row.created_at if row.created_at else '' }}"
-                        data-type="{{ row.type or '' }}"
-                        data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
-                        data-status="{{ row.status }}">
-                        <div class="admin-reservation-card__header">
-                            <div>
-                                <div class="admin-reservation-card__label">番号</div>
-                                <div class="admin-reservation-card__value">{{ row.display_no }}</div>
-                            </div>
-                            <div class="admin-reservation-card__status">
-                                {% if row.status == 'waiting' %}
-                                <span class="badge bg-warning text-dark">待機中</span>
-                                {% elif row.status == 'called' %}
-                                <span class="badge bg-info">呼出中</span>
-                                {% else %}
-                                <span class="badge bg-success">確認完了</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <dl class="admin-reservation-card__meta">
-                            <div>
-                                <dt>受付時刻</dt>
-                                <dd>{{ row.created_at if row.created_at else '-' }}</dd>
-                            </div>
-                            <div>
-                                <dt>種類</dt>
-                                <dd>{{ row.type or '-' }}</dd>
-                            </div>
-                        </dl>
-                        <div class="admin-reservation-card__actions">
-                            {% if row.status == 'waiting' %}
-                            <form method="POST" action="/admin/call/{{ row.id }}" class="d-inline"
-                                data-ajax-post="true">
-                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-success">呼出</button>
-                            </form>
-                            {% elif row.status == 'called' %}
-                            <form method="POST" action="/admin/finish/{{ row.id }}" class="d-inline"
-                                data-ajax-post="true">
-                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-primary">確認完了</button>
-                            </form>
-                            {% else %}
-                            <span class="text-muted small">確認完了</span>
-                            {% endif %}
-                        </div>
-                    </article>
+        <div class="type-count-summary-row mt-2">
+            <div class="type-counts-block">
+                <label class="form-label">待機数（種類別）</label>
+                <div id="type-counts" class="d-flex flex-wrap gap-2">
+                    {% for c in type_counts %}
+                    <span class="badge bg-secondary">{{ c.name }}: {{ c.count }}</span>
                     {% endfor %}
                 </div>
             </div>
+            <div class="auto-call-summary">
+                <div class="auto-call-summary-label">前回の自動呼出</div>
+                <div id="last-auto-call-message" class="auto-call-summary-value">{{ last_auto_call.message }}</div>
+            </div>
         </div>
     </div>
-    <div class="text-center mt-4">
-        <a href="/admin" class="btn btn-secondary">リストを更新</a>
+</div>
+<div>
+    <div id="call-notification" class="call-notification" hidden></div>
+    <div class="list-meta">
+        <span class="list-meta-label">リスト最終更新</span>
+        <span id="list-last-updated" class="list-meta-value">読み込み中...</span>
     </div>
+    <div class="p-0 admin-card-shell">
+        <div class="admin-scroll">
+            <div class="admin-card-list" id="active-rows">
+                {% for row in rows %}
+                <article class="admin-reservation-card" data-id="{{ row.id }}" data-display-no="{{ row.display_no }}"
+                    data-created-at="{{ row.created_at if row.created_at else '' }}" data-type="{{ row.type or '' }}"
+                    data-type-id="{{ row.type_id if row.type_id is not none else '' }}" data-status="{{ row.status }}">
+                    <div class="admin-reservation-card__header">
+                        <div>
+                            <div class="admin-reservation-card__label">番号</div>
+                            <div class="admin-reservation-card__value">{{ row.display_no }}</div>
+                        </div>
+                        <div class="admin-reservation-card__status">
+                            {% if row.status == 'waiting' %}
+                            <span class="badge bg-warning text-dark">待機中</span>
+                            {% elif row.status == 'called' %}
+                            <span class="badge bg-info">呼出中</span>
+                            {% else %}
+                            <span class="badge bg-success">確認完了</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <dl class="admin-reservation-card__meta">
+                        <div>
+                            <dt>受付時刻</dt>
+                            <dd>{{ row.created_at if row.created_at else '-' }}</dd>
+                        </div>
+                        <div>
+                            <dt>種類</dt>
+                            <dd>{{ row.type or '-' }}</dd>
+                        </div>
+                    </dl>
+                    <div class="admin-reservation-card__actions">
+                        {% if row.status == 'waiting' %}
+                        <form method="POST" action="/admin/call/{{ row.id }}" class="d-inline" data-ajax-post="true">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-success">呼出</button>
+                        </form>
+                        {% elif row.status == 'called' %}
+                        <form method="POST" action="/admin/finish/{{ row.id }}" class="d-inline" data-ajax-post="true">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-primary">確認完了</button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted small">確認完了</span>
+                        {% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+<div class="text-center mt-4">
+    <a href="/admin" class="btn btn-secondary">リストを更新</a>
+</div>
 </div>
 {% endblock %}
 
