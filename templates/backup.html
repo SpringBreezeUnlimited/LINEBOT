@@ -17,13 +17,11 @@
             <a class="nav-pill" href="/admin/history">過去ログ</a>
             <a class="nav-pill is-active" href="/admin/backup">バックアップ</a>
             <a class="nav-pill" href="/admin/login-logs">ログ履歴</a>
-        </nav>
-        <div class="nav-actions">
-            <form method="POST" action="/logout" class="mb-0">
+            <form method="POST" action="/logout" class="d-inline mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-outline-light btn-sm nav-action-btn">ログアウト</button>
+                <button type="submit" class="nav-pill">ログアウト</button>
             </form>
-        </div>
+        </nav>
     </div>
 </header>
 {% endblock %}
