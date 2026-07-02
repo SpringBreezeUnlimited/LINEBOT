@@ -22,7 +22,6 @@
             <a class="nav-pill" href="/admin/types">種類</a>
             <a class="nav-pill" href="/admin/history">過去ログ</a>
             <a class="nav-pill" href="/admin/backup">バックアップ</a>
-            <a class="nav-pill is-active" href="/admin/login-logs">ログ履歴</a>
             <form method="POST" action="/logout" class="d-inline mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="nav-pill">ログアウト</button>
@@ -61,11 +60,13 @@
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                         <div class="field-stack">
                             <label class="form-label" for="login_id">ログインID</label>
-                            <input id="login_id" type="text" name="login_id" class="form-control" placeholder="例: manager01" autocomplete="off" autocapitalize="none" spellcheck="false">
+                            <input id="login_id" type="text" name="login_id" class="form-control"
+                                placeholder="例: manager01" autocomplete="off" autocapitalize="none" spellcheck="false">
                         </div>
                         <div class="field-stack">
                             <label class="form-label" for="password">初期パスワード</label>
-                            <input id="password" type="password" name="password" class="form-control" minlength="8" autocomplete="new-password">
+                            <input id="password" type="password" name="password" class="form-control" minlength="8"
+                                autocomplete="new-password">
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-primary btn-lg">この内容で作成</button>
@@ -81,8 +82,8 @@
                         <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                         <div class="field-stack">
                             <label class="form-label" for="bulk_accounts">アカウント一覧</label>
-                            <textarea id="bulk_accounts" name="bulk_accounts" class="form-control admin-create-textarea" rows="8"
-                                placeholder="manager01,superpower01&#10;manager02,superpower02"></textarea>
+                            <textarea id="bulk_accounts" name="bulk_accounts" class="form-control admin-create-textarea"
+                                rows="8" placeholder="manager01,superpower01&#10;manager02,superpower02"></textarea>
                         </div>
                         <div class="d-grid">
                             <button type="submit" class="btn btn-outline-primary btn-lg">一括で作成</button>
@@ -137,16 +138,21 @@
                         </td>
                         <td>
                             <div class="d-flex flex-wrap gap-2">
-                                <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/active" class="d-inline">
+                                <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/active"
+                                    class="d-inline">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm {% if account[3] %}btn-outline-warning{% else %}btn-outline-success{% endif %}" {% if current_admin_account_id == account[0] %}disabled{% endif %}>
+                                    <button type="submit"
+                                        class="btn btn-sm {% if account[3] %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                                        {% if current_admin_account_id==account[0] %}disabled{% endif %}>
                                         {% if account[3] %}無効化{% else %}有効化{% endif %}
                                     </button>
                                 </form>
-                                <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/delete" class="d-inline"
-                                      onsubmit="return confirm('アカウント「{{ account[1] }}」を削除します。よろしいですか？');">
+                                <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/delete"
+                                    class="d-inline"
+                                    onsubmit="return confirm('アカウント「{{ account[1] }}」を削除します。よろしいですか？');">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" {% if current_admin_account_id == account[0] %}disabled{% endif %}>削除</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" {% if
+                                        current_admin_account_id==account[0] %}disabled{% endif %}>削除</button>
                                 </form>
                             </div>
                         </td>

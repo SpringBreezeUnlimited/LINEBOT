@@ -16,7 +16,6 @@
             <a class="nav-pill" href="/admin/types">種類</a>
             <a class="nav-pill" href="/admin/history">過去ログ</a>
             <a class="nav-pill is-active" href="/admin/backup">バックアップ</a>
-            <a class="nav-pill" href="/admin/login-logs">ログ履歴</a>
             <form method="POST" action="/logout" class="d-inline mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="nav-pill">ログアウト</button>
@@ -60,13 +59,12 @@
             <div class="alert alert-danger mb-3" role="alert">
                 インポートすると現在のデータを上書きします。復元後はログアウトされます。
             </div>
-            <form method="POST" action="/admin/backup/import" enctype="multipart/form-data"
-                id="backup-import-form">
+            <form method="POST" action="/admin/backup/import" enctype="multipart/form-data" id="backup-import-form">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3">
                     <label for="backup-file-input" class="form-label">バックアップファイル (.json)</label>
-                    <input type="file" class="form-control" id="backup-file-input"
-                        name="backup_file" accept=".json" required>
+                    <input type="file" class="form-control" id="backup-file-input" name="backup_file" accept=".json"
+                        required>
                 </div>
                 <button type="submit" class="btn btn-danger" id="backup-import-btn"
                     onclick="return confirm('本当にインポートしますか？現在のデータはすべて上書きされます。')">
