@@ -235,8 +235,15 @@ body.app-shell {
 .nav-pills {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--space-2);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+}
+
+.nav-pills::-webkit-scrollbar {
+    display: none;
 }
 
 .nav-pill {
@@ -252,6 +259,8 @@ body.app-shell {
     font-size: 1.4rem;
     font-weight: 600;
     background: rgba(15, 23, 42, 0.02);
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .nav-pill:hover,
@@ -714,7 +723,8 @@ body.app-shell {
 
     .nav-pills {
         width: 100%;
-        justify-content: center;
+        justify-content: flex-start;
+        justify-content: safe center;
     }
 
     .nav-pill {
@@ -750,7 +760,6 @@ body.app-shell {
         font-size: 2.8rem;
     }
 
-    .nav-pill,
     .nav-action-btn {
         width: 100%;
     }
