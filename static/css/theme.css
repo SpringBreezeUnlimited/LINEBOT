@@ -1014,3 +1014,27 @@ body.sidebar-layout .sidebar-nav-actions form .btn {
         max-width: calc(100% - 24px);
     }
 }
+
+/* 種類で絞り込みと並び替えの左右配置用 */
+.filter-sort-row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.filter-sort-col {
+    flex: 1 1 50%;
+    min-width: 0;
+}
+
+@media (max-width: 576px) {
+    .filter-sort-row {
+        gap: var(--space-2);
+    }
+    
+    .filter-sort-row .form-select {
+        padding: 0 var(--space-2);
+        font-size: 0.875rem;
+    }
+}
