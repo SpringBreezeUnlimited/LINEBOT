@@ -13,9 +13,6 @@
             <span class="brand-lockup__mark">LINEBOT</span>
             <span class="brand-lockup__title">festival queue</span>
         </a>
-        <div class="nav-actions">
-            <span class="status-chip">管理者専用</span>
-        </div>
     </div>
 </header>
 {% endblock %}
@@ -46,11 +43,13 @@
                 {% endif %}
                 <div class="field-stack">
                     <label class="form-label">ログインID</label>
-                    <input type="text" name="login_id" class="form-control" autocomplete="username" spellcheck="false" required>
+                    <input type="text" name="login_id" class="form-control" autocomplete="username" spellcheck="false"
+                        required>
                 </div>
                 <div class="field-stack">
                     <label class="form-label">パスワード</label>
-                    <input type="password" name="password" class="form-control" autocomplete="current-password" required>
+                    <input type="password" name="password" class="form-control" autocomplete="current-password"
+                        required>
                 </div>
                 <button type="submit" class="btn btn-primary w-100 btn-large" id="login-submit">ログイン</button>
             </form>
@@ -61,32 +60,32 @@
 
 {% block scripts %}
 <script>
-(() => {
-    const form = document.getElementById('login-form');
-    const submitButton = document.getElementById('login-submit');
-    if (!form || !submitButton) return;
+    (() => {
+        const form = document.getElementById('login-form');
+        const submitButton = document.getElementById('login-submit');
+        if (!form || !submitButton) return;
 
-    let submitRequested = false;
+        let submitRequested = false;
 
-    submitButton.addEventListener('click', (event) => {
-        if (!form.reportValidity()) {
-            event.preventDefault();
-            return;
-        }
-        submitRequested = true;
-    });
+        submitButton.addEventListener('click', (event) => {
+            if (!form.reportValidity()) {
+                event.preventDefault();
+                return;
+            }
+            submitRequested = true;
+        });
 
-    form.addEventListener('submit', (event) => {
-        if (!submitRequested) {
-            event.preventDefault();
-            return;
-        }
-        submitRequested = false;
-    });
+        form.addEventListener('submit', (event) => {
+            if (!submitRequested) {
+                event.preventDefault();
+                return;
+            }
+            submitRequested = false;
+        });
 
-    form.addEventListener('input', () => {
-        submitRequested = false;
-    });
-})();
+        form.addEventListener('input', () => {
+            submitRequested = false;
+        });
+    })();
 </script>
 {% endblock %}
