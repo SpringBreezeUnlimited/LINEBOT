@@ -198,9 +198,13 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
-            elif "FROM admin_accounts WHERE id = %s" in query:
-                self._last = (None, None)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1,)
+            elif "SELECT login_id FROM admin_accounts" in query:
+                self._last = None
+            elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
+                self._last = None
+            elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
@@ -252,9 +256,18 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     insert_queries = [
         params
         for query, params in queries
-        if "INSERT INTO reservations (user_id, message, type_id)" in query
+        if "INSERT INTO reservations" in query
     ]
-    assert insert_queries == [("U-123", "", 1)]
+    assert len(insert_queries) == 1
+    inserted = insert_queries[0]
+    # (user_id, message, type_id, owner_admin_id, reservation_no) の 5 要素
+    assert inserted[0] == "U-123"
+    assert inserted[1] == ""
+    assert inserted[2] == 1
+    assert inserted[3] == 7  # type_owner_admin_id
+    # reservation_no は XXXY 形式（0010〜9999）
+    assert isinstance(inserted[4], int)
+    assert 10 <= inserted[4] <= 9999
     assert sent_texts
 
 
@@ -1903,7 +1916,7 @@ def test_build_call_message_includes_timeout_minutes_and_deadline(app_module):
     message = app_module.build_call_message(15, called_at=called_at)
     text = flex_message_text(message)
     assert "呼出中" in text
-    assert "番号: 15" in text
+    assert "番号: 0015" in text
     assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in text
     assert "10:15" in text
     assert "自動でキャンセル" in text
@@ -2357,9 +2370,13 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
-            elif "FROM admin_accounts WHERE id = %s" in query:
-                self._last = (None, None)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1,)
+            elif "SELECT login_id FROM admin_accounts" in query:
+                self._last = None
+            elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
+                self._last = None
+            elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
@@ -2410,7 +2427,8 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
     app_module.process_reservation(event, "U-123", "予約 相談")
 
     assert sent_texts
-    assert "【受付完了】番号: 10 / 種類: 相談 / 待ち: 2人" in sent_texts[0]
+    assert "【受付完了】番号: 001" in sent_texts[0]
+    assert " / 種類: 相談 / 待ち: 2人" in sent_texts[0]
     assert "現在の目安待ち時間: 3分" in sent_texts[0]
 
 
@@ -2439,9 +2457,15 @@ def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
+            elif "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1,)
+            elif "SELECT login_id FROM admin_accounts" in query:
+                self._last = None
             elif "FROM admin_accounts WHERE id = %s" in query:
                 self._last = (570, 1020)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
+                self._last = None
+            elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif "FROM reservations r" in query and "JOIN reservation_types t ON r.type_id = t.id" in query:
                 self._last = (2,)
@@ -2656,7 +2680,7 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     app_module.process_reservation(event, "U-cancel", "キャンセル")
 
     assert sent_texts
-    assert "予約番号 42 をキャンセルしました。" in sent_texts[-1]
+    assert "受付番号 0042 をキャンセルしました。" in sent_texts[-1]
     assert commits
 
 

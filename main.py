@@ -1362,6 +1362,10 @@ def sync_reservation_owner_numbers(cur):
 
 
 def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
+    """申込順の連番 XXX（1〜999 ループ）と乱数 Y（0〜9）を合成した
+    4 桁固定の整数 XXXY を採番して返す。
+    表示には fmt_no() を使うこと。
+    """
     cur.execute(
         """
             SELECT next_reservation_no
@@ -1374,16 +1378,33 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     row = cur.fetchone()
     if not row:
         raise ValueError("owner admin account not found")
-    reservation_no = int(row[0] or 1)
+    seq = int(row[0] or 1)
+    if seq > 999:
+        seq = 1
+    next_seq = seq + 1 if seq < 999 else 1
     cur.execute(
         """
             UPDATE admin_accounts
             SET next_reservation_no = %s
             WHERE id = %s
         """,
-        (reservation_no + 1, owner_admin_id),
+        (next_seq, owner_admin_id),
     )
-    return reservation_no
+    rand_digit = secrets.randbelow(10)
+    return seq * 10 + rand_digit
+
+
+def fmt_no(reservation_no: int | str) -> str:
+    """予約番号を 4 桁 0 埋め文字列（XXXY 形式）に変換する。
+    int はそのままゼロ埋め。str はいったん int 変換を試み、
+    失敗した場合（None 由来の空文字など）はそのまま返す。
+    """
+    if isinstance(reservation_no, int):
+        return f"{reservation_no:04d}"
+    try:
+        return f"{int(reservation_no):04d}"
+    except (ValueError, TypeError):
+        return str(reservation_no)
 
 
 def cleanup_rate_limit_records():
@@ -2148,7 +2169,7 @@ def serialize_active_rows(rows):
     return [
         {
             "id": row[0],
-            "display_no": row[1],
+            "display_no": fmt_no(row[1]) if isinstance(row[1], int) else row[1],
             "status": row[2],
             "type_id": row[3],
             "type": row[4],
@@ -3082,7 +3103,7 @@ def admin_history():
             rows = [
                 (
                     row[0],
-                    row[1],
+                    fmt_no(row[1]) if isinstance(row[1], int) else row[1],
                     row[2],
                     row[3],
                     row[4],
@@ -3193,7 +3214,7 @@ def admin_history_export():
                 for row in cur:
                     writer.writerow(
                         [
-                            row[1],
+                            fmt_no(row[1]) if isinstance(row[1], int) else row[1],
                             row[2],
                             row[3],
                             format_dt(row[4]),
@@ -3254,7 +3275,7 @@ def admin_call(res_id):
                     return redirect(
                         url_for(
                             "admin_page",
-                            call_error=f"受付番号 {existing[1] or res_id} は直前にキャンセルされたため呼出できませんでした。",
+                            call_error=f"受付番号 {fmt_no(existing[1] or res_id)} は直前にキャンセルされたため呼出できませんでした。",
                         )
                     )
                 abort(404)
@@ -3950,18 +3971,18 @@ def process_reservation(event, user_id, user_message):
                                 reservation_id=res_id,
                                 owner_admin_id=existing_owner_admin_id,
                             )
-                            body = f"予約済みです。番号: {display_no} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                            body = f"予約済みです。番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute(
                                 "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                 (STATUS_WAITING, res_id),
                             )
-                            body = f"予約済みです。番号: {display_no} / 待ち: {cur.fetchone()[0]}人"
+                            body = f"予約済みです。番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
-                            body = f"【呼出中】番号: {display_no} / 種類: {existing_type_name} 会場へお越しください！"
+                            body = f"【呼出中】番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
                         else:
-                            body = f"【呼出中】番号: {display_no} 会場へお越しください！"
+                            body = f"【呼出中】番号: {fmt_no(display_no)} 会場へお越しください！"
                     send_flex_notice(event.reply_token, "予約状況", body)
                     return
                 else:
@@ -4010,18 +4031,18 @@ def process_reservation(event, user_id, user_message):
                                             owner_admin_id=existing_owner_admin_id,
                                         )
                                     )
-                                    body = f"予約済みです。番号: {display_no} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                    body = f"予約済みです。番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
                                     cur.execute(
                                         "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                                         (STATUS_WAITING, res_id),
                                     )
-                                    body = f"予約済みです。番号: {display_no} / 待ち: {cur.fetchone()[0]}人"
+                                    body = f"予約済みです。番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
                             elif status == STATUS_CALLED:
                                 if existing_type_name:
-                                    body = f"【呼出中】番号: {display_no} / 種類: {existing_type_name} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
                                 else:
-                                    body = f"【呼出中】番号: {display_no} 会場へお越しください！"
+                                    body = f"【呼出中】番号: {fmt_no(display_no)} 会場へお越しください！"
                             send_flex_notice(event.reply_token, "予約状況", body)
                             return
                         raise
@@ -4044,14 +4065,14 @@ def process_reservation(event, user_id, user_message):
                             if type_owner_login_id
                             else ""
                         )
-                        body = f"【受付完了】番号: {reservation_no} / 種類: {type_name}{owner_text}{price_text} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {fmt_no(reservation_no)} / 種類: {type_name}{owner_text}{price_text} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute(
                             "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                             (STATUS_WAITING, new_id),
                         )
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
-                        body = f"【受付完了】番号: {reservation_no} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】番号: {fmt_no(reservation_no)} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(
                         waiting_people_ahead
@@ -4084,7 +4105,7 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(
                         event.reply_token,
                         "キャンセル完了",
-                        f"受付番号 {cancelled_no} をキャンセルしました。",
+                        f"受付番号 {fmt_no(cancelled_no)} をキャンセルしました。",
                     )
                 else:
                     send_flex_notice(
@@ -4135,12 +4156,12 @@ def process_reservation(event, user_id, user_message):
                         )
                         if type_name:
                             body = (
-                                f"番号: {display_no} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
+                                f"番号: {fmt_no(display_no)} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         else:
                             body = (
-                                f"番号: {display_no} / あなたの前: {waiting_people_ahead}人"
+                                f"番号: {fmt_no(display_no)} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         send_flex_notice(event.reply_token, "待ち時間", body)
@@ -4148,7 +4169,7 @@ def process_reservation(event, user_id, user_message):
                         send_flex_notice(
                             event.reply_token,
                             "呼出中",
-                            f"【呼出中】番号: {display_no} です。会場へお越しください。",
+                            f"【呼出中】番号: {fmt_no(display_no)} です。会場へお越しください。",
                         )
                 return
             else:
