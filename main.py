@@ -3476,7 +3476,7 @@ def admin_backup_export():
             app.logger.exception("Failed to export table %s", table_name)
             export_data["tables"][table_name] = {"columns": [], "rows": []}
 
-    filename = f"backup-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    filename = f"backup-{datetime.now(JST).strftime('%Y%m%d-%H%M%S')}.json"
     json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
     return Response(
         json_bytes,
