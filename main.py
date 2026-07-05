@@ -110,6 +110,10 @@ CHANNEL_SECRET = (os.getenv("CHANNEL_SECRET") or "").strip()
 if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
     raise RuntimeError("CHANNEL_ACCESS_TOKEN and CHANNEL_SECRET are required")
 
+# 負荷テスト用: true にすると LINE への実際の push/reply 送信をスキップする。
+# 本番では絶対に true にしないこと。
+LOAD_TEST_MODE = (os.getenv("LOAD_TEST_MODE") or "").strip().lower() == "true"
+
 raw_db_url = (os.getenv("DATABASE_URL") or "").strip()
 if not raw_db_url:
     raise RuntimeError("DATABASE_URL is required")
@@ -442,6 +446,9 @@ def build_line_message(message: str | dict):
 
 
 def send_push_message(user_id: str, message: str | dict, retry_key: str | None = None):
+    if LOAD_TEST_MODE:
+        app.logger.info("LOAD_TEST_MODE: push message skipped user_id=%s", user_id)
+        return
     stable_retry_key = retry_key or str(uuid.uuid4())
     payload = PushMessageRequest(
         to=user_id,
@@ -481,6 +488,11 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
 
 
 def send_reply_message(reply_token: str, message: str | dict):
+    if LOAD_TEST_MODE:
+        app.logger.info(
+            "LOAD_TEST_MODE: reply message skipped reply_token=%s", reply_token
+        )
+        return
     try:
         if isinstance(message, dict):
             message = sanitize_flex_message(message)
@@ -1361,8 +1373,16 @@ def sync_reservation_owner_numbers(cur):
     )
 
 
+def hour_digit(now=None) -> int:
+    """現在時刻（JST）から Y 桁を決定する。
+    10時:1 / 11時:2 / 12時:3 / 13時:4 / 14時:5 / それ以外:0
+    """
+    dt = now or datetime.now(JST)
+    return {10: 1, 11: 2, 12: 3, 13: 4, 14: 5}.get(dt.hour, 0)
+
+
 def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
-    """申込順の連番 XXX（1〜999 ループ）と乱数 Y（0〜9）を合成した
+    """申込順の連番 XXX（1〜999 ループ）と時間帯 Y（hour_digit()）を合成した
     4 桁固定の整数 XXXY を採番して返す。
     表示には fmt_no() を使うこと。
     """
@@ -1386,6 +1406,7 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     # 衝突する可能性がある（履歴・キャンセル済みの行も含め reservation_no は
     # 削除されないため）。UNIQUE 制約違反で予約作成そのものが失敗しないよう、
     # 同じ XXX 帯で未使用の Y を探し、全て埋まっていれば次の XXX に進める。
+    preferred_digit = hour_digit()
     for _ in range(999):
         cur.execute(
             """
@@ -1395,13 +1416,16 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
             (owner_admin_id, seq * 10, seq * 10 + 10),
         )
         used_digits = {r[0] % 10 for r in cur.fetchall()}
+        if preferred_digit not in used_digits:
+            digit = preferred_digit
+            break
         available_digits = [d for d in range(10) if d not in used_digits]
         if available_digits:
-            rand_digit = secrets.choice(available_digits)
+            digit = secrets.choice(available_digits)
             break
         seq = seq + 1 if seq < 999 else 1
     else:
-        rand_digit = secrets.randbelow(10)
+        digit = preferred_digit
 
     next_seq = seq + 1 if seq < 999 else 1
     cur.execute(
@@ -1412,7 +1436,7 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
         """,
         (next_seq, owner_admin_id),
     )
-    return seq * 10 + rand_digit
+    return seq * 10 + digit
 
 
 def fmt_no(reservation_no: int | str) -> str:
