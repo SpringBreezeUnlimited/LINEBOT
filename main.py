@@ -1381,6 +1381,28 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     seq = int(row[0] or 1)
     if seq > 999:
         seq = 1
+
+    # 999 予約を超えると seq がループするため、既存の (owner_admin_id, XXXY) と
+    # 衝突する可能性がある（履歴・キャンセル済みの行も含め reservation_no は
+    # 削除されないため）。UNIQUE 制約違反で予約作成そのものが失敗しないよう、
+    # 同じ XXX 帯で未使用の Y を探し、全て埋まっていれば次の XXX に進める。
+    for _ in range(999):
+        cur.execute(
+            """
+                SELECT reservation_no FROM reservations
+                WHERE owner_admin_id = %s AND reservation_no >= %s AND reservation_no < %s
+            """,
+            (owner_admin_id, seq * 10, seq * 10 + 10),
+        )
+        used_digits = {r[0] % 10 for r in cur.fetchall()}
+        available_digits = [d for d in range(10) if d not in used_digits]
+        if available_digits:
+            rand_digit = secrets.choice(available_digits)
+            break
+        seq = seq + 1 if seq < 999 else 1
+    else:
+        rand_digit = secrets.randbelow(10)
+
     next_seq = seq + 1 if seq < 999 else 1
     cur.execute(
         """
@@ -1390,7 +1412,6 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
         """,
         (next_seq, owner_admin_id),
     )
-    rand_digit = secrets.randbelow(10)
     return seq * 10 + rand_digit
 
 
@@ -3436,6 +3457,11 @@ def _import_table(cur, table_name: str, table_data: dict):
         raise ValueError(f"Invalid backup data for table {table_name}")
     columns = table_data.get("columns", [])
     rows = table_data.get("rows", [])
+    # columns はアップロードされた JSON 由来のため、SQL 識別子として安全な
+    # 文字のみで構成されていることを検証する（インジェクション対策）。
+    for c in columns:
+        if not isinstance(c, str) or not re.fullmatch(r"[A-Za-z0-9_]+", c):
+            raise ValueError(f"Invalid column name in backup data: {c!r}")
     # 外部キー制約の順序を考慮して CASCADE TRUNCATE を使用する
     cur.execute(f"TRUNCATE TABLE {table_name} RESTART IDENTITY CASCADE")
     if not columns or not rows:

@@ -204,6 +204,8 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last = None
             elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
                 self._last = None
+            elif "SELECT reservation_no FROM reservations" in query:
+                self._last_all = []
             elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif (
@@ -216,6 +218,9 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
 
         def fetchone(self):
             return self._last
+
+        def fetchall(self):
+            return getattr(self, "_last_all", [])
 
     class FakeConnection:
         def __enter__(self):
@@ -269,6 +274,43 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     assert isinstance(inserted[4], int)
     assert 10 <= inserted[4] <= 9999
     assert sent_texts
+
+
+def test_allocate_admin_reservation_no_skips_used_numbers_on_wraparound(app_module):
+    # seq が 999 からループして 1 に戻った際、過去に発行済みの 1XXY 系番号と
+    # 衝突しないよう、空いている Y のみを選ぶことを確認する。
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+            self._last_all = []
+
+        def execute(self, query, params=None):
+            if "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1000,)  # ループ後の値（>999）
+            elif "SELECT reservation_no FROM reservations" in query:
+                # 10〜19 のうち 10〜18 はすでに使用済み、19 のみ空き
+                self._last_all = [(n,) for n in range(10, 19)]
+            elif "UPDATE admin_accounts" in query:
+                self._last = None
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+        def fetchall(self):
+            return self._last_all
+
+    cur = FakeCursor()
+    result = app_module.allocate_admin_reservation_no(cur, owner_admin_id=1)
+    assert result == 19
+
+
+def test_fmt_no_formats_as_four_digits(app_module):
+    assert app_module.fmt_no(19) == "0019"
+    assert app_module.fmt_no(1234) == "1234"
+    assert app_module.fmt_no("42") == "0042"
+    assert app_module.fmt_no(None) == "None"
 
 
 def test_handle_message_ignores_specific_url(app_module, monkeypatch):
@@ -2334,6 +2376,8 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
                 self._last = None
             elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
                 self._last = None
+            elif "SELECT reservation_no FROM reservations" in query:
+                self._last_all = []
             elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif (
@@ -2346,6 +2390,9 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
 
         def fetchone(self):
             return self._last
+
+        def fetchall(self):
+            return getattr(self, "_last_all", [])
 
     class FakeConnection:
         def __enter__(self):
