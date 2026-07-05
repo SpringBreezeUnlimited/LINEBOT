@@ -70,21 +70,24 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
 
         def execute(self, query, params=None):
             normalized_query = " ".join(query.split())
-            if normalized_query.startswith(
-                "UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP"
+            if (
+                normalized_query.startswith("UPDATE reservations SET status = %s, called_at = CURRENT_TIMESTAMP") or
+                normalized_query.startswith("UPDATE reservations r SET status = %s, called_at = CURRENT_TIMESTAMP")
             ):
                 with lock:
                     new_status, _res_id, expected_status, _owner_admin_id = params
                     if state["status"] == expected_status:
                         state["status"] = new_status
-                        self._last = (state["user_id"],)
+                        self._last = (state["user_id"], 1)
                     else:
                         self._last = None
             elif normalized_query.startswith(
+                "SELECT status, COALESCE(reservation_no, id) FROM reservations WHERE id = %s"
+            ) or normalized_query.startswith(
                 "SELECT status FROM reservations WHERE id = %s"
             ):
                 with lock:
-                    self._last = (state["status"],)
+                    self._last = (state["status"], 1)
             elif normalized_query.startswith(
                 "UPDATE reservations SET status = %s, called_at = NULL"
             ):
