@@ -40,7 +40,7 @@ def bubble_from_title_and_text(title: str, text: str, hero_url: str | None = Non
 
 
 def reservation_confirmation(
-    reservation_no: int,
+    reservation_no: int | str,
     type_name: str | None,
     owner_name: str | None,
     waiting: int,
@@ -48,7 +48,7 @@ def reservation_confirmation(
     image_url: str | None = None,
 ) -> Dict:
     title = "受付完了"
-    lines = [f"番号: {reservation_no}"]
+    lines = [f"番号: {reservation_no:04d}" if isinstance(reservation_no, int) else f"番号: {reservation_no}"]
     if type_name:
         lines.append(f"種類: {type_name}")
     if owner_name:
@@ -59,24 +59,26 @@ def reservation_confirmation(
     return bubble_from_title_and_text(title, body_text, hero_url=image_url)
 
 
-def call_notification(reservation_no: int, timeout_label: str, call_minutes: int) -> Dict:
+def call_notification(reservation_no: int | str, timeout_label: str, call_minutes: int) -> Dict:
     title = "呼出中"
+    no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
     body_text = (
-        f"番号: {reservation_no}\n{call_minutes}分以内（{timeout_label}まで）にお越しください。"
+        f"番号: {no_str}\n{call_minutes}分以内（{timeout_label}まで）にお越しください。"
         "\n時間を過ぎると自動でキャンセルされます。"
     )
     return bubble_from_title_and_text(title, body_text)
 
 
 def wait_time_status(
-    reservation_no: int | None,
+    reservation_no: int | str | None,
     waiting: int,
     estimated_minutes: int,
     type_name: str | None = None,
 ) -> Dict:
     title = "現在の待ち時間"
     if reservation_no:
-        line = f"番号: {reservation_no} / あなたの前: {waiting}人"
+        no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
+        line = f"番号: {no_str} / あなたの前: {waiting}人"
     else:
         line = f"現在の待ち人数: {waiting}人"
     if type_name:
@@ -85,17 +87,18 @@ def wait_time_status(
     return bubble_from_title_and_text(title, body_text)
 
 
-def cancel_notification(reservation_no: int | None) -> Dict:
+def cancel_notification(reservation_no: int | str | None) -> Dict:
     title = "キャンセル完了"
-    body_text = (
-        f"キャンセルした番号: {reservation_no}"
-        if reservation_no
-        else "キャンセルが完了しました。"
-    )
+    if reservation_no:
+        no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
+        body_text = f"キャンセルした番号: {no_str}"
+    else:
+        body_text = "キャンセルが完了しました。"
     return bubble_from_title_and_text(title, body_text)
 
 
-def auto_cancel_notification(reservation_no: int) -> Dict:
+def auto_cancel_notification(reservation_no: int | str) -> Dict:
     title = "自動キャンセル"
-    body_text = f"番号 {reservation_no} は時間切れのためキャンセルされました。"
+    no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
+    body_text = f"番号 {no_str} は時間切れのためキャンセルされました。"
     return bubble_from_title_and_text(title, body_text)

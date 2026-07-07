@@ -198,9 +198,15 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
-            elif "FROM admin_accounts WHERE id = %s" in query:
-                self._last = (None, None)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1,)
+            elif "SELECT login_id FROM admin_accounts" in query:
+                self._last = None
+            elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
+                self._last = None
+            elif "SELECT reservation_no FROM reservations" in query:
+                self._last_all = []
+            elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
@@ -212,6 +218,9 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
 
         def fetchone(self):
             return self._last
+
+        def fetchall(self):
+            return getattr(self, "_last_all", [])
 
     class FakeConnection:
         def __enter__(self):
@@ -252,10 +261,56 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     insert_queries = [
         params
         for query, params in queries
-        if "INSERT INTO reservations (user_id, message, type_id)" in query
+        if "INSERT INTO reservations" in query
     ]
-    assert insert_queries == [("U-123", "", 1)]
+    assert len(insert_queries) == 1
+    inserted = insert_queries[0]
+    # (user_id, message, type_id, owner_admin_id, reservation_no) の 5 要素
+    assert inserted[0] == "U-123"
+    assert inserted[1] == ""
+    assert inserted[2] == 1
+    assert inserted[3] == 7  # type_owner_admin_id
+    # reservation_no は XXXY 形式（0010〜9999）
+    assert isinstance(inserted[4], int)
+    assert 10 <= inserted[4] <= 9999
     assert sent_texts
+
+
+def test_allocate_admin_reservation_no_skips_used_numbers_on_wraparound(app_module):
+    # seq が 999 からループして 1 に戻った際、過去に発行済みの 1XXY 系番号と
+    # 衝突しないよう、空いている Y のみを選ぶことを確認する。
+    class FakeCursor:
+        def __init__(self):
+            self._last = None
+            self._last_all = []
+
+        def execute(self, query, params=None):
+            if "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1000,)  # ループ後の値（>999）
+            elif "SELECT reservation_no FROM reservations" in query:
+                # 10〜19 のうち 10〜18 はすでに使用済み、19 のみ空き
+                self._last_all = [(n,) for n in range(10, 19)]
+            elif "UPDATE admin_accounts" in query:
+                self._last = None
+            else:
+                raise AssertionError(f"Unexpected query: {query}")
+
+        def fetchone(self):
+            return self._last
+
+        def fetchall(self):
+            return self._last_all
+
+    cur = FakeCursor()
+    result = app_module.allocate_admin_reservation_no(cur, owner_admin_id=1)
+    assert result == 19
+
+
+def test_fmt_no_formats_as_four_digits(app_module):
+    assert app_module.fmt_no(19) == "0019"
+    assert app_module.fmt_no(1234) == "1234"
+    assert app_module.fmt_no("42") == "0042"
+    assert app_module.fmt_no(None) == "None"
 
 
 def test_handle_message_ignores_specific_url(app_module, monkeypatch):
@@ -436,49 +491,6 @@ def test_format_dt_with_aware_datetime(app_module):
 def test_should_run_call_batch(app_module):
     assert app_module.should_run_call_batch(SimpleNamespace(tm_min=10)) is True
     assert app_module.should_run_call_batch(SimpleNamespace(tm_min=11)) is False
-
-
-def test_parse_hhmm_to_minute_of_day(app_module):
-    assert app_module.parse_hhmm_to_minute_of_day("09:30") == 570
-    assert app_module.parse_hhmm_to_minute_of_day("23:59") == 1439
-    assert app_module.parse_hhmm_to_minute_of_day("") is None
-    assert app_module.parse_hhmm_to_minute_of_day("24:00") is None
-    assert app_module.parse_hhmm_to_minute_of_day("9:30") is None
-
-
-def test_is_minute_in_window_supports_overnight(app_module):
-    assert app_module.is_minute_in_window(600, 540, 1020) is True
-    assert app_module.is_minute_in_window(500, 540, 1020) is False
-    assert app_module.is_minute_in_window(30, 1320, 120) is True
-    assert app_module.is_minute_in_window(800, 1320, 120) is False
-    assert app_module.is_minute_in_window(123, 500, 500) is True
-
-
-def test_get_admin_reservation_window_uses_existing_cursor(app_module, monkeypatch):
-    class FakeCursor:
-        def __init__(self):
-            self._last = None
-
-        def execute(self, query, params=None):
-            assert "FROM admin_accounts WHERE id = %s" in query
-            assert params == (7,)
-            self._last = (570, 1020)
-
-        def fetchone(self):
-            return self._last
-
-    monkeypatch.setattr(
-        app_module,
-        "get_connection",
-        lambda: (_ for _ in ()).throw(
-            AssertionError("get_connection should not be used")
-        ),
-    )
-    start_minute, end_minute = app_module.get_admin_reservation_window(
-        7, cur=FakeCursor()
-    )
-    assert start_minute == 570
-    assert end_minute == 1020
 
 
 def test_send_push_message_uses_retry_key(app_module, monkeypatch):
@@ -1903,7 +1915,7 @@ def test_build_call_message_includes_timeout_minutes_and_deadline(app_module):
     message = app_module.build_call_message(15, called_at=called_at)
     text = flex_message_text(message)
     assert "呼出中" in text
-    assert "番号: 15" in text
+    assert "番号: 0015" in text
     assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in text
     assert "10:15" in text
     assert "自動でキャンセル" in text
@@ -2208,6 +2220,7 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
     monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 0)
+    monkeypatch.setattr(app_module, "cleanup_rate_limit_records", lambda: None)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -2357,9 +2370,15 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
-            elif "FROM admin_accounts WHERE id = %s" in query:
-                self._last = (None, None)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
+            elif "next_reservation_no" in query and "FROM admin_accounts" in query:
+                self._last = (1,)
+            elif "SELECT login_id FROM admin_accounts" in query:
+                self._last = None
+            elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
+                self._last = None
+            elif "SELECT reservation_no FROM reservations" in query:
+                self._last_all = []
+            elif "INSERT INTO reservations" in query:
                 self._last = (10,)
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
@@ -2371,6 +2390,9 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
 
         def fetchone(self):
             return self._last
+
+        def fetchall(self):
+            return getattr(self, "_last_all", [])
 
     class FakeConnection:
         def __enter__(self):
@@ -2410,78 +2432,10 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
     app_module.process_reservation(event, "U-123", "予約 相談")
 
     assert sent_texts
-    assert "【受付完了】番号: 10 / 種類: 相談 / 待ち: 2人" in sent_texts[0]
+    assert "【受付完了】番号: 001" in sent_texts[0]
+    assert " / 種類: 相談 / 待ち: 2人" in sent_texts[0]
     assert "現在の目安待ち時間: 3分" in sent_texts[0]
 
-
-def test_process_reservation_blocks_outside_admin_window(app_module, monkeypatch):
-    class FixedDateTime:
-        @staticmethod
-        def now(tz=None):
-            # 08:00 JSTに固定して、09:30〜17:00の受付時間外を再現する
-            value = datetime(2026, 4, 20, 8, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
-            return value if tz is None else value.astimezone(tz)
-
-    monkeypatch.setattr(app_module, "datetime", FixedDateTime)
-
-    class FakeCursor:
-        def __init__(self):
-            self._last = None
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def execute(self, query, params=None):
-            if "FROM reservation_types" in query and "WHERE name = %s" in query:
-                self._last = (1, "相談", True, 7, "説明", "")
-            elif "WHERE r.user_id = %s AND r.status IN" in query:
-                self._last = None
-            elif "FROM admin_accounts WHERE id = %s" in query:
-                self._last = (570, 1020)
-            elif "INSERT INTO reservations (user_id, message, type_id)" in query:
-                self._last = (10,)
-            elif "FROM reservations r" in query and "JOIN reservation_types t ON r.type_id = t.id" in query:
-                self._last = (2,)
-            else:
-                raise AssertionError(f"Unexpected query: {query}")
-
-        def fetchone(self):
-            return self._last
-
-    class FakeConnection:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def cursor(self):
-            return FakeCursor()
-
-        def commit(self):
-            return None
-
-    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
-
-    sent_texts = []
-    monkeypatch.setattr(
-        app_module,
-        "send_flex_notice",
-        lambda *args, **kwargs: sent_texts.append(
-            args[2] if len(args) > 2 else kwargs.get("body")
-        ),
-    )
-
-    event = SimpleNamespace(reply_token="reply-token")
-    app_module.process_reservation(event, "U-456", "予約 相談")
-
-    assert sent_texts
-    assert "予約受付時間は 09:30〜17:00" in sent_texts[-1]
-    assert "受付時間外" in sent_texts[-1]
 
 
 def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkeypatch):
@@ -2500,7 +2454,7 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
                 "FROM reservations r" in query
                 and "WHERE r.user_id = %s AND r.status IN" in query
             ):
-                self._last = (12, app_module.STATUS_WAITING, "相談", 7)
+                self._last = (12, 12, app_module.STATUS_WAITING, "相談", 7)
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
                 and "r.id < %s" in query
@@ -2656,52 +2610,9 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     app_module.process_reservation(event, "U-cancel", "キャンセル")
 
     assert sent_texts
-    assert "予約番号 42 をキャンセルしました。" in sent_texts[-1]
+    assert "受付番号 0042 をキャンセルしました。" in sent_texts[-1]
     assert commits
 
-
-def test_admin_reservation_hours_updates_window(app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
-    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 5)
-
-    calls = []
-
-    class FakeCursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def execute(self, query, params=None):
-            calls.append((query, params))
-
-    class FakeConnection:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def cursor(self):
-            return FakeCursor()
-
-        def commit(self):
-            return None
-
-    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-
-    with app_module.app.test_request_context(
-        "/admin/reservation-hours",
-        method="POST",
-        data={"reservation_start_time": "09:30", "reservation_end_time": "17:00"},
-    ):
-        response = app_module.admin_reservation_hours()
-
-    assert response.status_code == 302
-    assert "schedule_success" in response.headers["Location"]
-    assert "/admin/types" in response.headers["Location"]
-    assert any("UPDATE admin_accounts" in query for query, _ in calls)
 
 
 def test_admin_history_export_includes_extended_columns(app_module, monkeypatch):
@@ -2714,6 +2625,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         def __init__(self):
             self._rows = [
                 (
+                    12,
                     12,
                     "相談",
                     app_module.STATUS_DONE,
@@ -2767,7 +2679,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "呼出から完了",
     ]
     assert rows[1] == [
-        "12",
+        "0012",
         "相談",
         app_module.STATUS_DONE,
         "04-20 11:15",
@@ -2795,11 +2707,10 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
             self._rows = [
                 (
                     99,
+                    99,
                     "",
                     app_module.STATUS_CANCELLED,
                     datetime(2026, 4, 21, 0, 0, tzinfo=ZoneInfo("UTC")),
-                    None,
-                    None,
                     None,
                     None,
                     None,
@@ -2838,7 +2749,7 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
 
     rows = list(csv.reader(text.splitlines()))
     assert rows[1] == [
-        "99",
+        "0099",
         "",
         app_module.STATUS_CANCELLED,
         "04-21 09:00",
@@ -2891,7 +2802,7 @@ def test_admin_history_export_invalid_query_params_fall_back_to_defaults(
 
     assert calls
     query, params = calls[0]
-    assert "ORDER BY r.id DESC, r.id DESC" in query
+    assert "ORDER BY COALESCE(r.reservation_no, r.id) DESC, r.id DESC" in query
     assert params == [app_module.STATUS_DONE, app_module.STATUS_CANCELLED, 7]
 
 
@@ -2967,9 +2878,9 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     # First bubble (相談 - Accepting)
     bubble_1 = bubbles[0]
     assert bubble_1["header"]["contents"][0]["text"] == "相談"
-    assert bubble_1["hero"]["url"].endswith("consultation.png")
+    assert bubble_1["hero"]["url"].endswith("/reservation-type-images/1")
     assert bubble_1["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付中"
-    assert bubble_1["body"]["contents"][1]["text"] == "個別相談を受け付けます。"
+    assert bubble_1["body"]["contents"][2]["text"] == "個別相談を受け付けます。"
     assert bubble_1["footer"]["contents"][0]["type"] == "button"
     assert bubble_1["footer"]["contents"][0]["action"]["text"] == "予約 相談"
     
@@ -2977,5 +2888,5 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     bubble_2 = bubbles[1]
     assert bubble_2["header"]["contents"][0]["text"] == "体験"
     assert bubble_2["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付停止中"
-    assert bubble_2["body"]["contents"][1]["text"] == "体験ブースへの案内です。"
+    assert bubble_2["body"]["contents"][2]["text"] == "体験ブースへの案内です。"
     assert bubble_2["footer"]["contents"][0]["contents"][0]["text"] == "現在受付停止中"

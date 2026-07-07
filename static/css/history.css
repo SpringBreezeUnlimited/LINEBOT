@@ -250,7 +250,8 @@ select {
 }
 
 .col-sm-6 {
-    width: 100%;
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .form-label {
@@ -394,7 +395,7 @@ select {
 
 @media (min-width: 760px) {
     .col-sm-6 {
-        width: calc(50% - 8px);
+        width: auto;
     }
 }
 
