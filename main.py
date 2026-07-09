@@ -3465,8 +3465,16 @@ def _export_table(table_name: str):
     """指定テーブルの全行を [{col: val, ...}, ...] で返す。"""
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(f"SELECT * FROM {table_name} ORDER BY id ASC")
+            # カラム名を調べるために LIMIT 0 でクエリ
+            cur.execute(f"SELECT * FROM {table_name} LIMIT 0")
             cols = [desc[0] for desc in cur.description]
+            if "id" in cols:
+                cur.execute(f"SELECT * FROM {table_name} ORDER BY id ASC")
+            elif "key" in cols:
+                cur.execute(f"SELECT * FROM {table_name} ORDER BY key ASC")
+            else:
+                cur.execute(f"SELECT * FROM {table_name}")
+            
             rows = []
             for row in cur.fetchall():
                 rows.append(
@@ -3505,15 +3513,19 @@ def _import_table(cur, table_name: str, table_data: dict):
 
 def _reset_sequence(cur, table_name: str):
     """テーブルの SERIAL シーケンスを最大 id 値にリセットする。"""
-    cur.execute(
-        f"""
-            SELECT setval(
-                pg_get_serial_sequence('{table_name}', 'id'),
-                COALESCE((SELECT MAX(id) FROM {table_name}), 0) + 1,
-                false
-            )
-        """
-    )
+    cur.execute(f"SELECT pg_get_serial_sequence('{table_name}', 'id')")
+    seq = cur.fetchone()[0]
+    if seq:
+        cur.execute(
+            f"""
+                SELECT setval(
+                    '{seq}',
+                    COALESCE((SELECT MAX(id) FROM {table_name}), 0) + 1,
+                    false
+                )
+            """
+        )
+
 
 
 def _export_account_tables(owner_admin_id: int) -> dict:
