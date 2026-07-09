@@ -7,6 +7,20 @@
 {% block navbar %}
 <header class="global-nav">
     <div class="container global-nav__inner">
+        {% if is_audit_admin %}
+        <a class="brand-lockup" href="/admin/login-logs" aria-label="管理画面">
+            <span class="brand-lockup__mark">LINEBOT</span>
+            <span class="brand-lockup__title">festival queue</span>
+        </a>
+        <nav class="nav-pills" aria-label="管理ページ">
+            <a class="nav-pill" href="/admin/login-logs">ログイン履歴</a>
+            <a class="nav-pill is-active" href="/admin/backup">バックアップ</a>
+            <form method="POST" action="/logout" class="d-inline mb-0">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="nav-pill">ログアウト</button>
+            </form>
+        </nav>
+        {% else %}
         <a class="brand-lockup" href="/admin" aria-label="管理画面">
             <span class="brand-lockup__mark">LINEBOT</span>
             <span class="brand-lockup__title">festival queue</span>
@@ -21,6 +35,7 @@
                 <button type="submit" class="nav-pill">ログアウト</button>
             </form>
         </nav>
+        {% endif %}
     </div>
 </header>
 {% endblock %}
@@ -30,6 +45,11 @@
     <div class="hero-panel">
         <div class="hero-kicker">Backup</div>
         <h1>バックアップ</h1>
+        {% if is_audit_admin %}
+        <p class="hero-subtitle">監査アカウント：データベース全体のバックアップ・復元が可能です。</p>
+        {% else %}
+        <p class="hero-subtitle">通常アカウント：自分のアカウントに紐づく種類・予約データのみバックアップ・復元できます。</p>
+        {% endif %}
     </div>
 
     {% if import_error %}
@@ -45,6 +65,11 @@
         <div class="card-body">
             <div class="section-intro">
                 <h2>エクスポート</h2>
+                {% if is_audit_admin %}
+                <p class="text-muted">データベース全体（全テーブル）をJSONファイルとしてダウンロードします。</p>
+                {% else %}
+                <p class="text-muted">自分のアカウントに紐づく種類・予約データのみをJSONファイルとしてダウンロードします。</p>
+                {% endif %}
             </div>
             <a href="/admin/backup/export" class="btn btn-primary" id="backup-export-btn">ダウンロード</a>
         </div>
@@ -55,9 +80,18 @@
         <div class="card-body">
             <div class="section-intro">
                 <h2>インポート</h2>
+                {% if is_audit_admin %}
+                <p class="text-muted">バックアップファイルからデータベース全体を復元します。復元後はログアウトされます。</p>
+                {% else %}
+                <p class="text-muted">自分のアカウントのバックアップファイルから種類・予約データを復元します。他のアカウントのデータや設定は変更されません。</p>
+                {% endif %}
             </div>
             <div class="alert alert-danger mb-3" role="alert">
+                {% if is_audit_admin %}
                 インポートすると現在のデータを上書きします。復元後はログアウトされます。
+                {% else %}
+                インポートすると自分のアカウントの種類・予約データが上書きされます。他アカウントのデータは変更されません。
+                {% endif %}
             </div>
             <form method="POST" action="/admin/backup/import" enctype="multipart/form-data" id="backup-import-form">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
@@ -67,7 +101,7 @@
                         required>
                 </div>
                 <button type="submit" class="btn btn-danger" id="backup-import-btn"
-                    onclick="return confirm('本当にインポートしますか？現在のデータはすべて上書きされます。')">
+                    onclick="return confirm('{% if is_audit_admin %}本当にインポートしますか？現在のデータはすべて上書きされます。{% else %}本当にインポートしますか？自分のアカウントの種類・予約データが上書きされます。{% endif %}')">
                     復元
                 </button>
             </form>
