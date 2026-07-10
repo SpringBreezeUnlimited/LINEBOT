@@ -379,7 +379,7 @@ def test_admin_call_push_failure_returns_to_admin_page(app_module, monkeypatch):
                 self._last = ("U-123", 28)
             elif "SELECT status, COALESCE(reservation_no, id)" in query:
                 self._last = ("waiting", 28)
-            elif "UPDATE reservations SET status = %s, called_at = NULL" in query:
+            elif "UPDATE reservations SET status = %s, called_at = NULL, call_origin = NULL" in query:
                 self.rowcount = 1
 
         def fetchone(self):
@@ -2258,7 +2258,7 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
     rollback_queries = [item for item in executed if "called_at = NULL" in item[0]]
     assert rollback_queries == [
         (
-            "UPDATE reservations SET status = %s, called_at = NULL WHERE id = ANY(%s) AND status = %s",
+            "UPDATE reservations SET status = %s, called_at = NULL, call_origin = NULL WHERE id = ANY(%s) AND status = %s",
             (app_module.STATUS_WAITING, [11], app_module.STATUS_CALLED),
         )
     ]
@@ -2629,6 +2629,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
                     12,
                     "相談",
                     app_module.STATUS_DONE,
+                        "auto",
                     datetime(2026, 4, 20, 2, 15, tzinfo=ZoneInfo("UTC")),
                     datetime(2026, 4, 20, 2, 25, tzinfo=ZoneInfo("UTC")),
                     datetime(2026, 4, 20, 3, 0, tzinfo=ZoneInfo("UTC")),
@@ -2671,6 +2672,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "番号",
         "種類",
         "状態",
+        "呼出方法",
         "受付時刻",
         "呼出時刻",
         "完了時刻",
@@ -2682,6 +2684,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "0012",
         "相談",
         app_module.STATUS_DONE,
+        "不明",
         "04-20 11:15",
         "04-20 11:25",
         "04-20 12:00",
@@ -2710,6 +2713,7 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
                     99,
                     "",
                     app_module.STATUS_CANCELLED,
+                        None,
                     datetime(2026, 4, 21, 0, 0, tzinfo=ZoneInfo("UTC")),
                     None,
                     None,
@@ -2752,6 +2756,7 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
         "0099",
         "",
         app_module.STATUS_CANCELLED,
+        "不明",
         "04-21 09:00",
         "",
         "",

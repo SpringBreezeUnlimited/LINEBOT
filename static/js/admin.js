@@ -12,12 +12,13 @@ function parseInitialRowsFromDom() {
         created_at: row.dataset.createdAt || '',
         type: row.dataset.type || '',
         type_id: row.dataset.typeId || '',
+        call_origin: row.dataset.callOrigin || '',
         status: row.dataset.status || '',
     }));
 }
 
 function buildRowsSignature(rows) {
-    return rows.map((row) => `${row.id}:${row.display_no || ''}:${row.status}:${row.type_id || ''}:${row.created_at || ''}`).join('|');
+    return rows.map((row) => `${row.id}:${row.display_no || ''}:${row.status}:${row.type_id || ''}:${row.call_origin || ''}:${row.created_at || ''}`).join('|');
 }
 
 function buildTypeCountsSignature(typeCounts) {
@@ -203,6 +204,7 @@ function buildRow(row) {
     card.dataset.createdAt = row.created_at || '';
     card.dataset.type = row.type || '';
     card.dataset.typeId = row.type_id || '';
+    card.dataset.callOrigin = row.call_origin || '';
     card.dataset.status = row.status || '';
 
     const header = document.createElement('div');
@@ -232,6 +234,10 @@ function buildRow(row) {
         ['受付時刻', row.created_at || '-'],
         ['種類', row.type || '-'],
     ];
+
+    if (row.status === 'called' || row.call_origin) {
+        fields.push(['呼出方法', row.call_origin === 'auto' ? '自動' : row.call_origin === 'manual' ? '手動' : '不明']);
+    }
 
     fields.forEach(([term, description]) => {
         const field = document.createElement('div');

@@ -4,6 +4,7 @@ const historyRowsCache = Array.from(document.querySelectorAll('#history-rows .hi
     type_id: row.dataset.typeId || '',
     type: row.dataset.type || '',
     status: row.dataset.status || '',
+    call_origin: row.dataset.callOrigin || '',
     created_at: row.dataset.createdAt || '',
     service_duration: Number(row.dataset.serviceDuration || '0'),
     service_duration_label: row.dataset.serviceDurationLabel || '-',
@@ -63,6 +64,7 @@ function createHistoryCard(row) {
     card.dataset.typeId = row.type_id || '';
     card.dataset.type = row.type || '';
     card.dataset.status = row.status || '';
+    card.dataset.callOrigin = row.call_origin || '';
     card.dataset.createdAt = row.created_at || '';
     card.dataset.serviceDuration = String(row.service_duration || '');
     card.dataset.serviceDurationLabel = row.service_duration_label || '-';
@@ -93,6 +95,7 @@ function createHistoryCard(row) {
     const fields = [
         ['受付時刻', row.created_at || '-'],
         ['種類', row.type || '-'],
+        ['呼出方法', row.call_origin === 'auto' ? '自動' : row.call_origin === 'manual' ? '手動' : '不明'],
         ['呼出から完了', row.service_duration_label || '-'],
     ];
 

@@ -118,7 +118,8 @@
                 {% for row in rows %}
                 <article class="admin-reservation-card" data-id="{{ row.id }}" data-display-no="{{ row.display_no }}"
                     data-created-at="{{ row.created_at if row.created_at else '' }}" data-type="{{ row.type or '' }}"
-                    data-type-id="{{ row.type_id if row.type_id is not none else '' }}" data-status="{{ row.status }}">
+                    data-type-id="{{ row.type_id if row.type_id is not none else '' }}"
+                    data-call-origin="{{ row.call_origin or '' }}" data-status="{{ row.status }}">
                     <div class="admin-reservation-card__header">
                         <div>
                             <div class="admin-reservation-card__label">番号</div>
@@ -143,6 +144,12 @@
                             <dt>種類</dt>
                             <dd>{{ row.type or '-' }}</dd>
                         </div>
+                        {% if row.status == 'called' or row.call_origin_label %}
+                        <div>
+                            <dt>呼出方法</dt>
+                            <dd>{{ row.call_origin_label or '不明' }}</dd>
+                        </div>
+                        {% endif %}
                     </dl>
                     <div class="admin-reservation-card__actions">
                         {% if row.status == 'waiting' %}

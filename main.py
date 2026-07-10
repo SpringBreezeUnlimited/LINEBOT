@@ -122,8 +122,8 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.150"
-APP_RELEASED_AT = "2026-07-01 00:00 JST"
+APP_VERSION = "v1.0.151"
+APP_RELEASED_AT = "2026-07-10 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 FLEX_SAFE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
@@ -209,6 +209,7 @@ def inject_template_globals():
         "app_version": APP_VERSION,
         "app_released_at": APP_RELEASED_AT,
         "format_duration": format_duration_from_seconds,
+        "format_call_origin": format_call_origin,
     }
 
 
@@ -218,6 +219,12 @@ STATUS_WAITING = "waiting"
 STATUS_CALLED = "called"
 STATUS_DONE = "done"
 STATUS_CANCELLED = "cancelled"
+CALL_ORIGIN_AUTO = "auto"
+CALL_ORIGIN_MANUAL = "manual"
+CALL_ORIGIN_LABELS = {
+    CALL_ORIGIN_AUTO: "自動",
+    CALL_ORIGIN_MANUAL: "手動",
+}
 
 AUTO_CALL_SETTING_KEYS = (
     "last_auto_call_run_at",
@@ -870,14 +877,14 @@ def process_queued_calls(now=None):
                             LIMIT %s
                         )
                         UPDATE reservations
-                        SET status = %s, called_at = CURRENT_TIMESTAMP
+                        SET status = %s, called_at = CURRENT_TIMESTAMP, call_origin = %s
                         WHERE id IN (
                             SELECT id FROM selected_rows
                         )
                           AND status = %s
                         RETURNING id, user_id, COALESCE(reservation_no, id)
                     """,
-                    (STATUS_WAITING, auto_call_count, STATUS_CALLED, STATUS_WAITING),
+                    (STATUS_WAITING, auto_call_count, STATUS_CALLED, CALL_ORIGIN_AUTO, STATUS_WAITING),
                 )
                 auto_rows = cur.fetchall()
                 conn.commit()
@@ -910,7 +917,7 @@ def process_queued_calls(now=None):
                 cur.execute(
                     """
                         UPDATE reservations
-                        SET status = %s, called_at = NULL
+                        SET status = %s, called_at = NULL, call_origin = NULL
                         WHERE id = ANY(%s) AND status = %s
                     """,
                     (STATUS_WAITING, failed_ids, STATUS_CALLED),
@@ -1057,7 +1064,8 @@ def ensure_reservations_table():
                     user_id TEXT NOT NULL,
                     message TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'waiting',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    call_origin TEXT
                 )
             """)
             cur.execute("""
@@ -1099,6 +1107,10 @@ def ensure_reservations_table():
             cur.execute("""
                 ALTER TABLE reservations
                 ADD COLUMN IF NOT EXISTS called_at TIMESTAMP
+            """)
+            cur.execute("""
+                ALTER TABLE reservations
+                ADD COLUMN IF NOT EXISTS call_origin TEXT
             """)
             cur.execute("""
                 ALTER TABLE reservations
@@ -1450,6 +1462,11 @@ def fmt_no(reservation_no: int | str) -> str:
         return f"{int(reservation_no):04d}"
     except (ValueError, TypeError):
         return str(reservation_no)
+
+
+def format_call_origin(call_origin: str | None) -> str:
+    label = CALL_ORIGIN_LABELS.get((call_origin or "").strip())
+    return label or "不明"
 
 
 def cleanup_rate_limit_records():
@@ -2219,6 +2236,8 @@ def serialize_active_rows(rows):
             "type_id": row[3],
             "type": row[4],
             "created_at": format_dt(row[5]),
+            "call_origin": row[6],
+            "call_origin_label": format_call_origin(row[6]) if row[6] else "",
         }
         for row in rows
     ]
@@ -2286,7 +2305,7 @@ def get_active_rows(
     order_by = order_map[sort_by]
     cur.execute(
         f"""
-            SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.id, t.name, r.created_at
+            SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.id, t.name, r.created_at, r.call_origin
             FROM reservations r
             LEFT JOIN reservation_types t ON r.type_id = t.id
             {where}
@@ -3132,6 +3151,7 @@ def admin_history():
                     t.name,
                     t.id,
                     r.created_at,
+                    r.call_origin,
                     r.called_at,
                     r.completed_at,
                     EXTRACT(EPOCH FROM (r.completed_at - r.called_at)) AS service_duration_seconds
@@ -3153,9 +3173,9 @@ def admin_history():
                     row[3],
                     row[4],
                     format_dt(row[5]),
-                    format_dt(row[6]),
+                    row[6],
                     format_dt(row[7]),
-                    row[8],
+                    row[9],
                 )
                 for row in rows
             ]
@@ -3219,6 +3239,7 @@ def admin_history_export():
                 "番号",
                 "種類",
                 "状態",
+                "呼出方法",
                 "受付時刻",
                 "呼出時刻",
                 "完了時刻",
@@ -3243,6 +3264,7 @@ def admin_history_export():
                             COALESCE(r.reservation_no, r.id) AS display_no,
                             COALESCE(t.name, ''),
                             r.status,
+                            r.call_origin,
                             r.created_at,
                             r.called_at,
                             r.completed_at,
@@ -3262,12 +3284,13 @@ def admin_history_export():
                             fmt_no(row[1]) if isinstance(row[1], int) else row[1],
                             row[2],
                             row[3],
-                            format_dt(row[4]),
+                            format_call_origin(row[4]),
                             format_dt(row[5]),
                             format_dt(row[6]),
-                            format_duration_from_seconds(row[7]) or "-",
+                            format_dt(row[7]),
                             format_duration_from_seconds(row[8]) or "-",
                             format_duration_from_seconds(row[9]) or "-",
+                            format_duration_from_seconds(row[10]) or "-",
                         ]
                     )
                     yield output.getvalue()
@@ -3298,7 +3321,7 @@ def admin_call(res_id):
             cur.execute(
                 """
                     UPDATE reservations r
-                    SET status = %s, called_at = CURRENT_TIMESTAMP
+                                        SET status = %s, called_at = CURRENT_TIMESTAMP, call_origin = %s
                     FROM reservation_types t
                     WHERE r.id = %s
                       AND r.status = %s
@@ -3306,7 +3329,7 @@ def admin_call(res_id):
                       AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                     RETURNING user_id, COALESCE(reservation_no, r.id)
                 """,
-                (STATUS_CALLED, res_id, STATUS_WAITING, current_admin_account_id),
+                (STATUS_CALLED, CALL_ORIGIN_MANUAL, res_id, STATUS_WAITING, current_admin_account_id),
             )
             row = cur.fetchone()
             if not row:
@@ -3339,7 +3362,7 @@ def admin_call(res_id):
         with get_connection() as rollback_conn:
             with rollback_conn.cursor() as rollback_cur:
                 rollback_cur.execute(
-                    "UPDATE reservations SET status = %s, called_at = NULL WHERE id = %s AND status = %s",
+                    "UPDATE reservations SET status = %s, called_at = NULL, call_origin = NULL WHERE id = %s AND status = %s",
                     (STATUS_WAITING, res_id, STATUS_CALLED),
                 )
                 rollback_conn.commit()
