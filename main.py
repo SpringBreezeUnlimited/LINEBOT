@@ -2058,7 +2058,11 @@ def ensure_types_table():
                 """)
             cur.execute("""
                 ALTER TABLE reservation_types
-                ADD COLUMN IF NOT EXISTS price INTEGER NOT NULL DEFAULT 0
+                ADD COLUMN IF NOT EXISTS price INTEGER
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
+                ALTER COLUMN price DROP NOT NULL
             """)
             cur.execute(
                 "SELECT id FROM admin_accounts WHERE role = %s AND active = TRUE ORDER BY id ASC LIMIT 1",
@@ -2807,7 +2811,7 @@ def admin_types_page():
     if request.method == "POST":
         name = normalize_type_name(request.form.get("name"))
         flavor_text = (request.form.get("flavor_text") or "").strip()
-        price_raw = (request.form.get("price") or "0").strip()
+        price_raw = (request.form.get("price") or "").strip()
         image_file = request.files.get("image")
         if image_file and getattr(image_file, "filename", "").strip():
             suffix = Path(secure_filename(image_file.filename)).suffix.lower()
@@ -2825,21 +2829,24 @@ def admin_types_page():
                     type_error=f"種類名は1〜{MAX_TYPE_NAME_LENGTH}文字、英数字/日本語/スペース/記号(-_・)のみ使用できます。",
                 )
             )
-        if not price_raw.isdigit():
-            return redirect(
-                url_for(
-                    "admin_types_page",
-                    type_error="価格には正の整数を入力してください。",
+        if price_raw == "":
+            price = None
+        else:
+            if not price_raw.isdigit():
+                return redirect(
+                    url_for(
+                        "admin_types_page",
+                        type_error="価格には正の整数を入力してください。",
+                    )
                 )
-            )
-        price = int(price_raw)
-        if price < 0:
-            return redirect(
-                url_for(
-                    "admin_types_page",
-                    type_error="価格には0以上の値を入力してください。",
+            price = int(price_raw)
+            if price < 0:
+                return redirect(
+                    url_for(
+                        "admin_types_page",
+                        type_error="価格には0以上の値を入力してください。",
+                    )
                 )
-            )
         try:
             image_data = None
             image_mime_type = ""
@@ -3089,12 +3096,15 @@ def admin_types_update_price(type_id):
         session.clear()
         return redirect(url_for("login"))
 
-    price_raw = (request.form.get("price") or "0").strip()
-    if not price_raw.isdigit():
-        return redirect(url_for("admin_types_page", type_error="価格には正の整数を入力してください。"))
-    price = int(price_raw)
-    if price < 0:
-        return redirect(url_for("admin_types_page", type_error="価格には0以上の値を入力してください。"))
+    price_raw = (request.form.get("price") or "").strip()
+    if price_raw == "":
+        price = None
+    else:
+        if not price_raw.isdigit():
+            return redirect(url_for("admin_types_page", type_error="価格には正の整数を入力してください。"))
+        price = int(price_raw)
+        if price < 0:
+            return redirect(url_for("admin_types_page", type_error="価格には0以上の値を入力してください。"))
 
     with get_connection() as conn:
         with conn.cursor() as cur:

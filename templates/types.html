@@ -67,8 +67,7 @@
                     <input type="text" name="name" class="form-control" placeholder="種類名" required>
                 </div>
                 <div class="col-sm-6">
-                    <input type="number" name="price" class="form-control" placeholder="価格（円）" min="0" value="0"
-                        required>
+                    <input type="number" name="price" class="form-control" placeholder="価格（円）" min="0">
                 </div>
                 <div class="col-12 mt-2">
                     <input type="text" name="flavor_text" class="form-control" placeholder="説明（任意）">
@@ -100,7 +99,7 @@
                         {% endif %}
                     </div>
                     <!-- 価格 -->
-                    <div class="type-item-card__price">価格：{{ '{:,}'.format(t[6]) if t[6] is not none else '0' }}円</div>
+                    <div class="type-item-card__price">価格：{{ '{:,}'.format(t[6]) if t[6] is not none else '未設定' }}{{ '円' if t[6] is not none else '' }}</div>
                     <!-- 画像 -->
                     {% if t[4] %}
                     <div class="type-item-card__image">
@@ -174,8 +173,8 @@
             <div class="modal-input-row">
                 <input type="number" name="price"
                     class="form-control form-control-sm types-card__price-input"
-                    placeholder="価格" value="{{ t[6] if t[6] is not none else 0 }}"
-                    min="0" required>
+                    placeholder="価格" value="{{ t[6] if t[6] is not none else '' }}"
+                    min="0">
                 <button type="submit"
                     class="btn btn-sm btn-outline-secondary types-card__price-save-btn"
                     style="display:none;" disabled>保存</button>

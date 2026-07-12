@@ -2896,3 +2896,115 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     assert bubble_2["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付停止中"
     assert bubble_2["body"]["contents"][2]["text"] == "体験ブースへの案内です。"
     assert bubble_2["footer"]["contents"][0]["contents"][0]["text"] == "現在受付停止中"
+
+
+def test_admin_types_registration_optional_price(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed.append((" ".join(query.split()), params))
+            if "INSERT INTO reservation_types" in query:
+                self.rowcount = 1
+                self._id = 1
+            else:
+                self._id = None
+
+        def fetchone(self):
+            if hasattr(self, "_id") and self._id is not None:
+                return (self._id,)
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/types",
+        method="POST",
+        data={"name": "新サービス", "price": "", "flavor_text": "説明文"},
+    ):
+        response = app_module.admin_types_page()
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/types?type_success=%E7%A8%AE%E9%A1%9E%E3%82%92%E8%BF%BD%E5%8A%A0%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82")
+
+    insert_queries = [p for q, p in executed if "INSERT INTO reservation_types" in q]
+    assert len(insert_queries) == 1
+    params = insert_queries[0]
+    assert params[0] == "新サービス"
+    assert params[6] is None
+
+
+def test_admin_types_update_optional_price(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed.append((" ".join(query.split()), params))
+            if "UPDATE reservation_types SET price = %s" in query:
+                self.rowcount = 1
+
+        def fetchone(self):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_request_context(
+        "/admin/types/1/price",
+        method="POST",
+        data={"price": ""},
+    ):
+        response = app_module.admin_types_update_price(1)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/types?type_success=%E4%BE%A1%E6%A0%BC%E3%82%92%E6%9B%B4%E6%96%B0%E3%81%97%E3%81%BE%E3%81%97%E3%81%9F%E3%80%82")
+
+    update_queries = [p for q, p in executed if "UPDATE reservation_types SET price = %s" in q]
+    assert len(update_queries) == 1
+    params = update_queries[0]
+    assert params[0] is None
+    assert params[1] == 1
