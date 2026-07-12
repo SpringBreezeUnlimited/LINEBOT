@@ -3707,13 +3707,17 @@ def admin_backup_export():
     if not is_audit and not is_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
 
-    now_str = datetime.now(JST).strftime("%Y%m%d-%H%M%S")
+    now = datetime.now(JST)
+    now_str = now.strftime("%Y-%m-%d_%H%M")
+    # ファイル名に使える文字のみ残す（英数字・ハイフン・アンダースコア以外を除去）
+    raw_login_id = session.get("admin_login_id", "") or ""
+    safe_login_id = re.sub(r"[^\w\-]", "_", raw_login_id, flags=re.ASCII)
 
     if is_audit:
         # 監査アカウント: DB 全体をエクスポート
         export_data = {
             "version": APP_VERSION,
-            "exported_at": datetime.now(JST).isoformat(),
+            "exported_at": now.isoformat(),
             "scope": "full",
             "tables": {},
         }
@@ -3723,6 +3727,7 @@ def admin_backup_export():
             except Exception:
                 app.logger.exception("Failed to export table %s", table_name)
                 export_data["tables"][table_name] = {"columns": [], "rows": []}
+        filename = f"backup_full_{safe_login_id}_{now_str}.json"
     else:
         # 通常アカウント: 自分のデータのみをエクスポート
         current_admin_account_id = get_current_admin_account_id()
@@ -3738,14 +3743,14 @@ def admin_backup_export():
             return jsonify({"error": "export failed"}), 500
         export_data = {
             "version": APP_VERSION,
-            "exported_at": datetime.now(JST).isoformat(),
+            "exported_at": now.isoformat(),
             "scope": "account",
             "owner_admin_id": current_admin_account_id,
             "owner_login_id": login_id,
             "tables": account_tables,
         }
+        filename = f"backup_{safe_login_id}_{now_str}.json"
 
-    filename = f"backup-{now_str}.json"
     json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
     return Response(
         json_bytes,
