@@ -2685,7 +2685,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "0012",
         "相談",
         app_module.STATUS_DONE,
-        "不明",
+        "自動",
         "04-20 11:15",
         "04-20 11:25",
         "04-20 12:00",

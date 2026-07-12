@@ -75,7 +75,7 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
                 normalized_query.startswith("UPDATE reservations r SET status = %s, called_at = CURRENT_TIMESTAMP, call_origin = %s")
             ):
                 with lock:
-                    new_status, _res_id, expected_status, _call_origin, _owner_admin_id = params
+                    new_status, _call_origin, _res_id, expected_status, _owner_admin_id = params
                     if state["status"] == expected_status:
                         state["status"] = new_status
                         self._last = (state["user_id"], 1)
