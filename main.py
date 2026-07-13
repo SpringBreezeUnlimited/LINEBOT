@@ -3687,69 +3687,103 @@ def _import_account_tables(cur, owner_admin_id: int, tables: dict):
 
 @app.route("/admin/backup")
 def admin_backup_page():
-    is_audit = is_audit_admin_authenticated()
-    if not is_audit and not is_admin_authenticated():
+    # バックアップ機能は監査アカウント専用
+    if not is_audit_admin_authenticated():
+        if is_admin_authenticated():
+            # 通常アカウントはバックアップページへのアクセス不可
+            abort(403)
         return redirect(url_for("login"))
     import_error = request.args.get("import_error")
     import_success = request.args.get("import_success")
+    # 監査アカウント向けにアカウント一覧を取得
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, login_id, role, active
+                FROM admin_accounts
+                WHERE role = %s
+                ORDER BY id ASC
+            """, (ROLE_ADMIN,))
+            admin_accounts = [
+                {"id": row[0], "login_id": row[1], "role": row[2], "active": bool(row[3])}
+                for row in cur.fetchall()
+            ]
     return render_template(
         "backup.html",
         import_error=import_error,
         import_success=import_success,
         csrf_token=get_csrf_token(),
-        is_audit_admin=is_audit,
+        is_audit_admin=True,
+        admin_accounts=admin_accounts,
     )
 
 
 @app.route("/admin/backup/export")
 def admin_backup_export():
-    is_audit = is_audit_admin_authenticated()
-    if not is_audit and not is_admin_authenticated():
+    # バックアップエクスポートは監査アカウント専用
+    if not is_audit_admin_authenticated():
         return jsonify({"error": "unauthorized"}), 401
 
     now = datetime.now(JST)
     now_str = now.strftime("%Y-%m-%d_%H%M")
-    # ファイル名に使える文字のみ残す（英数字・ハイフン・アンダースコア以外を除去）
     raw_login_id = session.get("admin_login_id", "") or ""
     safe_login_id = re.sub(r"[^\w\-]", "_", raw_login_id, flags=re.ASCII)
 
-    if is_audit:
-        # 監査アカウント: DB 全体をエクスポート
-        export_data = {
-            "version": APP_VERSION,
-            "exported_at": now.isoformat(),
-            "scope": "full",
-            "tables": {},
-        }
-        for table_name in BACKUP_TABLES:
-            try:
-                export_data["tables"][table_name] = _export_table(table_name)
-            except Exception:
-                app.logger.exception("Failed to export table %s", table_name)
-                export_data["tables"][table_name] = {"columns": [], "rows": []}
-        filename = f"backup_full_{safe_login_id}_{now_str}.json"
-    else:
-        # 通常アカウント: 自分のデータのみをエクスポート
-        current_admin_account_id = get_current_admin_account_id()
-        if not current_admin_account_id:
-            return jsonify({"error": "unauthorized"}), 401
-        login_id = session.get("admin_login_id", "")
+    # 監査アカウント: DB 全体をエクスポート
+    export_data = {
+        "version": APP_VERSION,
+        "exported_at": now.isoformat(),
+        "scope": "full",
+        "tables": {},
+    }
+    for table_name in BACKUP_TABLES:
         try:
-            account_tables = _export_account_tables(current_admin_account_id)
+            export_data["tables"][table_name] = _export_table(table_name)
         except Exception:
-            app.logger.exception(
-                "Failed to export account tables account_id=%s", current_admin_account_id
-            )
-            return jsonify({"error": "export failed"}), 500
-        export_data = {
-            "version": APP_VERSION,
-            "exported_at": now.isoformat(),
-            "scope": "account",
-            "owner_admin_id": current_admin_account_id,
-            "owner_login_id": login_id,
-            "tables": account_tables,
-        }
-        filename = f"backup_{safe_login_id}_{now_str}.json"
+            app.logger.exception("Failed to export table %s", table_name)
+            export_data["tables"][table_name] = {"columns": [], "rows": []}
+    filename = f"backup_full_{safe_login_id}_{now_str}.json"
+
+    json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
+    return Response(
+        json_bytes,
+        mimetype="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route("/admin/backup/export/<int:account_id>")
+def admin_backup_export_account(account_id):
+    """監査アカウントが特定アカウントのデータのみをエクスポートする。"""
+    if not is_audit_admin_authenticated():
+        return jsonify({"error": "unauthorized"}), 401
+
+    # 対象アカウントの存在確認
+    target_account = get_admin_account_by_id(account_id)
+    if not target_account:
+        return jsonify({"error": "account not found"}), 404
+
+    now = datetime.now(JST)
+    now_str = now.strftime("%Y-%m-%d_%H%M")
+    safe_login_id = re.sub(r"[^\w\-]", "_", target_account["login_id"], flags=re.ASCII)
+
+    try:
+        account_tables = _export_account_tables(account_id)
+    except Exception:
+        app.logger.exception(
+            "Failed to export account tables account_id=%s", account_id
+        )
+        return jsonify({"error": "export failed"}), 500
+
+    export_data = {
+        "version": APP_VERSION,
+        "exported_at": now.isoformat(),
+        "scope": "account",
+        "owner_admin_id": account_id,
+        "owner_login_id": target_account["login_id"],
+        "tables": account_tables,
+    }
+    filename = f"backup_account_{safe_login_id}_{now_str}.json"
 
     json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
     return Response(
@@ -3761,8 +3795,10 @@ def admin_backup_export():
 
 @app.route("/admin/backup/import", methods=["POST"])
 def admin_backup_import():
-    is_audit = is_audit_admin_authenticated()
-    if not is_audit and not is_admin_authenticated():
+    # バックアップインポートは監査アカウント専用
+    if not is_audit_admin_authenticated():
+        if is_admin_authenticated():
+            abort(403)
         return redirect(url_for("login"))
 
     uploaded_file = request.files.get("backup_file")
@@ -3796,105 +3832,147 @@ def admin_backup_import():
             url_for("admin_backup_page", import_error="バックアップの形式が無効です。")
         )
 
-    if is_audit:
-        # 監査アカウント: DB 全体を復元
-        import_order = [
-            "admin_accounts",
-            "reservation_types",
-            "reservations",
-            "app_settings",
-            "admin_login_logs",
-            "login_attempt_records",
-            "webhook_request_records",
-        ]
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    for table_name in import_order:
-                        if table_name in tables:
-                            _import_table(cur, table_name, tables[table_name])
-                    # シーケンスをリセット（id を持つテーブル）
-                    for table_name in import_order:
-                        if table_name in tables:
-                            try:
-                                _reset_sequence(cur, table_name)
-                            except Exception:
-                                app.logger.debug(
-                                    "Sequence reset skipped for table %s", table_name
-                                )
-                conn.commit()
-        except Exception:
-            app.logger.exception("Failed to import backup")
-            return redirect(
-                url_for("admin_backup_page", import_error="インポートに失敗しました。バックアップファイルを確認してください。")
+    # 監査アカウント: DB 全体を復元
+    import_order = [
+        "admin_accounts",
+        "reservation_types",
+        "reservations",
+        "app_settings",
+        "admin_login_logs",
+        "login_attempt_records",
+        "webhook_request_records",
+    ]
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for table_name in import_order:
+                    if table_name in tables:
+                        _import_table(cur, table_name, tables[table_name])
+                # シーケンスをリセット（id を持つテーブル）
+                for table_name in import_order:
+                    if table_name in tables:
+                        try:
+                            _reset_sequence(cur, table_name)
+                        except Exception:
+                            app.logger.debug(
+                                "Sequence reset skipped for table %s", table_name
+                            )
+            conn.commit()
+    except Exception:
+        app.logger.exception("Failed to import backup")
+        return redirect(
+            url_for("admin_backup_page", import_error="インポートに失敗しました。バックアップファイルを確認してください。")
+        )
+
+    # スキーマキャッシュをリセットしてログアウト
+    global SCHEMA_READY
+    SCHEMA_READY = False
+    session.clear()
+    return redirect(url_for("login", notice="backup_restored"))
+
+
+@app.route("/admin/backup/import/<int:account_id>", methods=["POST"])
+def admin_backup_import_account(account_id):
+    """監査アカウントが特定アカウントのデータのみを部分復元する。"""
+    if not is_audit_admin_authenticated():
+        if is_admin_authenticated():
+            abort(403)
+        return redirect(url_for("login"))
+
+    # 対象アカウントの存在確認
+    target_account = get_admin_account_by_id(account_id)
+    if not target_account:
+        return redirect(
+            url_for("admin_backup_page", import_error="指定されたアカウントが見つかりません。")
+        )
+
+    uploaded_file = request.files.get("backup_file")
+    if not uploaded_file or not getattr(uploaded_file, "filename", "").strip():
+        return redirect(
+            url_for("admin_backup_page", import_error="バックアップファイルを選択してください。")
+        )
+
+    filename = uploaded_file.filename or ""
+    if not filename.lower().endswith(".json"):
+        return redirect(
+            url_for("admin_backup_page", import_error="JSONファイル (.json) を選択してください。")
+        )
+
+    try:
+        raw = uploaded_file.read()
+        backup_data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return redirect(
+            url_for("admin_backup_page", import_error="ファイルの読み込みに失敗しました。有効なJSONファイルを選択してください。")
+        )
+
+    if not isinstance(backup_data, dict) or "tables" not in backup_data:
+        return redirect(
+            url_for("admin_backup_page", import_error="バックアップの形式が無効です。")
+        )
+
+    tables = backup_data["tables"]
+    if not isinstance(tables, dict):
+        return redirect(
+            url_for("admin_backup_page", import_error="バックアップの形式が無効です。")
+        )
+
+    backup_scope = backup_data.get("scope")
+    if backup_scope == "full":
+        return redirect(
+            url_for(
+                "admin_backup_page",
+                import_error="このバックアップはDB全体のバックアップです。アカウント別復元には使用できません。全体復元を使用してください。",
             )
-
-        # スキーマキャッシュをリセットしてログアウト
-        global SCHEMA_READY
-        SCHEMA_READY = False
-        session.clear()
-        return redirect(url_for("login", notice="backup_restored"))
-
-    else:
-        # 通常アカウント: 自分のデータのみを部分復元
-        current_admin_account_id = get_current_admin_account_id()
-        if not current_admin_account_id:
-            session.clear()
-            return redirect(url_for("login"))
-
-        backup_scope = backup_data.get("scope")
-        if backup_scope == "full":
-            return redirect(
-                url_for(
-                    "admin_backup_page",
-                    import_error="このバックアップはDB全体のバックアップです。通常アカウントでは復元できません。監査アカウントでログインして復元してください。",
-                )
-            )
-        if backup_scope == "account":
-            backup_owner_id = backup_data.get("owner_admin_id")
-            if backup_owner_id is not None and int(backup_owner_id) != current_admin_account_id:
-                backup_login_id = backup_data.get("owner_login_id", "不明")
-                return redirect(
-                    url_for(
-                        "admin_backup_page",
-                        import_error=(
-                            f"このバックアップは別のアカウント（{backup_login_id}）のものです。"
-                            "自分のアカウントのバックアップのみ復元できます。"
-                        ),
-                    )
-                )
-        else:
-            # scope なし = 旧形式の全体バックアップ
+        )
+    if backup_scope == "account":
+        backup_owner_id = backup_data.get("owner_admin_id")
+        if backup_owner_id is not None and int(backup_owner_id) != account_id:
+            backup_login_id = backup_data.get("owner_login_id", "不明")
             return redirect(
                 url_for(
                     "admin_backup_page",
                     import_error=(
-                        "このバックアップはDB全体の旧形式バックアップです。"
-                        "通常アカウントでは復元できません。監査アカウントでログインして復元してください。"
+                        f"このバックアップはアカウント「{backup_login_id}」のものです。"
+                        f"アカウント「{target_account['login_id']}」への復元には使用できません。"
                     ),
                 )
             )
-
-        try:
-            with get_connection() as conn:
-                with conn.cursor() as cur:
-                    _import_account_tables(cur, current_admin_account_id, tables)
-                conn.commit()
-        except ValueError as error:
-            return redirect(
-                url_for("admin_backup_page", import_error=str(error))
-            )
-        except Exception:
-            app.logger.exception(
-                "Failed to import account backup account_id=%s", current_admin_account_id
-            )
-            return redirect(
-                url_for("admin_backup_page", import_error="インポートに失敗しました。バックアップファイルを確認してください。")
-            )
-
+    else:
+        # scope なし = 旧形式の全体バックアップ
         return redirect(
-            url_for("admin_backup_page", import_success="バックアップを復元しました。")
+            url_for(
+                "admin_backup_page",
+                import_error=(
+                    "このバックアップは旧形式の全体バックアップです。"
+                    "アカウント別復元には使用できません。"
+                ),
+            )
         )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                _import_account_tables(cur, account_id, tables)
+            conn.commit()
+    except ValueError as error:
+        return redirect(
+            url_for("admin_backup_page", import_error=str(error))
+        )
+    except Exception:
+        app.logger.exception(
+            "Failed to import account backup account_id=%s", account_id
+        )
+        return redirect(
+            url_for("admin_backup_page", import_error="インポートに失敗しました。バックアップファイルを確認してください。")
+        )
+
+    return redirect(
+        url_for(
+            "admin_backup_page",
+            import_success=f"アカウント「{target_account['login_id']}」のバックアップを復元しました。",
+        )
+    )
 
 
 # --- LINE Webhook ---
