@@ -79,6 +79,23 @@ def test_css_minification_creates_minified_files(app_module):
         assert "/*" not in minified_content
 
 
+def test_js_minification_creates_minified_files(app_module):
+    from pathlib import Path
+    js_dir = Path(app_module.__file__).parent / "static" / "js"
+    app_module.minify_js_files()
+    
+    # Check that each JS file has a corresponding min.js
+    for js_file in js_dir.glob("*.js"):
+        if js_file.name.endswith(".min.js"):
+            continue
+        minified_file = js_file.with_name(js_file.stem + ".min.js")
+        assert minified_file.exists()
+        original_content = js_file.read_text(encoding="utf-8")
+        minified_content = minified_file.read_text(encoding="utf-8")
+        assert len(minified_content) <= len(original_content)
+        assert "/*" not in minified_content
+
+
 def test_text_compression_gzip(client):
     response = client.get("/login", headers=[("Accept-Encoding", "gzip")])
     assert response.status_code == 200

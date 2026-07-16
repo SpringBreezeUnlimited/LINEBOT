@@ -25,3 +25,4 @@ __pycache__/
 
 # Generated minified assets
 static/css/*.min.css
+static/js/*.min.js

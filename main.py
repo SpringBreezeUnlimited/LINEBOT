@@ -78,6 +78,42 @@ def minify_css_files():
 minify_css_files()
 
 
+def minify_js_files():
+    """Minify JS files on application startup."""
+    js_dir = Path(__file__).parent / "static" / "js"
+    if not js_dir.exists():
+        return
+    for js_file in js_dir.glob("*.js"):
+        if js_file.name.endswith(".min.js"):
+            continue
+        minified_file = js_file.with_name(js_file.stem + ".min.js")
+        try:
+            content = js_file.read_text(encoding="utf-8")
+            # Remove multi-line comments
+            content = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
+            
+            # Remove single-line comments safely
+            lines = []
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("//"):
+                    continue
+                match = re.search(r'(?<![:"\'\`])//.*$', line)
+                if match:
+                    line = line[:match.start()]
+                if line.strip():
+                    lines.append(line.strip())
+            
+            minified = "\n".join(lines)
+            minified = re.sub(r"\s*([\{\}\(\);,])\s*", r"\1", minified)
+            minified_file.write_text(minified.strip(), encoding="utf-8")
+        except Exception as e:
+            print(f"Failed to minify {js_file.name}: {e}")
+
+
+minify_js_files()
+
+
 def parse_bool_env(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
