@@ -62,6 +62,29 @@ def test_parse_allowed_hosts_supports_multiple_separators(app_module):
     assert parsed == {"example.com", "api.example.com", "admin.example.com"}
 
 
+def test_css_minification_creates_minified_files(app_module):
+    from pathlib import Path
+    css_dir = Path(app_module.__file__).parent / "static" / "css"
+    app_module.minify_css_files()
+    
+    # Check that each CSS file has a corresponding min.css
+    for css_file in css_dir.glob("*.css"):
+        if css_file.name.endswith(".min.css"):
+            continue
+        minified_file = css_file.with_name(css_file.stem + ".min.css")
+        assert minified_file.exists()
+        original_content = css_file.read_text(encoding="utf-8")
+        minified_content = minified_file.read_text(encoding="utf-8")
+        assert len(minified_content) <= len(original_content)
+        assert "/*" not in minified_content
+
+
+def test_text_compression_gzip(client):
+    response = client.get("/login", headers=[("Accept-Encoding", "gzip")])
+    assert response.status_code == 200
+    assert "gzip" in response.headers.get("Content-Encoding", "").lower()
+
+
 def test_build_type_image_url_prefers_public_base_url(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://example.com")
     assert app_module.build_type_image_url(3) == "https://example.com/reservation-type-images/3"

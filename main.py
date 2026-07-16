@@ -35,6 +35,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
 from werkzeug.utils import secure_filename  # type: ignore
 from werkzeug.security import check_password_hash, generate_password_hash  # type: ignore
 from werkzeug.exceptions import HTTPException  # type: ignore
+from flask_compress import Compress  # type: ignore
 from flex_templates import (
     reservation_confirmation,
     call_notification,
@@ -45,8 +46,36 @@ from flex_templates import (
 from flex_templates import bubble_from_title_and_text
 
 app = Flask(__name__)
+Compress(app)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 600
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def minify_css_files():
+    """Minify CSS files on application startup."""
+    css_dir = Path(__file__).parent / "static" / "css"
+    if not css_dir.exists():
+        return
+    for css_file in css_dir.glob("*.css"):
+        if css_file.name.endswith(".min.css"):
+            continue
+        minified_file = css_file.with_name(css_file.stem + ".min.css")
+        try:
+            content = css_file.read_text(encoding="utf-8")
+            # Remove comments
+            content = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
+            # Remove spaces around delimiters
+            content = re.sub(r"\s*([\{\};:,])\s*", r"\1", content)
+            # Remove multiple spaces/newlines
+            content = re.sub(r"\s+", " ", content)
+            # Remove last semicolon in block
+            content = re.sub(r";\}", "}", content)
+            minified_file.write_text(content.strip(), encoding="utf-8")
+        except Exception as e:
+            print(f"Failed to minify {css_file.name}: {e}")
+
+
+minify_css_files()
 
 
 def parse_bool_env(name: str, default: bool) -> bool:

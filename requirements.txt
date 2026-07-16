@@ -3,3 +3,5 @@ line-bot-sdk==3.23.0
 psycopg2-binary==2.9.12
 gunicorn==25.3.0
 Pillow==12.2.0
+Flask-Compress==1.17.0
+Brotli==1.1.0

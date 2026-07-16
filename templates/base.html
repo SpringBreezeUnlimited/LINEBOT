@@ -7,7 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token if csrf_token is defined else '' }}">
     <title>{% block title %}予約管理{% endblock %}</title>
     {% block styles %}{% endblock %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.min.css') }}">
 </head>
 
 <body class="{% block body_class %}app-shell{% endblock %}" {% block body_attrs %}{% endblock %}>
