@@ -1944,6 +1944,58 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
     assert response.get_data(as_text=True) == "OK"
 
 
+def test_handle_message_keeps_processing_after_reservation_error(app_module, monkeypatch):
+    processed_messages = []
+
+    def fake_process_reservation(event, user_id, user_message):
+        processed_messages.append(user_message)
+        if len(processed_messages) == 1:
+            raise RuntimeError("temporary failure")
+
+    monkeypatch.setattr(app_module, "process_reservation", fake_process_reservation)
+
+    first_event = SimpleNamespace(
+        message=SimpleNamespace(text="予約 相談"),
+        source=SimpleNamespace(user_id="U-1"),
+        reply_token="reply-token-1",
+    )
+    second_event = SimpleNamespace(
+        message=SimpleNamespace(text="待ち時間"),
+        source=SimpleNamespace(user_id="U-1"),
+        reply_token="reply-token-2",
+    )
+
+    app_module.handle_message(first_event)
+    app_module.handle_message(second_event)
+
+    assert processed_messages == ["予約 相談", "待ち時間"]
+
+
+def test_managed_connection_rolls_back_on_exception(app_module, monkeypatch):
+    rollback_called = []
+    close_called = []
+
+    class FakeConnection:
+        def __init__(self):
+            self.closed = 0
+
+        def rollback(self):
+            rollback_called.append(True)
+
+        def close(self):
+            close_called.append(True)
+            self.closed = 1
+
+    monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+
+    with pytest.raises(RuntimeError):
+        with app_module.get_connection():
+            raise RuntimeError("boom")
+
+    assert rollback_called == [True]
+    assert close_called == [True]
+
+
 def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypatch):
     monkeypatch.setattr(
         app_module.time, "localtime", lambda: SimpleNamespace(tm_min=15)

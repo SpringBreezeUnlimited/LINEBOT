@@ -330,6 +330,11 @@ class ManagedConnection:
         return self._connection
 
     def __exit__(self, exc_type, exc, tb):
+        if exc_type is not None and not self._connection.closed:
+            try:
+                self._connection.rollback()
+            except Exception:
+                self._connection.close()
         if self._close_on_exit and not self._connection.closed:
             self._connection.close()
         return False
@@ -4079,7 +4084,14 @@ def handle_message(event):
     if should_ignore_reply_message(user_message):
         return
     user_id = event.source.user_id
-    process_reservation(event, user_id, user_message)
+    try:
+        process_reservation(event, user_id, user_message)
+    except Exception:
+        app.logger.exception(
+            "Failed to process LINE message user_id=%s message=%s",
+            user_id,
+            user_message,
+        )
 
 
 def process_reservation(event, user_id, user_message):
