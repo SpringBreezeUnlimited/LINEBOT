@@ -47,7 +47,7 @@ from flex_templates import bubble_from_title_and_text
 
 app = Flask(__name__)
 Compress(app)
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 600
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 1800
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 
@@ -187,7 +187,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.152"
+APP_VERSION = "v1.0.153"
 APP_RELEASED_AT = "2026-07-10 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
