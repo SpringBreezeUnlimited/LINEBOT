@@ -240,7 +240,7 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last = None
             elif "next_reservation_no" in query and "FROM admin_accounts" in query:
                 self._last = (1,)
-            elif "SELECT login_id FROM admin_accounts" in query:
+            elif "FROM admin_accounts" in query and "login_id" in query:
                 self._last = None
             elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
                 self._last = None
@@ -276,7 +276,7 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -791,7 +791,7 @@ def test_csrf_protect_redirects_to_login_when_token_is_invalid(
 def test_admin_post_without_active_session_redirects_to_login(
     client, app_module, monkeypatch
 ):
-    monkeypatch.setattr(app_module, "set_accepting_new", lambda _value: None)
+    monkeypatch.setattr(app_module, "set_accepting_new", lambda *args, **kwargs: None)
 
     response = client.post("/admin/toggle-accepting")
 
@@ -1022,7 +1022,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "get_runtime_settings",
-        lambda: {
+        lambda *args, **kwargs: {
             "accepting_new": True,
             "auto_call_count": 0,
             "last_auto_call": {},
@@ -1080,7 +1080,7 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
 
     class FakeCursor:
         def __enter__(self):
@@ -1802,7 +1802,7 @@ def test_admin_data_includes_runtime_controls(client, app_module, monkeypatch):
     monkeypatch.setattr(
         app_module,
         "get_runtime_settings",
-        lambda: {
+        lambda *args, **kwargs: {
             "accepting_new": False,
             "auto_call_count": 7,
             "last_auto_call": {"message": "last"},
@@ -2465,7 +2465,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
                 self._last = None
             elif "next_reservation_no" in query and "FROM admin_accounts" in query:
                 self._last = (1,)
-            elif "SELECT login_id FROM admin_accounts" in query:
+            elif "FROM admin_accounts" in query and "login_id" in query:
                 self._last = None
             elif "UPDATE admin_accounts" in query and "next_reservation_no" in query:
                 self._last = None
@@ -2501,7 +2501,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -2573,7 +2573,7 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
 
     sent_texts = []
     monkeypatch.setattr(
@@ -2631,7 +2631,7 @@ def test_process_reservation_wait_time_reply_without_active_reservation(
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
 
     sent_texts = []
     monkeypatch.setattr(
@@ -2688,7 +2688,7 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
             commits.append(True)
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
 
     sent_texts = []
     monkeypatch.setattr(
@@ -2948,7 +2948,7 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
     
     # Mock send_reply_message to capture the reply
     monkeypatch.setattr(
@@ -2993,7 +2993,7 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
 def test_admin_types_registration_optional_price(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
-    monkeypatch.setattr(app_module, "is_accepting_new", lambda: True)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
 
     executed = []
 
@@ -3100,3 +3100,90 @@ def test_admin_types_update_optional_price(app_module, monkeypatch):
     params = update_queries[0]
     assert params[0] is None
     assert params[1] == 1
+
+
+def test_is_accepting_new_per_admin(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+        def fetchone(self):
+            last_query = queries[-1][0]
+            if "SELECT accepting_new" in last_query:
+                params = queries[-1][1]
+                if params and params[0] == 1:
+                    return (False,)
+                return (True,)
+            elif "SELECT EXISTS" in last_query:
+                return (True,)
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    assert app_module.is_accepting_new(1) is False
+    assert queries[-1][0].strip().startswith("SELECT accepting_new FROM admin_accounts")
+    assert queries[-1][1] == (1,)
+
+    assert app_module.is_accepting_new(2) is True
+    assert queries[-1][1] == (2,)
+
+    assert app_module.is_accepting_new() is True
+    assert "SELECT EXISTS" in queries[-1][0]
+
+
+def test_set_accepting_new_per_admin(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    app_module.set_accepting_new(False, 1)
+    assert "UPDATE admin_accounts SET accepting_new" in queries[-1][0]
+    assert queries[-1][1] == (False, 1)
+
+    app_module.set_accepting_new(True)
+    assert "INSERT INTO app_settings" in queries[-1][0]
+    assert queries[-1][1] == ("accepting_new", "true")

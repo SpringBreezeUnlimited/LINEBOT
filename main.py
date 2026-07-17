@@ -1319,12 +1319,17 @@ def ensure_admin_accounts_table():
                         role TEXT NOT NULL,
                         active BOOLEAN NOT NULL DEFAULT TRUE,
                         next_reservation_no INTEGER NOT NULL DEFAULT 1,
+                        accepting_new BOOLEAN NOT NULL DEFAULT TRUE,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
             cur.execute("""
                 ALTER TABLE admin_accounts
                 ADD COLUMN IF NOT EXISTS next_reservation_no INTEGER NOT NULL DEFAULT 1
+            """)
+            cur.execute("""
+                ALTER TABLE admin_accounts
+                ADD COLUMN IF NOT EXISTS accepting_new BOOLEAN NOT NULL DEFAULT TRUE
             """)
             cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
@@ -2243,12 +2248,32 @@ def set_settings(settings):
             conn.commit()
 
 
-def is_accepting_new():
-    return get_setting("accepting_new", "true") == "true"
+def is_accepting_new(admin_id: int | None = None) -> bool:
+    if admin_id is not None:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT accepting_new FROM admin_accounts WHERE id = %s", (admin_id,))
+                row = cur.fetchone()
+                return row[0] if row is not None else True
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT EXISTS (SELECT 1 FROM admin_accounts WHERE active = TRUE AND accepting_new = TRUE)")
+            row = cur.fetchone()
+            return row[0] if row is not None else False
 
 
-def set_accepting_new(flag: bool):
-    set_setting("accepting_new", "true" if flag else "false")
+def set_accepting_new(flag: bool, admin_id: int | None = None):
+    if admin_id is None:
+        set_setting("accepting_new", "true" if flag else "false")
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE admin_accounts SET accepting_new = %s WHERE id = %s",
+                (flag, admin_id),
+            )
+            conn.commit()
 
 
 def get_auto_call_count() -> int:
@@ -2301,12 +2326,12 @@ def get_last_auto_call_summary(values=None):
     return build_auto_call_summary(values, "last")
 
 
-def get_runtime_settings():
+def get_runtime_settings(admin_id: int | None = None):
     values = get_settings(RUNTIME_SETTING_KEYS)
     raw_auto_call_count = (values.get("auto_call_count") or "0").strip()
     auto_call_count = int(raw_auto_call_count) if raw_auto_call_count.isdigit() else 0
     return {
-        "accepting_new": (values.get("accepting_new") or "true") == "true",
+        "accepting_new": is_accepting_new(admin_id),
         "auto_call_count": auto_call_count,
         "last_auto_call": get_last_auto_call_summary(values),
         "latest_auto_call": get_auto_call_summary("last", values),
@@ -2405,7 +2430,13 @@ def get_active_rows(
 
 def get_accepting_type_names(cur):
     cur.execute(
-        "SELECT name FROM reservation_types WHERE accepting = TRUE ORDER BY id ASC"
+        """
+            SELECT t.name 
+            FROM reservation_types t
+            JOIN admin_accounts a ON t.owner_admin_id = a.id
+            WHERE t.accepting = TRUE AND a.accepting_new = TRUE
+            ORDER BY t.id ASC
+        """
     )
     return [row[0] for row in cur.fetchall()]
 
@@ -2788,7 +2819,7 @@ def admin_page():
         sort_by = "id"
     if sort_order not in ("asc", "desc"):
         sort_order = "asc"
-    runtime_settings = get_runtime_settings()
+    runtime_settings = get_runtime_settings(current_admin_account_id)
     with get_connection() as conn:
         with conn.cursor() as cur:
             rows = get_active_rows(
@@ -2840,7 +2871,7 @@ def admin_data():
             type_counts = serialize_type_counts(
                 fetch_type_counts(cur, current_admin_account_id)
             )
-    runtime_settings = get_runtime_settings()
+    runtime_settings = get_runtime_settings(current_admin_account_id)
     return jsonify(
         {
             "rows": serialize_active_rows(rows),
@@ -2878,7 +2909,7 @@ def admin_types_page():
         session.clear()
         return redirect(url_for("login"))
 
-    accepting_new = is_accepting_new()
+    accepting_new = is_accepting_new(current_admin_account_id)
     type_error = request.args.get("type_error")
     type_success = request.args.get("type_success")
     schedule_error = request.args.get("schedule_error")
@@ -3516,7 +3547,9 @@ def admin_finish(res_id):
 def admin_toggle_accepting():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
-    set_accepting_new(not is_accepting_new())
+    current_admin_account_id = get_current_admin_account_id()
+    if current_admin_account_id:
+        set_accepting_new(not is_accepting_new(current_admin_account_id), current_admin_account_id)
     return redirect(url_for("admin_page"))
 
 
@@ -4130,11 +4163,10 @@ def process_reservation(event, user_id, user_message):
         )
         return
 
-    accepting_new = is_accepting_new()
     with get_connection() as conn:
         with conn.cursor() as cur:
             if normalized.startswith("予約"):
-                if not accepting_new:
+                if not is_accepting_new():
                     send_flex_notice(
                         event.reply_token,
                         "予約停止中",
@@ -4180,15 +4212,24 @@ def process_reservation(event, user_id, user_message):
                     type_image_mime_type = type_row[5]
                     type_price = type_row[6] if len(type_row) > 6 else 0
                     type_owner_login_id = None
+                    owner_accepting = True
                     if type_owner_admin_id is not None:
                         cur.execute(
-                            "SELECT login_id FROM admin_accounts WHERE id = %s",
+                            "SELECT login_id, accepting_new FROM admin_accounts WHERE id = %s",
                             (type_owner_admin_id,),
                         )
                         owner_row = cur.fetchone()
                         if owner_row:
                             type_owner_login_id = owner_row[0]
+                            owner_accepting = owner_row[1]
                     type_image_url = build_type_image_url(type_id)
+                    if not owner_accepting:
+                        send_flex_notice(
+                            event.reply_token,
+                            "予約停止中",
+                            "現在、新規の予約受付は停止中です。",
+                        )
+                        return
                     if not type_accepting:
                         names = get_accepting_type_names(cur)
                         if names:
@@ -4220,12 +4261,15 @@ def process_reservation(event, user_id, user_message):
                         row[6] for row in type_rows if len(row) > 6 and row[6] is not None
                     }
                     owner_login_ids = {}
+                    owner_accepting_states = {}
                     if owner_admin_ids:
                         cur.execute(
-                            "SELECT id, login_id FROM admin_accounts WHERE id = ANY(%s)",
+                            "SELECT id, login_id, accepting_new FROM admin_accounts WHERE id = ANY(%s)",
                             (list(owner_admin_ids),),
                         )
-                        owner_login_ids = {row[0]: row[1] for row in cur.fetchall()}
+                        for row in cur.fetchall():
+                            owner_login_ids[row[0]] = row[1]
+                            owner_accepting_states[row[0]] = row[2]
                     if not type_rows:
                         send_flex_notice(
                             event.reply_token,
@@ -4244,6 +4288,8 @@ def process_reservation(event, user_id, user_message):
                         price = type_row[5] if len(type_row) > 5 else 0
                         owner_admin_id = type_row[6] if len(type_row) > 6 else None
                         owner_login_id = owner_login_ids.get(owner_admin_id)
+                        owner_accepting = owner_accepting_states.get(owner_admin_id, True)
+                        effective_accepting = accepting and owner_accepting
                         image_url = build_type_image_url(type_id) if image_mime_type else None
                         # header box
                         header = {
@@ -4264,9 +4310,9 @@ def process_reservation(event, user_id, user_message):
                         }
                         
                         # status pill
-                        status_color = "#10b981" if accepting else "#ef4444"
-                        status_bg = "#d1fae5" if accepting else "#fee2e2"
-                        status_text = "受付中" if accepting else "受付停止中"
+                        status_color = "#10b981" if effective_accepting else "#ef4444"
+                        status_bg = "#d1fae5" if effective_accepting else "#fee2e2"
+                        status_text = "受付中" if effective_accepting else "受付停止中"
                         
                         body_contents = [
                             {
@@ -4353,7 +4399,7 @@ def process_reservation(event, user_id, user_message):
                         }
                         
                         # footer
-                        if accepting:
+                        if effective_accepting:
                             footer = {
                                 "type": "box",
                                 "layout": "vertical",
