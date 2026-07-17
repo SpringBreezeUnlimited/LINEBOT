@@ -98,7 +98,8 @@
                         {% endif %}
                     </div>
                     <!-- 価格 -->
-                    <div class="type-item-card__price">価格：{{ '{:,}'.format(t[6]) if t[6] is not none else '未設定' }}{{ '円' if t[6] is not none else '' }}</div>
+                    <div class="type-item-card__price">価格：{{ '{:,}'.format(t[6]) if t[6] is not none else '未設定' }}{{ '円'
+                        if t[6] is not none else '' }}</div>
                     <!-- 画像 -->
                     {% if t[4] %}
                     <div class="type-item-card__image">
@@ -112,9 +113,7 @@
                     <!-- 説明 + 三点ボタン -->
                     <div class="type-item-card__bottom">
                         <div class="type-item-card__flavor">{{ t[3] or '' }}</div>
-                        <button class="type-item-card__menu-btn"
-                            data-type-id="{{ t[0] }}"
-                            aria-label="メニューを開く"
+                        <button class="type-item-card__menu-btn" data-type-id="{{ t[0] }}" aria-label="メニューを開く"
                             type="button">
                             <span class="type-item-card__dot"></span>
                             <span class="type-item-card__dot"></span>
@@ -149,85 +148,69 @@
 <template id="modal-content-{{ t[0] }}">
     <div class="modal-section">
         <label class="modal-label">種類名</label>
-        <form method="POST" action="/admin/types/{{ t[0] }}/name"
-            class="types-name-form modal-form" data-ajax-post="true"
-            data-inline-confirm="種類名を更新しますか？" data-confirm-btn-text="更新する">
+        <form method="POST" action="/admin/types/{{ t[0] }}/name" class="types-name-form modal-form"
+            data-ajax-post="true" data-inline-confirm="種類名を更新しますか？" data-confirm-btn-text="更新する">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <div class="modal-input-row">
-                <input type="text" name="name"
-                    class="form-control form-control-sm types-card__name-input"
+                <input type="text" name="name" class="form-control form-control-sm types-card__name-input"
                     value="{{ t[1] }}" required>
-                <button type="submit"
-                    class="btn btn-sm btn-outline-secondary types-card__name-save-btn"
+                <button type="submit" class="btn btn-sm btn-outline-secondary types-card__name-save-btn"
                     style="display:none;" disabled>保存</button>
             </div>
         </form>
     </div>
     <div class="modal-section">
         <label class="modal-label">価格（円）</label>
-        <form method="POST" action="/admin/types/{{ t[0] }}/price"
-            class="types-price-form modal-form" data-ajax-post="true"
-            data-inline-confirm="価格を更新しますか？" data-confirm-btn-text="更新する">
+        <form method="POST" action="/admin/types/{{ t[0] }}/price" class="types-price-form modal-form"
+            data-ajax-post="true" data-inline-confirm="価格を更新しますか？" data-confirm-btn-text="更新する">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <div class="modal-input-row">
-                <input type="number" name="price"
-                    class="form-control form-control-sm types-card__price-input"
-                    placeholder="価格" value="{{ t[6] if t[6] is not none else '' }}"
-                    min="0">
-                <button type="submit"
-                    class="btn btn-sm btn-outline-secondary types-card__price-save-btn"
+                <input type="number" name="price" class="form-control form-control-sm types-card__price-input"
+                    placeholder="価格" value="{{ t[6] if t[6] is not none else '' }}" min="0">
+                <button type="submit" class="btn btn-sm btn-outline-secondary types-card__price-save-btn"
                     style="display:none;" disabled>保存</button>
             </div>
         </form>
     </div>
     <div class="modal-section">
         <label class="modal-label">説明</label>
-        <form method="POST" action="/admin/types/{{ t[0] }}/flavor"
-            class="types-flavor-form modal-form" data-ajax-post="true"
-            data-inline-confirm="説明を更新しますか？" data-confirm-btn-text="更新する">
+        <form method="POST" action="/admin/types/{{ t[0] }}/flavor" class="types-flavor-form modal-form"
+            data-ajax-post="true" data-inline-confirm="説明を更新しますか？" data-confirm-btn-text="更新する">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <div class="modal-input-row">
-                <input type="text" name="flavor_text"
-                    class="form-control form-control-sm types-card__flavor-textarea"
+                <input type="text" name="flavor_text" class="form-control form-control-sm types-card__flavor-textarea"
                     placeholder="受付完了時にLINEへ送信される説明文" value="{{ t[3] or '' }}" maxlength="100">
-                <button type="submit"
-                    class="btn btn-sm btn-outline-secondary types-card__flavor-save-btn"
+                <button type="submit" class="btn btn-sm btn-outline-secondary types-card__flavor-save-btn"
                     style="display:none;" disabled>保存</button>
             </div>
         </form>
     </div>
     <div class="modal-section">
         <label class="modal-label">画像を変更</label>
-        <form method="POST" action="/admin/types/{{ t[0] }}/image"
-            enctype="multipart/form-data" class="types-image-form modal-form"
-            data-inline-confirm="画像を更新しますか？" data-confirm-btn-text="更新する">
+        <form method="POST" action="/admin/types/{{ t[0] }}/image" enctype="multipart/form-data"
+            class="types-image-form modal-form" data-inline-confirm="画像を更新しますか？" data-confirm-btn-text="更新する">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
-            <input type="file" name="image" class="form-control form-control-sm"
-                accept="image/*" required>
-            <button type="submit"
-                class="btn btn-sm btn-outline-secondary mt-1">画像を更新</button>
+            <input type="file" name="image" class="form-control form-control-sm" accept="image/*" required>
+            <button type="submit" class="btn btn-sm btn-outline-secondary mt-1">画像を更新</button>
         </form>
     </div>
     <div class="modal-divider"></div>
     <div class="modal-section modal-section--actions">
         {% if t[2] %}
-        <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="modal-form"
-            data-ajax-post="true" data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}"
-            data-confirm-btn-text="停止する">
+        <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="modal-form" data-ajax-post="true"
+            data-inline-confirm="{{ ('「%s」の受付を停止しますか？' % t[1]) | e }}" data-confirm-btn-text="停止する">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="btn btn-sm btn-success w-100">受付を停止する</button>
         </form>
         {% else %}
-        <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="modal-form"
-            data-ajax-post="true" data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}"
-            data-confirm-btn-text="再開する">
+        <form method="POST" action="/admin/types/toggle/{{ t[0] }}" class="modal-form" data-ajax-post="true"
+            data-inline-confirm="{{ ('「%s」の受付を再開しますか？' % t[1]) | e }}" data-confirm-btn-text="再開する">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="btn btn-sm btn-danger w-100">受付を再開する</button>
         </form>
         {% endif %}
-        <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="modal-form"
-            data-ajax-post="true" data-inline-confirm="この種類を削除しますか？"
-            data-confirm-btn-text="削除する" data-confirm-btn-class="btn-danger">
+        <form method="POST" action="/admin/types/delete/{{ t[0] }}" class="modal-form" data-ajax-post="true"
+            data-inline-confirm="この種類を削除しますか？" data-confirm-btn-text="削除する" data-confirm-btn-class="btn-danger">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <button type="submit" class="btn btn-sm btn-outline-danger w-100">削除</button>
         </form>
