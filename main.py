@@ -187,8 +187,8 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.153"
-APP_RELEASED_AT = "2026-07-10 00:00 JST"
+APP_VERSION = "v1.0.154"
+APP_RELEASED_AT = "2026-07-17 00:00 JST"
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 FLEX_SAFE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
@@ -215,6 +215,7 @@ if IS_PRODUCTION and not ALLOWED_HOSTS:
 
 SESSION_IDLE_TIMEOUT_SECONDS = parse_int_env("SESSION_IDLE_TIMEOUT_SECONDS", 1800, 60, 86400)
 MAX_TYPE_NAME_LENGTH = parse_int_env("MAX_TYPE_NAME_LENGTH", 40, 1, 255)
+MAX_TYPE_FLAVOR_TEXT_CHARS = 100
 MAX_USER_MESSAGE_CHARS = parse_int_env("MAX_USER_MESSAGE_CHARS", 100, 10, 10000)
 TYPE_NAME_PATTERN = re.compile(
     rf"^[A-Za-z0-9ぁ-んァ-ヶー一-龠々・ 　_-]{{1,{MAX_TYPE_NAME_LENGTH}}}$"
@@ -1799,6 +1800,10 @@ def validate_type_name(value: str) -> bool:
     return bool(TYPE_NAME_PATTERN.fullmatch(value))
 
 
+def validate_type_flavor_text(value: str) -> bool:
+    return len((value or "").strip()) <= MAX_TYPE_FLAVOR_TEXT_CHARS
+
+
 def get_csrf_token() -> str:
     token = session.get("_csrf_token")
     if not token:
@@ -2883,6 +2888,13 @@ def admin_types_page():
         flavor_text = (request.form.get("flavor_text") or "").strip()
         price_raw = (request.form.get("price") or "").strip()
         image_file = request.files.get("image")
+        if not validate_type_flavor_text(flavor_text):
+            return redirect(
+                url_for(
+                    "admin_types_page",
+                    type_error=f"説明は{MAX_TYPE_FLAVOR_TEXT_CHARS}文字以内で入力してください。",
+                )
+            )
         if image_file and getattr(image_file, "filename", "").strip():
             suffix = Path(secure_filename(image_file.filename)).suffix.lower()
             if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
@@ -3110,6 +3122,13 @@ def admin_types_update_flavor(type_id):
         return redirect(url_for("login"))
 
     flavor_text = (request.form.get("flavor_text") or "").strip()
+    if not validate_type_flavor_text(flavor_text):
+        return redirect(
+            url_for(
+                "admin_types_page",
+                type_error=f"説明は{MAX_TYPE_FLAVOR_TEXT_CHARS}文字以内で入力してください。",
+            )
+        )
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(

@@ -69,7 +69,7 @@
                     <input type="number" name="price" class="form-control" placeholder="価格（円）" min="0">
                 </div>
                 <div class="col-12 mt-2">
-                    <input type="text" name="flavor_text" class="form-control" placeholder="説明（任意）">
+                    <input type="text" name="flavor_text" class="form-control" placeholder="説明（任意）" maxlength="100">
                 </div>
                 <div class="col-12 mt-2">
                     <input type="file" name="image" class="form-control" accept="image/*">
@@ -189,7 +189,7 @@
             <div class="modal-input-row">
                 <input type="text" name="flavor_text"
                     class="form-control form-control-sm types-card__flavor-textarea"
-                    placeholder="受付完了時にLINEへ送信される説明文" value="{{ t[3] or '' }}">
+                    placeholder="受付完了時にLINEへ送信される説明文" value="{{ t[3] or '' }}" maxlength="100">
                 <button type="submit"
                     class="btn btn-sm btn-outline-secondary types-card__flavor-save-btn"
                     style="display:none;" disabled>保存</button>
