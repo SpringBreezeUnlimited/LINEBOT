@@ -2278,9 +2278,12 @@ def is_accepting_new(admin_id: int | None = None) -> bool:
     if admin_id is not None:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT accepting_new FROM admin_accounts WHERE id = %s", (admin_id,))
+                cur.execute("SELECT accepting_new, active FROM admin_accounts WHERE id = %s", (admin_id,))
                 row = cur.fetchone()
-                return row[0] if row is not None else True
+                if row is None:
+                    return True
+                accepting_new, active = row
+                return bool(accepting_new) and bool(active)
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -4286,13 +4289,13 @@ def process_reservation(event, user_id, user_message):
                     owner_accepting = True
                     if type_owner_admin_id is not None:
                         cur.execute(
-                            "SELECT login_id, accepting_new FROM admin_accounts WHERE id = %s",
+                            "SELECT login_id, accepting_new, active FROM admin_accounts WHERE id = %s",
                             (type_owner_admin_id,),
                         )
                         owner_row = cur.fetchone()
                         if owner_row:
                             type_owner_login_id = owner_row[0]
-                            owner_accepting = owner_row[1]
+                            owner_accepting = bool(owner_row[1]) and bool(owner_row[2])
                     type_image_url = build_type_image_url(type_id)
                     if not owner_accepting:
                         send_flex_notice(
@@ -4335,12 +4338,12 @@ def process_reservation(event, user_id, user_message):
                     owner_accepting_states = {}
                     if owner_admin_ids:
                         cur.execute(
-                            "SELECT id, login_id, accepting_new FROM admin_accounts WHERE id = ANY(%s)",
+                            "SELECT id, login_id, accepting_new, active FROM admin_accounts WHERE id = ANY(%s)",
                             (list(owner_admin_ids),),
                         )
                         for row in cur.fetchall():
                             owner_login_ids[row[0]] = row[1]
-                            owner_accepting_states[row[0]] = row[2]
+                            owner_accepting_states[row[0]] = bool(row[2]) and bool(row[3])
                     if not type_rows:
                         send_flex_notice(
                             event.reply_token,

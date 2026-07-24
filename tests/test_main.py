@@ -3128,8 +3128,8 @@ def test_is_accepting_new_per_admin(app_module, monkeypatch):
             if "SELECT accepting_new" in last_query:
                 params = queries[-1][1]
                 if params and params[0] == 1:
-                    return (False,)
-                return (True,)
+                    return (False, True)  # accepting_new=False, active=True
+                return (True, True)  # accepting_new=True, active=True
             elif "SELECT EXISTS" in last_query:
                 return (True,)
             return None
@@ -3150,7 +3150,7 @@ def test_is_accepting_new_per_admin(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
 
     assert app_module.is_accepting_new(1) is False
-    assert queries[-1][0].strip().startswith("SELECT accepting_new FROM admin_accounts")
+    assert "SELECT accepting_new" in queries[-1][0]
     assert queries[-1][1] == (1,)
 
     assert app_module.is_accepting_new(2) is True
