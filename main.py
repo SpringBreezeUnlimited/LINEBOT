@@ -1469,10 +1469,27 @@ def hour_digit(now=None) -> int:
     return {10: 1, 11: 2, 12: 3, 13: 4, 14: 5}.get(dt.hour, 0)
 
 
+def get_management_no(owner_admin_id: int | None = None) -> int:
+    if owner_admin_id is not None:
+        val = get_setting(f"management_no_{owner_admin_id}", "")
+        if val.isdigit():
+            return int(val) % 10
+    val = get_setting("management_no", "0")
+    return int(val) % 10 if val.isdigit() else 0
+
+
+def set_management_no(val: int, owner_admin_id: int | None = None):
+    digit = val % 10
+    if owner_admin_id is not None:
+        set_setting(f"management_no_{owner_admin_id}", str(digit))
+    set_setting("management_no", str(digit))
+
+
 def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
-    """申込順の連番 XXX（1〜999 ループ）と時間帯 Y（hour_digit()）を合成した
-    4 桁固定の整数 XXXY を採番して返す。
-    表示には fmt_no() を使うこと。
+    """申込順の連番 XXX（1〜999）、暗号学的なランダム数字 Y（0〜9）、
+    管理者番号 Z（(owner_admin_id - 1) % 10）、管理番号 A（0〜9）からなる
+    6 桁固定の整数 XXXYZA を採番して返す。
+    表示には fmt_no() を使用する。
     """
     cur.execute(
         """
@@ -1487,33 +1504,42 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     if not row:
         raise ValueError("owner admin account not found")
     seq = int(row[0] or 1)
-    if seq > 999:
+    if seq > 999 or seq < 1:
         seq = 1
 
-    # 999 予約を超えると seq がループするため、既存の (owner_admin_id, XXXY) と
-    # 衝突する可能性がある（履歴・キャンセル済みの行も含め reservation_no は
-    # 削除されないため）。UNIQUE 制約違反で予約作成そのものが失敗しないよう、
-    # 同じ XXX 帯で未使用の Y を探し、全て埋まっていれば次の XXX に進める。
-    preferred_digit = hour_digit()
+    z_digit = (owner_admin_id - 1) % 10
+    a_digit = get_management_no(owner_admin_id)
+
+    res_no = None
     for _ in range(999):
+        y_digit = secrets.randbelow(10)
+        candidate = seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
         cur.execute(
-            """
-                SELECT reservation_no FROM reservations
-                WHERE owner_admin_id = %s AND reservation_no >= %s AND reservation_no < %s
-            """,
-            (owner_admin_id, seq * 10, seq * 10 + 10),
+            "SELECT 1 FROM reservations WHERE owner_admin_id = %s AND reservation_no = %s",
+            (owner_admin_id, candidate),
         )
-        used_digits = {r[0] % 10 for r in cur.fetchall()}
-        if preferred_digit not in used_digits:
-            digit = preferred_digit
+        if not cur.fetchone():
+            res_no = candidate
             break
-        available_digits = [d for d in range(10) if d not in used_digits]
-        if available_digits:
-            digit = secrets.choice(available_digits)
+        # 衝突した場合は未使用の Y をランダム順に探す
+        all_y = list(range(10))
+        secrets.SystemRandom().shuffle(all_y)
+        for cand_y in all_y:
+            cand_no = seq * 1000 + cand_y * 100 + z_digit * 10 + a_digit
+            cur.execute(
+                "SELECT 1 FROM reservations WHERE owner_admin_id = %s AND reservation_no = %s",
+                (owner_admin_id, cand_no),
+            )
+            if not cur.fetchone():
+                res_no = cand_no
+                break
+        if res_no is not None:
             break
         seq = seq + 1 if seq < 999 else 1
-    else:
-        digit = preferred_digit
+
+    if res_no is None:
+        y_digit = secrets.randbelow(10)
+        res_no = seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
 
     next_seq = seq + 1 if seq < 999 else 1
     cur.execute(
@@ -1524,18 +1550,18 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
         """,
         (next_seq, owner_admin_id),
     )
-    return seq * 10 + digit
+    return res_no
 
 
 def fmt_no(reservation_no: int | str) -> str:
-    """予約番号を 4 桁 0 埋め文字列（XXXY 形式）に変換する。
+    """予約番号を 6 桁 0 埋め文字列（XXXYZA 形式）に変換する。
     int はそのままゼロ埋め。str はいったん int 変換を試み、
     失敗した場合（None 由来の空文字など）はそのまま返す。
     """
     if isinstance(reservation_no, int):
-        return f"{reservation_no:04d}"
+        return f"{reservation_no:06d}"
     try:
-        return f"{int(reservation_no):04d}"
+        return f"{int(reservation_no):06d}"
     except (ValueError, TypeError):
         return str(reservation_no)
 
@@ -2850,6 +2876,7 @@ def admin_page():
         sort_order=sort_order,
         accepting_new=runtime_settings["accepting_new"],
         auto_call_count=runtime_settings["auto_call_count"],
+        management_no=get_management_no(current_admin_account_id),
         last_auto_call=runtime_settings["last_auto_call"],
         latest_auto_call=runtime_settings["latest_auto_call"],
         admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
@@ -3595,6 +3622,19 @@ def admin_auto_call_count():
     else:
         count = 0
     set_auto_call_count(count)
+    return redirect(url_for("admin_page"))
+
+
+@app.route("/admin/management-no", methods=["POST"])
+def admin_management_no():
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+
+    raw_value = (request.form.get("management_no") or "").strip()
+    if raw_value.isdigit():
+        val = int(raw_value) % 10
+        current_admin_account_id = get_current_admin_account_id()
+        set_management_no(val, current_admin_account_id)
     return redirect(url_for("admin_page"))
 
 

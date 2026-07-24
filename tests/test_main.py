@@ -248,6 +248,10 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last_all = []
             elif "INSERT INTO reservations" in query:
                 self._last = (10,)
+            elif "SELECT 1 FROM reservations" in query:
+                self._last = None
+            elif "FROM app_settings" in query:
+                self._last = None
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
                 and "r.id < %s" in query
@@ -310,46 +314,43 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     assert inserted[1] == ""
     assert inserted[2] == 1
     assert inserted[3] == 7  # type_owner_admin_id
-    # reservation_no は XXXY 形式（0010〜9999）
+    # reservation_no は XXXYZA 形式（001000〜999999）
     assert isinstance(inserted[4], int)
-    assert 10 <= inserted[4] <= 9999
+    assert 1000 <= inserted[4] <= 999999
     assert sent_texts
 
 
-def test_allocate_admin_reservation_no_skips_used_numbers_on_wraparound(app_module):
-    # seq が 999 からループして 1 に戻った際、過去に発行済みの 1XXY 系番号と
-    # 衝突しないよう、空いている Y のみを選ぶことを確認する。
+def test_allocate_admin_reservation_no_generates_xxxyza_format(app_module, monkeypatch):
     class FakeCursor:
         def __init__(self):
-            self._last = None
-            self._last_all = []
+            self.seq = 1
 
         def execute(self, query, params=None):
-            if "next_reservation_no" in query and "FROM admin_accounts" in query:
-                self._last = (1000,)  # ループ後の値（>999）
-            elif "SELECT reservation_no FROM reservations" in query:
-                # 10〜19 のうち 10〜18 はすでに使用済み、19 のみ空き
-                self._last_all = [(n,) for n in range(10, 19)]
+            if "SELECT next_reservation_no" in query:
+                pass
+            elif "SELECT 1 FROM reservations" in query:
+                pass
             elif "UPDATE admin_accounts" in query:
-                self._last = None
-            else:
-                raise AssertionError(f"Unexpected query: {query}")
+                pass
 
         def fetchone(self):
-            return self._last
+            if self.seq == 1:
+                self.seq += 1
+                return (1,)
+            return None
 
-        def fetchall(self):
-            return self._last_all
-
+    monkeypatch.setattr(app_module, "get_management_no", lambda owner_admin_id=None: 0)
     cur = FakeCursor()
-    result = app_module.allocate_admin_reservation_no(cur, owner_admin_id=1)
-    assert result == 19
+    res = app_module.allocate_admin_reservation_no(cur, owner_admin_id=1)
+    # XXX=001, Y=?, Z=0, A=0 -> res >= 1000 and res <= 1990
+    assert 1000 <= res <= 1990
+    assert app_module.fmt_no(res).endswith("00")  # Z=0, A=0
 
 
-def test_fmt_no_formats_as_four_digits(app_module):
-    assert app_module.fmt_no(19) == "0019"
-    assert app_module.fmt_no(1234) == "1234"
-    assert app_module.fmt_no("42") == "0042"
+def test_fmt_no_formats_as_six_digits(app_module):
+    assert app_module.fmt_no(19) == "000019"
+    assert app_module.fmt_no(123456) == "123456"
+    assert app_module.fmt_no("42") == "000042"
     assert app_module.fmt_no(None) == "None"
 
 
@@ -1050,6 +1051,9 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
                 self._rows = []
             else:
                 self._rows = []
+
+        def fetchone(self):
+            return None
 
         def fetchall(self):
             return getattr(self, "_rows", [])
@@ -2473,6 +2477,10 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
                 self._last_all = []
             elif "INSERT INTO reservations" in query:
                 self._last = (10,)
+            elif "SELECT 1 FROM reservations" in query:
+                self._last = None
+            elif "FROM app_settings" in query:
+                self._last = None
             elif (
                 "JOIN reservation_types t ON r.type_id = t.id" in query
                 and "r.id < %s" in query
@@ -2703,7 +2711,7 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     app_module.process_reservation(event, "U-cancel", "キャンセル")
 
     assert sent_texts
-    assert "受付番号 0042 をキャンセルしました。" in sent_texts[-1]
+    assert "受付番号 000042 をキャンセルしました。" in sent_texts[-1]
     assert commits
 
 
@@ -2774,7 +2782,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
         "呼出から完了",
     ]
     assert rows[1] == [
-        "0012",
+        "000012",
         "相談",
         app_module.STATUS_DONE,
         "自動",
@@ -2846,7 +2854,7 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
 
     rows = list(csv.reader(text.splitlines()))
     assert rows[1] == [
-        "0099",
+        "000099",
         "",
         app_module.STATUS_CANCELLED,
         "不明",

@@ -63,7 +63,7 @@
             </div>
         </div>
         <div class="row g-2 align-items-start mt-2 controls-row">
-            <div class="col-sm-6 control-col">
+            <div class="col-sm-4 control-col">
                 <label class="form-label">新規受付</label>
                 {% if accepting_new %}
                 <form method="POST" action="/admin/toggle-accepting" class="d-grid" data-ajax-post="true"
@@ -79,12 +79,21 @@
                 </form>
                 {% endif %}
             </div>
-            <div class="col-sm-6 control-col">
+            <div class="col-sm-4 control-col">
                 <label class="form-label auto-call-label">5分ごとの自動呼出人数</label>
                 <form method="POST" action="/admin/auto-call-count" class="auto-call-form" data-ajax-post="true">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                     <input type="number" name="auto_call_count" min="0" max="50" step="1" value="{{ auto_call_count }}"
                         class="form-control" id="auto-call-count-input">
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </form>
+            </div>
+            <div class="col-sm-4 control-col">
+                <label class="form-label">管理番号 (A)</label>
+                <form method="POST" action="/admin/management-no" class="auto-call-form" data-ajax-post="true">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                    <input type="number" name="management_no" min="0" max="9" step="1" value="{{ management_no }}"
+                        class="form-control" id="management-no-input">
                     <button type="submit" class="btn btn-primary">保存</button>
                 </form>
             </div>
