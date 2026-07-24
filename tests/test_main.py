@@ -3301,3 +3301,45 @@ def test_admin_cancel_route_success(app_module, monkeypatch):
         assert "/admin" in res.location
         assert "completed_at = CURRENT_TIMESTAMP" in executed_queries[0][0]
         assert "owner_admin_id = COALESCE(r.owner_admin_id, %s)" in executed_queries[0][0]
+
+
+def test_admin_history_allows_null_owner_admin_id_and_returns_completed_at(app_module, monkeypatch):
+    executed_queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed_queries.append((query, params))
+
+        def fetchall(self):
+            if executed_queries and "FROM reservations" in executed_queries[-1][0]:
+                # 10 columns: id, display_no, status, name, type_id, created_at, call_origin, called_at, completed_at, service_duration
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                return [(1, 1, "done", "一般", 1, now, "manual", now, now, 60.0)]
+            return []
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_client() as client:
+        res = client.get("/admin/history")
+        assert res.status_code == 200
+        history_query = executed_queries[0][0]
+        assert "OR COALESCE(r.owner_admin_id, t.owner_admin_id) IS NULL" in history_query

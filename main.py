@@ -3268,7 +3268,7 @@ def admin_history():
             if sort_order not in ("asc", "desc"):
                 sort_order = "desc"
             params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-            where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
+            where = "WHERE r.status IN (%s, %s) AND (COALESCE(r.owner_admin_id, t.owner_admin_id) = %s OR COALESCE(r.owner_admin_id, t.owner_admin_id) IS NULL)"
             if current_type_id is not None:
                 where += " AND r.type_id = %s"
                 params.append(current_type_id)
@@ -3313,6 +3313,7 @@ def admin_history():
                     format_dt(row[5]),
                     row[6],
                     format_dt(row[7]),
+                    format_dt(row[8]),
                     row[9],
                 )
                 for row in rows
@@ -3357,7 +3358,7 @@ def admin_history_export():
         sort_order = "desc"
 
     params = [STATUS_DONE, STATUS_CANCELLED, current_admin_account_id]
-    where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
+    where = "WHERE r.status IN (%s, %s) AND (COALESCE(r.owner_admin_id, t.owner_admin_id) = %s OR COALESCE(r.owner_admin_id, t.owner_admin_id) IS NULL)"
     if current_type_id is not None:
         where += " AND r.type_id = %s"
         params.append(current_type_id)
