@@ -3187,3 +3187,117 @@ def test_set_accepting_new_per_admin(app_module, monkeypatch):
     app_module.set_accepting_new(True)
     assert "INSERT INTO app_settings" in queries[-1][0]
     assert queries[-1][1] == ("accepting_new", "true")
+
+
+def test_expire_called_reservations_records_completed_at(app_module, monkeypatch):
+    executed_queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed_queries.append((query, params))
+
+        def fetchall(self):
+            return [(1, "U123", 1)]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module, "send_push_message", lambda uid, flex: None)
+
+    count = app_module.expire_called_reservations()
+    assert count == 1
+    assert "completed_at = CURRENT_TIMESTAMP" in executed_queries[0][0]
+
+
+def test_cancel_active_reservations_without_notification_records_completed_at(app_module, monkeypatch):
+    executed_queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed_queries.append((query, params))
+
+        def fetchall(self):
+            return [(1,), (2,)]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    count = app_module.cancel_active_reservations_without_notification()
+    assert count == 2
+    assert "completed_at = CURRENT_TIMESTAMP" in executed_queries[0][0]
+
+
+def test_admin_cancel_route_success(app_module, monkeypatch):
+    executed_queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed_queries.append((query, params))
+
+        def fetchone(self):
+            return (1,)
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+
+    with app_module.app.test_client() as client:
+        res = client.post("/admin/cancel/10")
+        assert res.status_code == 302
+        assert "/admin" in res.location
+        assert "completed_at = CURRENT_TIMESTAMP" in executed_queries[0][0]
+        assert "owner_admin_id = COALESCE(r.owner_admin_id, %s)" in executed_queries[0][0]

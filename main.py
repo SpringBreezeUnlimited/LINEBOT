@@ -848,7 +848,7 @@ def expire_called_reservations() -> int:
                 cur.execute(
                     """
                         UPDATE reservations
-                        SET status = %s
+                        SET status = %s, completed_at = CURRENT_TIMESTAMP
                         WHERE status = %s
                           AND called_at IS NOT NULL
                           AND called_at <= (CURRENT_TIMESTAMP - (%s * INTERVAL '1 minute'))
@@ -889,7 +889,7 @@ def cancel_active_reservations_without_notification() -> int:
                 cur.execute(
                     """
                         UPDATE reservations
-                        SET status = %s
+                        SET status = %s, completed_at = CURRENT_TIMESTAMP
                         WHERE status IN (%s, %s)
                         RETURNING id
                     """,
@@ -3527,7 +3527,7 @@ def admin_finish(res_id):
             cur.execute(
                 """
                     UPDATE reservations r
-                    SET status = %s, completed_at = CURRENT_TIMESTAMP
+                    SET status = %s, completed_at = CURRENT_TIMESTAMP, owner_admin_id = COALESCE(r.owner_admin_id, %s)
                     FROM reservation_types t
                     WHERE r.id = %s
                       AND r.status = %s
@@ -3535,7 +3535,37 @@ def admin_finish(res_id):
                       AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                     RETURNING r.id
                 """,
-                (STATUS_DONE, res_id, STATUS_CALLED, current_admin_account_id),
+                (STATUS_DONE, current_admin_account_id, res_id, STATUS_CALLED, current_admin_account_id),
+            )
+            if not cur.fetchone():
+                abort(404)
+            conn.commit()
+    return redirect(url_for("admin_page"))
+
+
+@app.route("/admin/cancel/<int:res_id>", methods=["POST"])
+def admin_cancel(res_id):
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    UPDATE reservations r
+                    SET status = %s, completed_at = CURRENT_TIMESTAMP, owner_admin_id = COALESCE(r.owner_admin_id, %s)
+                    FROM reservation_types t
+                    WHERE r.id = %s
+                      AND r.status IN (%s, %s)
+                      AND r.type_id = t.id
+                      AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
+                    RETURNING r.id
+                """,
+                (STATUS_CANCELLED, current_admin_account_id, res_id, STATUS_WAITING, STATUS_CALLED, current_admin_account_id),
             )
             if not cur.fetchone():
                 abort(404)
@@ -4616,7 +4646,7 @@ def process_reservation(event, user_id, user_message):
             elif normalized == "キャンセル":
                 cur.execute(
                     """
-                        UPDATE reservations SET status = %s
+                        UPDATE reservations SET status = %s, completed_at = CURRENT_TIMESTAMP
                         WHERE id = (
                             SELECT id FROM reservations
                             WHERE user_id = %s AND status IN (%s, %s)

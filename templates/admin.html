@@ -156,10 +156,18 @@
                             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-sm btn-success">呼出</button>
                         </form>
+                        <form method="POST" action="/admin/cancel/{{ row.id }}" class="d-inline" data-ajax-post="true" data-inline-confirm="この予約をキャンセルしますか？">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">キャンセル</button>
+                        </form>
                         {% elif row.status == 'called' %}
                         <form method="POST" action="/admin/finish/{{ row.id }}" class="d-inline" data-ajax-post="true">
                             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-sm btn-primary">確認完了</button>
+                        </form>
+                        <form method="POST" action="/admin/cancel/{{ row.id }}" class="d-inline" data-ajax-post="true" data-inline-confirm="この予約をキャンセルしますか？">
+                            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">キャンセル</button>
                         </form>
                         {% else %}
                         <span class="text-muted small">確認完了</span>
