@@ -18,9 +18,11 @@
             <span class="brand-lockup__title">festival queue</span>
         </a>
         <nav class="nav-pills" aria-label="管理ページ">
+            {% if not is_audit_admin %}
             <a class="nav-pill" href="/admin">受付</a>
             <a class="nav-pill" href="/admin/types">種類</a>
             <a class="nav-pill" href="/admin/history">過去ログ</a>
+            {% endif %}
             <a class="nav-pill" href="/admin/backup">バックアップ</a>
             <form method="POST" action="/logout" class="d-inline mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
