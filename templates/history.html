@@ -107,7 +107,7 @@
                             </div>
                             <div>
                                 <dt>呼出方法</dt>
-                                <dd>{{ format_call_origin(row[6]) }}</dd>
+                                <dd>{{ format_call_origin(row[6]) if row[6] else '-' }}</dd>
                             </div>
                             <div>
                                 <dt>呼出から完了</dt>
