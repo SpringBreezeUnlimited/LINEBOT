@@ -216,6 +216,7 @@ if IS_PRODUCTION and not ALLOWED_HOSTS:
 SESSION_IDLE_TIMEOUT_SECONDS = parse_int_env("SESSION_IDLE_TIMEOUT_SECONDS", 1800, 60, 86400)
 MAX_TYPE_NAME_LENGTH = parse_int_env("MAX_TYPE_NAME_LENGTH", 40, 1, 255)
 MAX_TYPE_FLAVOR_TEXT_CHARS = 100
+MAX_TYPE_PRICE = parse_int_env("MAX_TYPE_PRICE", 99998, 1, 999999999)
 MAX_USER_MESSAGE_CHARS = parse_int_env("MAX_USER_MESSAGE_CHARS", 100, 10, 10000)
 TYPE_NAME_PATTERN = re.compile(
     rf"^[A-Za-z0-9ぁ-んァ-ヶー一-龠々・ 　_-]{{1,{MAX_TYPE_NAME_LENGTH}}}$"
@@ -2991,6 +2992,13 @@ def admin_types_page():
                         type_error="価格には0以上の値を入力してください。",
                     )
                 )
+            if price > MAX_TYPE_PRICE:
+                return redirect(
+                    url_for(
+                        "admin_types_page",
+                        type_error=f"価格は{MAX_TYPE_PRICE:,}円以下で入力してください。",
+                    )
+                )
         try:
             image_data = None
             image_mime_type = ""
@@ -3256,6 +3264,13 @@ def admin_types_update_price(type_id):
         price = int(price_raw)
         if price < 0:
             return redirect(url_for("admin_types_page", type_error="価格には0以上の値を入力してください。"))
+        if price > MAX_TYPE_PRICE:
+            return redirect(
+                url_for(
+                    "admin_types_page",
+                    type_error=f"価格は{MAX_TYPE_PRICE:,}円以下で入力してください。",
+                )
+            )
 
     with get_connection() as conn:
         with conn.cursor() as cur:

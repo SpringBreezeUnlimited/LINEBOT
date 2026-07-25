@@ -3110,6 +3110,41 @@ def test_admin_types_update_optional_price(app_module, monkeypatch):
     assert params[1] == 1
 
 
+def test_admin_types_registration_price_limit(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+
+    with app_module.app.test_request_context(
+        "/admin/types",
+        method="POST",
+        data={"name": "高額サービス", "price": "99999"},
+    ):
+        response = app_module.admin_types_page()
+
+    assert response.status_code == 302
+    assert "type_error" in response.headers["Location"]
+    from urllib.parse import unquote
+    assert "99,998円以下" in unquote(response.headers["Location"])
+
+
+def test_admin_types_update_price_limit(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+
+    with app_module.app.test_request_context(
+        "/admin/types/1/price",
+        method="POST",
+        data={"price": "100000"},
+    ):
+        response = app_module.admin_types_update_price(1)
+
+    assert response.status_code == 302
+    assert "type_error" in response.headers["Location"]
+    from urllib.parse import unquote
+    assert "99,998円以下" in unquote(response.headers["Location"])
+
+
 def test_is_accepting_new_per_admin(app_module, monkeypatch):
     queries = []
 

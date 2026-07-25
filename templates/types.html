@@ -66,7 +66,7 @@
                     <input type="text" name="name" class="form-control" placeholder="種類名" required>
                 </div>
                 <div class="col-sm-6">
-                    <input type="number" name="price" class="form-control" placeholder="価格（円）" min="0">
+                    <input type="number" name="price" class="form-control" placeholder="価格（円）" min="0" max="99998">
                 </div>
                 <div class="col-12 mt-2">
                     <input type="text" name="flavor_text" class="form-control" placeholder="説明（任意）" maxlength="100">
@@ -166,7 +166,7 @@
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <div class="modal-input-row">
                 <input type="number" name="price" class="form-control form-control-sm types-card__price-input"
-                    placeholder="価格" value="{{ t[6] if t[6] is not none else '' }}" min="0">
+                    placeholder="価格" value="{{ t[6] if t[6] is not none else '' }}" min="0" max="99998">
                 <button type="submit" class="btn btn-sm btn-outline-secondary types-card__price-save-btn"
                     style="display:none;" disabled>保存</button>
             </div>
