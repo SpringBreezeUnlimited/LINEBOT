@@ -2507,6 +2507,7 @@ def admin_login_logs_page():
         current_admin_account_id=get_current_admin_account_id(),
         admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token(),
+        is_audit_admin=True,
     )
 
 
