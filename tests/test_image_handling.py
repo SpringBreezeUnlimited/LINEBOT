@@ -126,7 +126,7 @@ class _FakeConnection:
 
 def test_reservation_type_image_returns_stored_binary(app_module, client, monkeypatch):
     row = (b"binary-image-data", "image/png", None)
-    monkeypatch.setattr(app_module, "get_connection", lambda: _FakeConnection(row))
+    monkeypatch.setattr(app_module.main_routes, "get_connection", lambda: _FakeConnection(row))
 
     response = client.get("/reservation-type-images/1")
 
@@ -138,7 +138,7 @@ def test_reservation_type_image_returns_stored_binary(app_module, client, monkey
 def test_reservation_type_image_returns_404_when_type_missing(
     app_module, client, monkeypatch
 ):
-    monkeypatch.setattr(app_module, "get_connection", lambda: _FakeConnection(None))
+    monkeypatch.setattr(app_module.main_routes, "get_connection", lambda: _FakeConnection(None))
 
     response = client.get("/reservation-type-images/999")
 
@@ -149,7 +149,7 @@ def test_reservation_type_image_returns_404_when_no_image_data_or_path(
     app_module, client, monkeypatch
 ):
     row = (None, None, None)
-    monkeypatch.setattr(app_module, "get_connection", lambda: _FakeConnection(row))
+    monkeypatch.setattr(app_module.main_routes, "get_connection", lambda: _FakeConnection(row))
 
     response = client.get("/reservation-type-images/2")
 
@@ -161,7 +161,7 @@ def test_reservation_type_image_falls_back_to_legacy_path_missing_file(
 ):
     # image_data は無いが legacy な image_path が指すファイルが実在しないケース
     row = (None, None, "img/does-not-exist.png")
-    monkeypatch.setattr(app_module, "get_connection", lambda: _FakeConnection(row))
+    monkeypatch.setattr(app_module.main_routes, "get_connection", lambda: _FakeConnection(row))
 
     response = client.get("/reservation-type-images/3")
 

@@ -108,7 +108,7 @@ def test_build_type_image_url_prefers_public_base_url(app_module, monkeypatch):
 
 
 def test_build_type_image_url_forces_https_from_request(app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "")
+    monkeypatch.setattr(app_module.line_service, "PUBLIC_BASE_URL", "")
     with app_module.app.test_request_context("/", base_url="http://api.example.com"):
         assert app_module.build_type_image_url(3) == "https://api.example.com/reservation-type-images/3"
 
@@ -164,7 +164,7 @@ def test_enforce_host_allowlist_accepts_multiple_hosts(app_module, monkeypatch):
 
 def test_enforce_host_allowlist_rejects_unknown_host(app_module, monkeypatch):
     monkeypatch.setattr(
-        app_module,
+        app_module.auth,
         "ALLOWED_HOSTS",
         {"example.com", "api.example.com"},
     )
@@ -200,6 +200,9 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     app_module.ensure_reservations_table()
 
@@ -280,9 +283,23 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.line_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.line_routes, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         app_module,
+        "refresh_wait_time_estimate",
+        lambda now=None, owner_admin_id=None: {
+            "message": "現在の目安待ち時間: 6分",
+            "estimated_seconds": 360,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "refresh_wait_time_estimate",
         lambda now=None, owner_admin_id=None: {
             "message": "現在の目安待ち時間: 6分",
@@ -293,6 +310,13 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     sent_texts = []
     monkeypatch.setattr(
         app_module,
+        "send_flex_notice",
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "send_flex_notice",
         lambda *args, **kwargs: sent_texts.append(
             args[2] if len(args) > 2 else kwargs.get("body")
@@ -339,7 +363,7 @@ def test_allocate_admin_reservation_no_generates_xxxyza_format(app_module, monke
                 return (1,)
             return None
 
-    monkeypatch.setattr(app_module, "get_management_no", lambda owner_admin_id=None: 0)
+    monkeypatch.setattr(app_module.queue_service, "get_management_no", lambda owner_admin_id=None: 0)
     cur = FakeCursor()
     res = app_module.allocate_admin_reservation_no(cur, owner_admin_id=1)
     # XXX=001, Y=?, Z=0, A=0 -> res >= 1000 and res <= 1990
@@ -359,6 +383,11 @@ def test_handle_message_ignores_specific_url(app_module, monkeypatch):
 
     monkeypatch.setattr(
         app_module,
+        "process_reservation",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "process_reservation",
         lambda *args, **kwargs: called.append((args, kwargs)),
     )
@@ -382,6 +411,11 @@ def test_handle_message_ignores_usage_message(app_module, monkeypatch):
         "process_reservation",
         lambda *args, **kwargs: called.append((args, kwargs)),
     )
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "process_reservation",
+        lambda *args, **kwargs: called.append((args, kwargs)),
+    )
 
     event = SimpleNamespace(
         message=SimpleNamespace(text="使い方"),
@@ -396,7 +430,9 @@ def test_handle_message_ignores_usage_message(app_module, monkeypatch):
 
 def test_admin_call_push_failure_returns_to_admin_page(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(
         app_module, "send_push_message", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("push fail"))
     )
@@ -444,6 +480,9 @@ def test_admin_call_push_failure_returns_to_admin_page(app_module, monkeypatch):
             self.committed = True
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context("/admin/call/28", method="POST"):
         response = app_module.admin_call(28)
@@ -482,6 +521,9 @@ def test_ensure_types_table_adds_type_foreign_key(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     app_module.ensure_types_table()
 
@@ -557,8 +599,8 @@ def test_send_push_message_uses_retry_key(app_module, monkeypatch):
             )
             return None
 
-    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
-    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+    monkeypatch.setattr(app_module.line_service, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module.line_service, "MessagingApi", DummyMessagingApi)
     app_module.send_push_message("U1", "hello", retry_key="retry-key-1")
     assert captured == [("U1", "hello", "retry-key-1")]
 
@@ -592,8 +634,8 @@ def test_send_push_message_retries_with_same_key(app_module, monkeypatch):
                 raise RetryableError("temporary failure")
             return None
 
-    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
-    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+    monkeypatch.setattr(app_module.line_service, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module.line_service, "MessagingApi", DummyMessagingApi)
     monkeypatch.setattr(app_module, "LINE_PUSH_MAX_RETRIES", 2)
     monkeypatch.setattr(app_module.time, "sleep", lambda _secs: None)
     app_module.send_push_message("U2", "hello", retry_key="retry-fixed")
@@ -621,8 +663,8 @@ def test_send_push_message_treats_409_as_success(app_module, monkeypatch):
         def push_message(self, _request_payload, x_line_retry_key=None):
             raise ConflictError("already accepted")
 
-    monkeypatch.setattr(app_module, "ApiClient", DummyApiClient)
-    monkeypatch.setattr(app_module, "MessagingApi", DummyMessagingApi)
+    monkeypatch.setattr(app_module.line_service, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module.line_service, "MessagingApi", DummyMessagingApi)
     # 409は受理済み扱いで例外を送出しない
     app_module.send_push_message("U3", "hello", retry_key="retry-409")
 
@@ -711,7 +753,7 @@ def test_calculate_wait_time_minutes_boundaries(
 
 
 def test_validate_batch_runner_token_authorization_header(app_module):
-    app_module.BATCH_CALL_RUNNER_TOKEN = "token123"
+    app_module.auth.BATCH_CALL_RUNNER_TOKEN = "token123"
     with app_module.app.test_request_context(
         "/tasks/process-call-queue", headers={"Authorization": "Bearer token123"}
     ):
@@ -719,7 +761,7 @@ def test_validate_batch_runner_token_authorization_header(app_module):
 
 
 def test_validate_batch_runner_token_custom_header(app_module):
-    app_module.BATCH_CALL_RUNNER_TOKEN = "token123"
+    app_module.auth.BATCH_CALL_RUNNER_TOKEN = "token123"
     with app_module.app.test_request_context(
         "/tasks/process-call-queue", headers={"X-Task-Token": "token123"}
     ):
@@ -727,7 +769,7 @@ def test_validate_batch_runner_token_custom_header(app_module):
 
 
 def test_validate_batch_runner_token_missing(app_module):
-    app_module.BATCH_CALL_RUNNER_TOKEN = ""
+    app_module.auth.BATCH_CALL_RUNNER_TOKEN = ""
     with app_module.app.test_request_context("/tasks/process-call-queue"):
         assert app_module.validate_batch_runner_token() is False
 
@@ -793,6 +835,7 @@ def test_admin_post_without_active_session_redirects_to_login(
     client, app_module, monkeypatch
 ):
     monkeypatch.setattr(app_module, "set_accepting_new", lambda *args, **kwargs: None)
+    monkeypatch.setattr(app_module.admin_routes, "set_accepting_new", lambda *args, **kwargs: None)
 
     response = client.post("/admin/toggle-accepting")
 
@@ -828,7 +871,7 @@ def test_is_authenticated_as_success(app_module, monkeypatch):
         app_module.session["last_activity"] = now
         app_module.session["_csrf_token"] = "token"
         monkeypatch.setattr(
-            app_module,
+            app_module.auth,
             "get_admin_account_by_id",
             lambda _account_id: {
                 "id": 1,
@@ -849,7 +892,7 @@ def test_is_authenticated_as_timeout_clears_session(app_module, monkeypatch):
         app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
         monkeypatch.setattr(
-            app_module,
+            app_module.auth,
             "get_admin_account_by_id",
             lambda _account_id: {
                 "id": 1,
@@ -875,7 +918,7 @@ def test_is_authenticated_as_inactive_account_clears_session(app_module, monkeyp
         app_module.session["admin_account_id"] = 1
         app_module.session["last_activity"] = now
         monkeypatch.setattr(
-            app_module,
+            app_module.auth,
             "get_admin_account_by_id",
             lambda _account_id: {
                 "id": 1,
@@ -904,7 +947,7 @@ def test_apply_security_headers_admin_page(app_module):
 
 def test_is_login_rate_limited_on_exception_returns_true(app_module, monkeypatch):
     monkeypatch.setattr(
-        app_module,
+        app_module.database,
         "get_connection",
         lambda: (_ for _ in ()).throw(RuntimeError("db error")),
     )
@@ -913,7 +956,7 @@ def test_is_login_rate_limited_on_exception_returns_true(app_module, monkeypatch
 
 def test_record_login_failure_on_exception_does_not_raise(app_module, monkeypatch):
     monkeypatch.setattr(
-        app_module,
+        app_module.database,
         "get_connection",
         lambda: (_ for _ in ()).throw(RuntimeError("db error")),
     )
@@ -922,7 +965,7 @@ def test_record_login_failure_on_exception_does_not_raise(app_module, monkeypatc
 
 def test_is_webhook_rate_limited_on_exception_returns_true(app_module, monkeypatch):
     monkeypatch.setattr(
-        app_module,
+        app_module.database,
         "get_connection",
         lambda: (_ for _ in ()).throw(RuntimeError("db error")),
     )
@@ -1019,9 +1062,21 @@ def test_login_post_rate_limited(client, csrf_token, app_module, monkeypatch):
 
 def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(
         app_module,
+        "get_runtime_settings",
+        lambda *args, **kwargs: {
+            "accepting_new": True,
+            "auto_call_count": 0,
+            "last_auto_call": {},
+            "latest_auto_call": {},
+        },
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "get_runtime_settings",
         lambda *args, **kwargs: {
             "accepting_new": True,
@@ -1069,6 +1124,9 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     with client.session_transaction() as session:
         session["logged_in"] = True
         session["admin_role"] = "admin"
@@ -1083,8 +1141,11 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
 
 def test_types_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
 
     class FakeCursor:
         def __enter__(self):
@@ -1110,6 +1171,9 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     with client.session_transaction() as session:
         session["logged_in"] = True
         session["admin_role"] = "admin"
@@ -1124,7 +1188,9 @@ def test_types_page_shows_version_badge(client, app_module, monkeypatch):
 
 def test_admin_types_update_name_changes_type_name(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     executed = []
 
@@ -1159,6 +1225,9 @@ def test_admin_types_update_name_changes_type_name(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/types/7/name",
@@ -1173,7 +1242,9 @@ def test_admin_types_update_name_changes_type_name(app_module, monkeypatch):
 
 def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     rollback_called = []
 
@@ -1213,6 +1284,9 @@ def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypat
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context("/admin/types/delete/1", method="POST"):
         response = app_module.admin_types_delete(1)
@@ -1223,7 +1297,9 @@ def test_admin_types_delete_blocks_types_with_reservations(app_module, monkeypat
 
 def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     deleted_paths = []
     saved_files = []
@@ -1260,8 +1336,17 @@ def test_admin_types_update_image_replaces_existing_file(app_module, monkeypatch
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(
         app_module,
+        "save_type_image_upload",
+        lambda image_file: saved_files.append(image_file.filename)
+        or (b"new-bytes", "image/png", "new.png"),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "save_type_image_upload",
         lambda image_file: saved_files.append(image_file.filename)
         or (b"new-bytes", "image/png", "new.png"),
@@ -1369,6 +1454,7 @@ def test_admin_accounts_create_requires_audit_auth(app_module):
 
 def test_admin_accounts_create_success(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
 
     calls = []
 
@@ -1396,6 +1482,9 @@ def test_admin_accounts_create_success(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts",
@@ -1411,6 +1500,7 @@ def test_admin_accounts_create_success(app_module, monkeypatch):
 
 def test_admin_accounts_create_duplicate_login_id(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
 
     class FakeCursor:
         def __enter__(self):
@@ -1436,6 +1526,9 @@ def test_admin_accounts_create_duplicate_login_id(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts",
@@ -1450,6 +1543,7 @@ def test_admin_accounts_create_duplicate_login_id(app_module, monkeypatch):
 
 def test_admin_accounts_bulk_create_success(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
 
     calls = []
 
@@ -1491,6 +1585,9 @@ def test_admin_accounts_bulk_create_success(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts",
@@ -1510,6 +1607,7 @@ def test_admin_accounts_bulk_create_success(app_module, monkeypatch):
 
 def test_admin_accounts_bulk_create_invalid_line_format(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts",
@@ -1539,6 +1637,7 @@ def test_admin_accounts_update_login_id_requires_audit_auth(app_module):
 
 def test_admin_accounts_update_login_id_success(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
 
     calls = []
 
@@ -1568,6 +1667,9 @@ def test_admin_accounts_update_login_id_success(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts/1/login-id",
@@ -1583,6 +1685,7 @@ def test_admin_accounts_update_login_id_success(app_module, monkeypatch):
 
 def test_admin_accounts_update_login_id_duplicate(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
 
     class FakeCursor:
         def __enter__(self):
@@ -1608,6 +1711,9 @@ def test_admin_accounts_update_login_id_duplicate(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts/1/login-id",
@@ -1622,7 +1728,9 @@ def test_admin_accounts_update_login_id_duplicate(app_module, monkeypatch):
 
 def test_admin_accounts_toggle_active_success(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 9)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 9)
     monkeypatch.setattr(
         app_module,
         "get_admin_account_by_id",
@@ -1633,7 +1741,18 @@ def test_admin_accounts_toggle_active_success(app_module, monkeypatch):
             "active": True,
         },
     )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "get_admin_account_by_id",
+        lambda account_id: {
+            "id": account_id,
+            "login_id": "manager01",
+            "role": app_module.ROLE_ADMIN,
+            "active": True,
+        },
+    )
     monkeypatch.setattr(app_module, "get_active_admin_count", lambda role=None: 2)
+    monkeypatch.setattr(app_module.admin_routes, "get_active_admin_count", lambda role=None: 2)
 
     calls = []
 
@@ -1663,6 +1782,9 @@ def test_admin_accounts_toggle_active_success(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts/1/active",
@@ -1677,7 +1799,9 @@ def test_admin_accounts_toggle_active_success(app_module, monkeypatch):
 
 def test_admin_accounts_delete_success(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 9)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 9)
     monkeypatch.setattr(
         app_module,
         "get_admin_account_by_id",
@@ -1688,7 +1812,18 @@ def test_admin_accounts_delete_success(app_module, monkeypatch):
             "active": True,
         },
     )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "get_admin_account_by_id",
+        lambda account_id: {
+            "id": account_id,
+            "login_id": "manager01",
+            "role": app_module.ROLE_ADMIN,
+            "active": True,
+        },
+    )
     monkeypatch.setattr(app_module, "get_active_admin_count", lambda role=None: 2)
+    monkeypatch.setattr(app_module.admin_routes, "get_active_admin_count", lambda role=None: 2)
 
     calls = []
 
@@ -1718,6 +1853,9 @@ def test_admin_accounts_delete_success(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts/1/delete",
@@ -1732,7 +1870,9 @@ def test_admin_accounts_delete_success(app_module, monkeypatch):
 
 def test_admin_accounts_delete_blocks_self(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     with app_module.app.test_request_context(
         "/admin/admin-accounts/1/delete",
@@ -1746,8 +1886,11 @@ def test_admin_accounts_delete_blocks_self(app_module, monkeypatch):
 
 def test_admin_login_logs_page_shows_account_creation_ui(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_audit_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "has_audit_admin_account", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "has_audit_admin_account", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     class FakeCursor:
         def __init__(self):
@@ -1779,6 +1922,9 @@ def test_admin_login_logs_page_shows_account_creation_ui(client, app_module, mon
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     response = client.get("/admin/login-logs")
     assert response.status_code == 200
@@ -1796,15 +1942,27 @@ def test_admin_data_unauthorized(client):
 
 def test_admin_data_includes_runtime_controls(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
-    monkeypatch.setattr(app_module, "get_active_rows", lambda _cur, owner_admin_id=None: [])
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_active_rows", lambda _cur, owner_admin_id=None: [])
     monkeypatch.setattr(
-        app_module,
+        app_module.admin_routes,
         "fetch_type_counts",
         lambda _cur, owner_admin_id: [],
     )
     monkeypatch.setattr(
         app_module,
+        "get_runtime_settings",
+        lambda *args, **kwargs: {
+            "accepting_new": False,
+            "auto_call_count": 7,
+            "last_auto_call": {"message": "last"},
+            "latest_auto_call": {"message": "latest"},
+        },
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "get_runtime_settings",
         lambda *args, **kwargs: {
             "accepting_new": False,
@@ -1832,6 +1990,9 @@ def test_admin_data_includes_runtime_controls(client, app_module, monkeypatch):
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     response = client.get("/admin/data")
 
@@ -1875,12 +2036,14 @@ def test_process_call_queue_task_success_returns_json(client, app_module, monkey
 
 def test_callback_missing_signature_returns_400(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
+    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
     response = client.post("/callback", data="{}", content_type="application/json")
     assert response.status_code == 400
 
 
 def test_callback_invalid_signature_returns_400(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
+    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
 
     class InvalidSignatureHandler:
         @staticmethod
@@ -1888,6 +2051,7 @@ def test_callback_invalid_signature_returns_400(client, app_module, monkeypatch)
             raise app_module.InvalidSignatureError("bad")
 
     monkeypatch.setattr(app_module, "handler", InvalidSignatureHandler())
+    monkeypatch.setattr(app_module.line_routes, "handler", InvalidSignatureHandler())
     response = client.post(
         "/callback",
         data="{}",
@@ -1910,6 +2074,7 @@ def test_callback_rate_limited_returns_429(client, app_module, monkeypatch):
 
 def test_callback_success_returns_ok(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
+    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
 
     class DummyHandler:
         @staticmethod
@@ -1917,6 +2082,7 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "handler", DummyHandler())
+    monkeypatch.setattr(app_module.line_routes, "handler", DummyHandler())
 
     response = client.post(
         "/callback",
@@ -1930,6 +2096,7 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch):
 
 def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
+    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
 
     class FailingHandler:
         @staticmethod
@@ -1937,6 +2104,7 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
             raise RuntimeError("temporary downstream failure")
 
     monkeypatch.setattr(app_module, "handler", FailingHandler())
+    monkeypatch.setattr(app_module.line_routes, "handler", FailingHandler())
 
     response = client.post(
         "/callback",
@@ -1957,6 +2125,7 @@ def test_handle_message_keeps_processing_after_reservation_error(app_module, mon
             raise RuntimeError("temporary failure")
 
     monkeypatch.setattr(app_module, "process_reservation", fake_process_reservation)
+    monkeypatch.setattr(app_module.line_routes, "process_reservation", fake_process_reservation)
 
     first_event = SimpleNamespace(
         message=SimpleNamespace(text="予約 相談"),
@@ -1991,6 +2160,8 @@ def test_managed_connection_rolls_back_on_exception(app_module, monkeypatch):
             self.closed = 1
 
     monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "create_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "create_connection", lambda: FakeConnection())
 
     with pytest.raises(RuntimeError):
         with app_module.get_connection():
@@ -2059,8 +2230,21 @@ def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch)
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(
         app_module,
+        "send_push_message",
+        lambda user_id, message: sent_messages.append((user_id, message)),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "send_push_message",
+        lambda user_id, message: sent_messages.append((user_id, message)),
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
         "send_push_message",
         lambda user_id, message: sent_messages.append((user_id, message)),
     )
@@ -2104,8 +2288,16 @@ def test_expire_called_reservations_ignores_push_failure(app_module, monkeypatch
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(
         app_module,
+        "send_push_message",
+        lambda _user_id, _text: (_ for _ in ()).throw(RuntimeError("push fail")),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "send_push_message",
         lambda _user_id, _text: (_ for _ in ()).throw(RuntimeError("push fail")),
     )
@@ -2155,8 +2347,16 @@ def test_cancel_active_reservations_without_notification_updates_active_rows(
 
     sent_messages = []
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(
         app_module,
+        "send_push_message",
+        lambda user_id, message: sent_messages.append((user_id, message)),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "send_push_message",
         lambda user_id, message: sent_messages.append((user_id, message)),
     )
@@ -2209,8 +2409,13 @@ def test_process_queued_calls_midnight_cancels_without_push(app_module, monkeypa
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
+    monkeypatch.setattr(app_module.queue_service, "should_run_call_batch", lambda _now: True)
     monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 99)
+    monkeypatch.setattr(app_module.queue_service, "expire_called_reservations", lambda: 99)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -2219,7 +2424,16 @@ def test_process_queued_calls_midnight_cancels_without_push(app_module, monkeypa
             "estimated_seconds": 120,
         },
     )
+    monkeypatch.setattr(
+        app_module.queue_service,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 2分",
+            "estimated_seconds": 120,
+        },
+    )
     monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
+    monkeypatch.setattr(app_module.queue_service, "ensure_database_schema", lambda: None)
     monkeypatch.setattr(
         app_module,
         "get_runtime_settings",
@@ -2233,9 +2447,41 @@ def test_process_queued_calls_midnight_cancels_without_push(app_module, monkeypa
             },
         },
     )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 0,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 0,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
     monkeypatch.setattr(app_module, "set_settings", lambda _values: None)
+    monkeypatch.setattr(app_module.queue_service, "set_settings", lambda _values: None)
     monkeypatch.setattr(
         app_module,
+        "send_push_message",
+        lambda user_id, text: sent_messages.append((user_id, text)),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "send_push_message",
         lambda user_id, text: sent_messages.append((user_id, text)),
     )
@@ -2252,9 +2498,19 @@ def test_process_queued_calls_midnight_cancels_without_push(app_module, monkeypa
 
 def test_process_queued_calls_not_due_returns_early(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: False)
+    monkeypatch.setattr(app_module.queue_service, "should_run_call_batch", lambda _now: False)
     monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 2)
+    monkeypatch.setattr(app_module.queue_service, "expire_called_reservations", lambda: 2)
     monkeypatch.setattr(
         app_module,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 6分0秒",
+            "estimated_seconds": 360,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
         "refresh_wait_time_estimate",
         lambda _now=None: {
             "message": "現在の目安待ち時間: 6分0秒",
@@ -2315,9 +2571,15 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
             raise RuntimeError("push failed")
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
+    monkeypatch.setattr(app_module.queue_service, "should_run_call_batch", lambda _now: True)
     monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 0)
+    monkeypatch.setattr(app_module.queue_service, "expire_called_reservations", lambda: 0)
     monkeypatch.setattr(app_module, "cleanup_rate_limit_records", lambda: None)
+    monkeypatch.setattr(app_module.queue_service, "cleanup_rate_limit_records", lambda: None)
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
@@ -2326,9 +2588,44 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
             "estimated_seconds": 120,
         },
     )
+    monkeypatch.setattr(
+        app_module.queue_service,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 2分",
+            "estimated_seconds": 120,
+        },
+    )
     monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
+    monkeypatch.setattr(app_module.queue_service, "ensure_database_schema", lambda: None)
     monkeypatch.setattr(
         app_module,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 2,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 2,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
         "get_runtime_settings",
         lambda: {
             "auto_call_count": 2,
@@ -2344,7 +2641,12 @@ def test_process_queued_calls_rolls_back_failed_push_rows(app_module, monkeypatc
     monkeypatch.setattr(
         app_module, "set_settings", lambda values: saved_settings.update(values)
     )
+    monkeypatch.setattr(
+        app_module.queue_service, "set_settings", lambda values: saved_settings.update(values)
+    )
     monkeypatch.setattr(app_module, "send_push_message", fake_send_push)
+    monkeypatch.setattr(app_module.admin_routes, "send_push_message", fake_send_push)
+    monkeypatch.setattr(app_module.queue_service, "send_push_message", fake_send_push)
 
     now = datetime(2026, 4, 16, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
     result = app_module.process_queued_calls(now=now)
@@ -2407,10 +2709,23 @@ def test_process_queued_calls_uses_skip_locked_and_total_limit(app_module, monke
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "should_run_call_batch", lambda _now: True)
+    monkeypatch.setattr(app_module.queue_service, "should_run_call_batch", lambda _now: True)
     monkeypatch.setattr(app_module, "expire_called_reservations", lambda: 0)
+    monkeypatch.setattr(app_module.queue_service, "expire_called_reservations", lambda: 0)
     monkeypatch.setattr(
         app_module,
+        "refresh_wait_time_estimate",
+        lambda _now=None: {
+            "message": "現在の目安待ち時間: 2分",
+            "estimated_seconds": 120,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
         "refresh_wait_time_estimate",
         lambda _now=None: {
             "message": "現在の目安待ち時間: 2分",
@@ -2430,9 +2745,46 @@ def test_process_queued_calls_uses_skip_locked_and_total_limit(app_module, monke
             },
         },
     )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 1,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
+        "get_runtime_settings",
+        lambda: {
+            "auto_call_count": 1,
+            "latest_auto_call": {
+                "run_at": "",
+                "sent_count": 0,
+                "failed_count": 0,
+                "selected_count": 0,
+            },
+        },
+    )
     monkeypatch.setattr(app_module, "set_settings", lambda _values: None)
+    monkeypatch.setattr(app_module.queue_service, "set_settings", lambda _values: None)
     monkeypatch.setattr(
         app_module,
+        "send_push_message",
+        lambda user_id, text: sent_messages.append((user_id, text)),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
+        "send_push_message",
+        lambda user_id, text: sent_messages.append((user_id, text)),
+    )
+    monkeypatch.setattr(
+        app_module.queue_service,
         "send_push_message",
         lambda user_id, text: sent_messages.append((user_id, text)),
     )
@@ -2509,9 +2861,23 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.line_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.line_routes, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         app_module,
+        "refresh_wait_time_estimate",
+        lambda now=None, owner_admin_id=None: {
+            "message": "現在の目安待ち時間: 6分",
+            "estimated_seconds": 360,
+        },
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "refresh_wait_time_estimate",
         lambda now=None, owner_admin_id=None: {
             "message": "現在の目安待ち時間: 6分",
@@ -2523,6 +2889,13 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
 
     monkeypatch.setattr(
         app_module,
+        "send_flex_notice",
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "send_flex_notice",
         lambda *args, **kwargs: sent_texts.append(
             args[2] if len(args) > 2 else kwargs.get("body")
@@ -2581,11 +2954,24 @@ def test_process_reservation_wait_time_reply_for_waiting_user(app_module, monkey
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.line_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.line_routes, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
 
     sent_texts = []
     monkeypatch.setattr(
         app_module,
+        "send_flex_notice",
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "send_flex_notice",
         lambda *args, **kwargs: sent_texts.append(
             args[2] if len(args) > 2 else kwargs.get("body")
@@ -2639,11 +3025,24 @@ def test_process_reservation_wait_time_reply_without_active_reservation(
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.line_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.line_routes, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
 
     sent_texts = []
     monkeypatch.setattr(
         app_module,
+        "send_flex_notice",
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "send_flex_notice",
         lambda *args, **kwargs: sent_texts.append(
             args[2] if len(args) > 2 else kwargs.get("body")
@@ -2696,11 +3095,24 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
             commits.append(True)
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.line_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.line_routes, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
 
     sent_texts = []
     monkeypatch.setattr(
         app_module,
+        "send_flex_notice",
+        lambda *args, **kwargs: sent_texts.append(
+            args[2] if len(args) > 2 else kwargs.get("body")
+        ),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "send_flex_notice",
         lambda *args, **kwargs: sent_texts.append(
             args[2] if len(args) > 2 else kwargs.get("body")
@@ -2718,7 +3130,9 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
 
 def test_admin_history_export_includes_extended_columns(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 7)
 
     queries = []
 
@@ -2763,6 +3177,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
             self.closed = True
 
     monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "create_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context("/admin/history/export.csv"):
         response = app_module.admin_history_export()
@@ -2804,7 +3219,9 @@ def test_admin_history_export_requires_login(client):
 
 def test_admin_history_export_null_values_are_formatted_safely(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 7)
 
     class FakeCursor:
         def __init__(self):
@@ -2847,6 +3264,7 @@ def test_admin_history_export_null_values_are_formatted_safely(app_module, monke
             self.closed = True
 
     monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "create_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context("/admin/history/export.csv"):
         response = app_module.admin_history_export()
@@ -2871,7 +3289,9 @@ def test_admin_history_export_invalid_query_params_fall_back_to_defaults(
     app_module, monkeypatch
 ):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 7)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 7)
 
     calls = []
 
@@ -2899,6 +3319,7 @@ def test_admin_history_export_invalid_query_params_fall_back_to_defaults(
             self.closed = True
 
     monkeypatch.setattr(app_module, "create_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "create_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/history/export.csv?sort_by=unknown&sort_order=sideways&type_id=abc"
@@ -2956,11 +3377,22 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.line_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.line_routes, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
     
     # Mock send_reply_message to capture the reply
     monkeypatch.setattr(
         app_module,
+        "send_reply_message",
+        lambda reply_token, message: sent_replies.append((reply_token, message))
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
         "send_reply_message",
         lambda reply_token, message: sent_replies.append((reply_token, message))
     )
@@ -3000,8 +3432,11 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
 
 def test_admin_types_registration_optional_price(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
 
     executed = []
 
@@ -3039,6 +3474,9 @@ def test_admin_types_registration_optional_price(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/types",
@@ -3059,7 +3497,9 @@ def test_admin_types_registration_optional_price(app_module, monkeypatch):
 
 def test_admin_types_update_optional_price(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     executed = []
 
@@ -3092,6 +3532,9 @@ def test_admin_types_update_optional_price(app_module, monkeypatch):
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_request_context(
         "/admin/types/1/price",
@@ -3112,8 +3555,11 @@ def test_admin_types_update_optional_price(app_module, monkeypatch):
 
 def test_admin_types_registration_price_limit(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "is_accepting_new", lambda *args, **kwargs: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_accepting_new", lambda *args, **kwargs: True)
 
     with app_module.app.test_request_context(
         "/admin/types",
@@ -3130,7 +3576,9 @@ def test_admin_types_registration_price_limit(app_module, monkeypatch):
 
 def test_admin_types_update_price_limit(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
 
     with app_module.app.test_request_context(
         "/admin/types/1/price",
@@ -3183,6 +3631,9 @@ def test_is_accepting_new_per_admin(app_module, monkeypatch):
             pass
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     assert app_module.is_accepting_new(1) is False
     assert "SELECT accepting_new" in queries[-1][0]
@@ -3222,6 +3673,9 @@ def test_set_accepting_new_per_admin(app_module, monkeypatch):
             pass
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     app_module.set_accepting_new(False, 1)
     assert "UPDATE admin_accounts SET accepting_new" in queries[-1][0]
@@ -3262,7 +3716,11 @@ def test_expire_called_reservations_records_completed_at(app_module, monkeypatch
             pass
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
     monkeypatch.setattr(app_module, "send_push_message", lambda uid, flex: None)
+    monkeypatch.setattr(app_module.admin_routes, "send_push_message", lambda uid, flex: None)
 
     count = app_module.expire_called_reservations()
     assert count == 1
@@ -3299,6 +3757,9 @@ def test_cancel_active_reservations_without_notification_records_completed_at(ap
             pass
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     count = app_module.cancel_active_reservations_without_notification()
     assert count == 2
@@ -3335,8 +3796,13 @@ def test_admin_cancel_route_success(app_module, monkeypatch):
             pass
 
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_client() as client:
         res = client.post("/admin/cancel/10")
@@ -3378,8 +3844,13 @@ def test_admin_history_allows_null_owner_admin_id_and_returns_completed_at(app_m
             return FakeCursor()
 
     monkeypatch.setattr(app_module, "is_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.queue_service, "get_connection", lambda: FakeConnection())
 
     with app_module.app.test_client() as client:
         res = client.get("/admin/history")

@@ -25,8 +25,9 @@ def app_module():
     os.environ["FORCE_HTTPS"] = "false"
     os.environ["SESSION_COOKIE_SECURE"] = "false"
 
-    if "main" in sys.modules:
-        del sys.modules["main"]
+    for mod in ["main", "app", "config", "database", "auth", "services.line_service", "services.queue_service", "blueprints.main_routes", "blueprints.admin_routes", "blueprints.backup_routes", "blueprints.line_routes", "validators", "formatting"]:
+        if mod in sys.modules:
+            del sys.modules[mod]
     module = importlib.import_module("main")
     return module
 

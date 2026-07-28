@@ -14,6 +14,7 @@ def _line_signature(secret: str, body: str) -> str:
 
 def test_callback_accepts_valid_signature_and_rejects_fake(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
+    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
     monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
     monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
     monkeypatch.setattr(app_module, "enforce_https", lambda: None)
@@ -49,7 +50,11 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
     monkeypatch.setattr(
         app_module, "is_admin_authenticated", lambda update_activity=True: True
     )
+    monkeypatch.setattr(
+        app_module.admin_routes, "is_admin_authenticated", lambda update_activity=True: True
+    )
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
+    monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module, "validate_csrf", lambda: None)
 
     state = {
@@ -116,11 +121,17 @@ def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatc
             return None
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.admin_routes, "get_connection", lambda: FakeConnection())
 
     push_calls = []
 
     monkeypatch.setattr(
         app_module,
+        "send_push_message",
+        lambda user_id, _text: push_calls.append(user_id),
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes,
         "send_push_message",
         lambda user_id, _text: push_calls.append(user_id),
     )
