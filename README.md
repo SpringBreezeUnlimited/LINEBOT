@@ -22,5 +22,13 @@
 3. ワークフロー `.github/workflows/process-call-queue.yml` は 1 分ごとに実行され、GitHub Actions から手動実行も可能です。
 4. 毎日 0:00 JST に待機中・呼出中の予約は自動でキャンセルされます。この深夜キャンセルではユーザー通知は送りません。
 
+## データベースの定期バックアップ
+
+GitHub Actions の `.github/workflows/database-backup.yml` が、毎週日曜 03:00 JST にフルバックアップ、月曜から土曜の 03:30 JST に差分バックアップを実行します。バックアップは 90 日間 Actions artifact に保持されます。
+
+初回利用前に、リポジトリ Secret `BACKUP_DATABASE_URL`（バックアップ対象 DB の接続 URL）を登録してください。`BACKUP_DATABASE_PASSWORD` を別途設定する場合は、URL にパスワードを含めず、ユーザー名を URL に指定してください。
+
+差分バックアップはデータセクションのみです。復元時は同じ期間のフルバックアップを先に `pg_restore` し、その後に差分バックアップを適用してください。Actions の `workflow_dispatch` からフル／差分を手動実行できます。
+
 ## セキュリティ
 - セキュリティ強化の概要と運用チェックリスト: `SECURITY_HARDENING.md`
