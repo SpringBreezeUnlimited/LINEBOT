@@ -110,7 +110,7 @@
                                 <dd>{{ format_call_origin(row[6]) if row[6] else '-' }}</dd>
                             </div>
                             <div>
-                                <dt>呼出から完了</dt>
+                                <dt>{{ '受付からキャンセル' if row[2] == 'cancelled' else '呼出から完了' }}</dt>
                                 <dd>{{ format_duration(row[9]) if row[9] is not none else '-' }}</dd>
                             </div>
                         </dl>
@@ -148,5 +148,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/history.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/history.js') }}" defer></script>
 {% endblock %}

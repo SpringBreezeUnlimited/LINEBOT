@@ -1017,14 +1017,17 @@ def admin_history():
                     r.call_origin,
                     r.called_at,
                     r.completed_at,
-                    EXTRACT(EPOCH FROM (r.completed_at - r.called_at)) AS service_duration_seconds
+                    CASE
+                        WHEN r.status = %s THEN EXTRACT(EPOCH FROM (r.completed_at - r.created_at))
+                        ELSE EXTRACT(EPOCH FROM (r.completed_at - r.called_at))
+                    END AS service_duration_seconds
                 FROM reservations r
                 LEFT JOIN reservation_types t ON r.type_id = t.id
                 {where}
                 ORDER BY {order_by} {sort_order.upper()}, r.id DESC
                 LIMIT %s OFFSET %s
             """,
-                params + [history_page_size + 1, offset],
+                [STATUS_CANCELLED] + params + [history_page_size + 1, offset],
             )
             rows = cur.fetchall()
             # 時刻をフォーマット済み文字列に変換（日本時間対応）

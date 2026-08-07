@@ -96,7 +96,7 @@ function createHistoryCard(row) {
         ['受付時刻', row.created_at || '-'],
         ['種類', row.type || '-'],
         ['呼出方法', row.call_origin === 'auto' ? '自動' : row.call_origin === 'manual' ? '手動' : '不明'],
-        ['呼出から完了', row.service_duration_label || '-'],
+        [row.status === 'cancelled' ? '受付からキャンセル' : '呼出から完了', row.service_duration_label || '-'],
     ];
 
     fields.forEach(([term, description]) => {
