@@ -441,7 +441,7 @@ def process_reservation(event, user_id, user_message):
                             body = f"予約済みです。番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute(
-                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND owner_admin_id IS NULL AND id < %s",
                                 (STATUS_WAITING, res_id),
                             )
                             body = f"予約済みです。番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
@@ -501,7 +501,7 @@ def process_reservation(event, user_id, user_message):
                                     body = f"予約済みです。番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
                                     cur.execute(
-                                        "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                                        "SELECT COUNT(*) FROM reservations WHERE status = %s AND owner_admin_id IS NULL AND id < %s",
                                         (STATUS_WAITING, res_id),
                                     )
                                     body = f"予約済みです。番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
@@ -614,7 +614,7 @@ def process_reservation(event, user_id, user_message):
                             )
                         else:
                             cur.execute(
-                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
+                                "SELECT COUNT(*) FROM reservations WHERE status = %s AND owner_admin_id IS NULL AND id < %s",
                                 (STATUS_WAITING, res_id),
                             )
                             waiting_people_ahead = int(cur.fetchone()[0] or 0)

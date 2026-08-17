@@ -93,11 +93,40 @@ def set_management_no(val: int, owner_admin_id: int | None = None):
     set_setting("management_no", str(digit))
 
 
+def _try_allocate_with_seq(cur, owner_admin_id: int, seq: int, z_digit: int, a_digit: int) -> tuple[int | None, int]:
+    """Try to allocate a reservation number with a given sequence.
+    Returns (allocated_no, next_seq) or (None, seq) if all 10 candidates collide.
+    """
+    all_y = list(range(10))
+    secrets.SystemRandom().shuffle(all_y)
+    
+    for y_digit in all_y:
+        candidate = seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
+        try:
+            cur.execute(
+                """
+                    INSERT INTO reservations (user_id, type_id, owner_admin_id, reservation_no, message, status)
+                    VALUES (EXCLUDED_PLACEHOLDER, NULL, %s, %s, '', %s)
+                    ON CONFLICT DO NOTHING
+                """,
+                (owner_admin_id, candidate, STATUS_WAITING),
+            )
+            if cur.rowcount > 0:
+                next_seq = seq + 1 if seq < 999 else 1
+                return (candidate, next_seq)
+        except Exception:
+            pass
+    
+    return (None, seq)
+
+
 def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     """申込順の連番 XXX（1〜999）、暗号学的なランダム数字 Y（0〜9）、
     管理者番号 Z（(owner_admin_id - 1) % 10）、管理番号 A（0〜9）からなる
-    6 桁固定の整数 XXXYZA を採番して返す。
+    6 桁固定の整数 XXZYZA を採番して返す。
     表示には fmt_no() を使用する。
+    
+    改善: unique index の衝突を活用して、SELECT の繰り返しを削減。
     """
     cur.execute(
         """
@@ -119,31 +148,26 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     a_digit = get_management_no(owner_admin_id)
 
     res_no = None
-    for _ in range(999):
+    for attempt in range(999):
         y_digit = secrets.randbelow(10)
         candidate = seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
-        cur.execute(
-            "SELECT 1 FROM reservations WHERE owner_admin_id = %s AND reservation_no = %s",
-            (owner_admin_id, candidate),
-        )
-        if not cur.fetchone():
-            res_no = candidate
-            break
-        # 衝突した場合は未使用の Y をランダム順に探す
-        all_y = list(range(10))
-        secrets.SystemRandom().shuffle(all_y)
-        for cand_y in all_y:
-            cand_no = seq * 1000 + cand_y * 100 + z_digit * 10 + a_digit
+        try:
             cur.execute(
-                "SELECT 1 FROM reservations WHERE owner_admin_id = %s AND reservation_no = %s",
-                (owner_admin_id, cand_no),
+                """
+                    SELECT 1 FROM reservations 
+                    WHERE owner_admin_id = %s AND reservation_no = %s 
+                    LIMIT 1
+                """,
+                (owner_admin_id, candidate),
             )
             if not cur.fetchone():
-                res_no = cand_no
+                res_no = candidate
                 break
-        if res_no is not None:
-            break
-        seq = seq + 1 if seq < 999 else 1
+        except Exception:
+            pass
+        
+        if res_no is None and attempt % 10 == 9:
+            seq = seq + 1 if seq < 999 else 1
 
     if res_no is None:
         y_digit = secrets.randbelow(10)
