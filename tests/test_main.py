@@ -774,6 +774,45 @@ def test_calculate_wait_time_minutes_boundaries(
     assert app_module.calculate_wait_time_minutes(people_ahead) == expected_minutes
 
 
+def test_verify_admin_password_rejects_empty_and_invalid_values(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.auth, "check_password_hash", lambda _hash, _candidate: True)
+    assert app_module.verify_admin_password("secret") is True
+    assert app_module.verify_admin_password("") is False
+    monkeypatch.setattr(app_module.auth, "check_password_hash", lambda _hash, _candidate: False)
+    assert app_module.verify_admin_password("secret") is False
+
+
+def test_authenticate_admin_account_normalizes_login_id(app_module, monkeypatch):
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, *args, **kwargs):
+            pass
+
+        def fetchone(self):
+            return (1, "ADMIN", "hash", app_module.ROLE_ADMIN)
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module.auth, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(app_module.auth, "check_password_hash", lambda _hash, _candidate: True)
+
+    result = app_module.authenticate_admin_account(" ADMIN ", "secret")
+    assert result == {"id": 1, "login_id": "ADMIN", "role": app_module.ROLE_ADMIN}
+
+
 def test_validate_batch_runner_token_authorization_header(app_module):
     app_module.auth.BATCH_CALL_RUNNER_TOKEN = "token123"
     with app_module.app.test_request_context(

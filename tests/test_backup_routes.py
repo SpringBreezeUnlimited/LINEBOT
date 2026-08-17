@@ -180,6 +180,21 @@ def test_reset_sequence_skips_when_no_sequence(app_module):
     assert len(cur.queries) == 1
 
 
+def test_validate_table_name_allows_only_known_whitelist(app_module):
+    br = app_module.backup_routes
+    assert br.validate_table_name("reservations") == "reservations"
+    with pytest.raises(ValueError, match="table_name"):
+        br.validate_table_name("reservations; DROP TABLE admin_accounts")
+    with pytest.raises(ValueError, match="table_name"):
+        br.validate_table_name("not_a_real_table")
+
+
+def test_export_table_rejects_invalid_table_name(app_module):
+    br = app_module.backup_routes
+    with pytest.raises(ValueError, match="table_name"):
+        br._export_table("admin_accounts; DROP TABLE reservations")
+
+
 # ---------------------------------------------------------------------------
 # _import_account_tables: アカウント間のデータ分離
 # ---------------------------------------------------------------------------

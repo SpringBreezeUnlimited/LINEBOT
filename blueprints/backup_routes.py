@@ -35,6 +35,19 @@ BACKUP_TABLES = [
     "login_attempt_records",
     "webhook_request_records",
 ]
+_VALID_BACKUP_TABLES = frozenset(BACKUP_TABLES)
+
+
+def validate_table_name(table_name: str) -> str:
+    """バックアップ対象テーブル名をホワイトリストで検証する。"""
+    if not isinstance(table_name, str):
+        raise ValueError(f"Invalid table_name: {table_name!r}")
+    candidate = table_name.strip()
+    if not candidate or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", candidate):
+        raise ValueError(f"Invalid table_name: {table_name!r}")
+    if candidate not in _VALID_BACKUP_TABLES:
+        raise ValueError(f"Unsupported table_name: {candidate!r}")
+    return candidate
 
 
 def _serialize_value(val):
@@ -73,18 +86,19 @@ def _deserialize_value(val):
 
 def _export_table(table_name: str):
     """指定テーブルの全行を [{col: val, ...}, ...] で返す。"""
+    safe_table_name = validate_table_name(table_name)
     with get_connection() as conn:
         with conn.cursor() as cur:
             # カラム名を調べるために LIMIT 0 でクエリ
-            cur.execute(f"SELECT * FROM {table_name} LIMIT 0")
+            cur.execute(f"SELECT * FROM {safe_table_name} LIMIT 0")
             cols = [desc[0] for desc in cur.description]
             if "id" in cols:
-                cur.execute(f"SELECT * FROM {table_name} ORDER BY id ASC")
+                cur.execute(f"SELECT * FROM {safe_table_name} ORDER BY id ASC")
             elif "key" in cols:
-                cur.execute(f"SELECT * FROM {table_name} ORDER BY key ASC")
+                cur.execute(f"SELECT * FROM {safe_table_name} ORDER BY key ASC")
             else:
-                cur.execute(f"SELECT * FROM {table_name}")
-            
+                cur.execute(f"SELECT * FROM {safe_table_name}")
+
             rows = []
             for row in cur.fetchall():
                 rows.append(
@@ -95,8 +109,9 @@ def _export_table(table_name: str):
 
 def _import_table(cur, table_name: str, table_data: dict):
     """テーブルをトランケートしてバックアップデータを挿入する。"""
+    safe_table_name = validate_table_name(table_name)
     if not isinstance(table_data, dict):
-        raise ValueError(f"Invalid backup data for table {table_name}")
+        raise ValueError(f"Invalid backup data for table {safe_table_name}")
     columns = table_data.get("columns", [])
     rows = table_data.get("rows", [])
     # columns はアップロードされた JSON 由来のため、SQL 識別子として安全な
@@ -105,13 +120,13 @@ def _import_table(cur, table_name: str, table_data: dict):
         if not isinstance(c, str) or not re.fullmatch(r"[A-Za-z0-9_]+", c):
             raise ValueError(f"Invalid column name in backup data: {c!r}")
     # 外部キー制約の順序を考慮して CASCADE TRUNCATE を使用する
-    cur.execute(f"TRUNCATE TABLE {table_name} RESTART IDENTITY CASCADE")
+    cur.execute(f"TRUNCATE TABLE {safe_table_name} RESTART IDENTITY CASCADE")
     if not columns or not rows:
         return
     col_list = ", ".join(f'"{c}"' for c in columns)
     placeholders = ", ".join(["%s"] * len(columns))
     insert_sql = (
-        f"INSERT INTO {table_name} ({col_list}) VALUES ({placeholders})"
+        f"INSERT INTO {safe_table_name} ({col_list}) VALUES ({placeholders})"
         f" ON CONFLICT DO NOTHING"
     )
     for row_dict in rows:
@@ -123,18 +138,21 @@ def _import_table(cur, table_name: str, table_data: dict):
 
 def _reset_sequence(cur, table_name: str):
     """テーブルの SERIAL シーケンスを最大 id 値にリセットする。"""
-    cur.execute(f"SELECT pg_get_serial_sequence('{table_name}', 'id')")
+    safe_table_name = validate_table_name(table_name)
+    cur.execute("SELECT pg_get_serial_sequence(%s, %s)", (safe_table_name, "id"))
     seq = cur.fetchone()[0]
     if seq:
-        cur.execute(
-            f"""
-                SELECT setval(
-                    '{seq}',
-                    COALESCE((SELECT MAX(id) FROM {table_name}), 0) + 1,
-                    false
-                )
-            """
-        )
+        seq_name = str(seq).strip()
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?", seq_name):
+            safe_seq_name = seq_name.replace("\"", "\"\"")
+            safe_table_name_quoted = safe_table_name.replace('"', '""')
+            cur.execute(
+                "SELECT setval('"
+                + safe_seq_name
+                + "', COALESCE((SELECT MAX(id) FROM \""
+                + safe_table_name_quoted
+                + "\"), 0) + 1, false)"
+            )
 
 
 
