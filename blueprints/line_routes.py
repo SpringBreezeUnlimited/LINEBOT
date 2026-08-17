@@ -192,6 +192,7 @@ def process_reservation(event, user_id, user_message):
                             SELECT id, name, flavor_text, accepting, image_mime_type, price, owner_admin_id
                             FROM reservation_types
                             ORDER BY id ASC
+                            LIMIT 10
                         """
                     )
                     type_rows = cur.fetchall()

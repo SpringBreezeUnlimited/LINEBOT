@@ -45,6 +45,21 @@ from config import (
 logger = logging.getLogger("line_service")
 
 MESSAGING_CONFIGURATION = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+_MESSAGING_API = None
+
+
+def get_messaging_api():
+    global _MESSAGING_API
+    current_factory = MessagingApi
+    if _MESSAGING_API is None:
+        api_client = ApiClient(MESSAGING_CONFIGURATION)
+        _MESSAGING_API = current_factory(api_client)
+        return _MESSAGING_API
+
+    if not isinstance(_MESSAGING_API, current_factory):
+        api_client = ApiClient(MESSAGING_CONFIGURATION)
+        _MESSAGING_API = current_factory(api_client)
+    return _MESSAGING_API
 
 
 def extract_http_status(error: Exception):
@@ -292,11 +307,10 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
         to=user_id,
         messages=[build_line_message(message)],
     )
+    messaging_api = get_messaging_api()
     for attempt in range(1, LINE_PUSH_MAX_RETRIES + 1):
         try:
-            with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-                messaging_api = MessagingApi(api_client)
-                push_message_with_retry_key(messaging_api, payload, stable_retry_key)
+            push_message_with_retry_key(messaging_api, payload, stable_retry_key)
             return
         except Exception as error:
             status = extract_http_status(error)
@@ -337,8 +351,7 @@ def send_reply_message(reply_token: str, message: str | dict):
         payload = ReplyMessageRequest(
             reply_token=reply_token, messages=[build_line_message(message)]
         )
-        with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-            MessagingApi(api_client).reply_message(payload)
+        get_messaging_api().reply_message(payload)
     except ApiException as error:
         status = extract_http_status(error)
         if status == 400 and isinstance(message, dict):
@@ -349,8 +362,7 @@ def send_reply_message(reply_token: str, message: str | dict):
                         reply_token=reply_token,
                         messages=[build_line_message(fallback_message)],
                     )
-                    with ApiClient(MESSAGING_CONFIGURATION) as api_client:
-                        MessagingApi(api_client).reply_message(payload)
+                    get_messaging_api().reply_message(payload)
                     return
                 except Exception:
                     logger.exception(

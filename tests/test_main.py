@@ -669,6 +669,28 @@ def test_send_push_message_treats_409_as_success(app_module, monkeypatch):
     app_module.send_push_message("U3", "hello", retry_key="retry-409")
 
 
+def test_get_messaging_api_reuses_single_client(app_module, monkeypatch):
+    created = []
+
+    class DummyApiClient:
+        def __init__(self, _config):
+            created.append("client")
+
+    class DummyMessagingApi:
+        def __init__(self, api_client):
+            self.api_client = api_client
+
+    monkeypatch.setattr(app_module.line_service, "_MESSAGING_API", None)
+    monkeypatch.setattr(app_module.line_service, "ApiClient", DummyApiClient)
+    monkeypatch.setattr(app_module.line_service, "MessagingApi", DummyMessagingApi)
+
+    first = app_module.line_service.get_messaging_api()
+    second = app_module.line_service.get_messaging_api()
+
+    assert first is second
+    assert created == ["client"]
+
+
 def test_normalize_and_validate_type_name(app_module):
     assert app_module.normalize_type_name("  A   B  ") == "A B"
     assert app_module.validate_type_name("相談") is True

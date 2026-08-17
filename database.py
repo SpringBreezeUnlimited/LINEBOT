@@ -4,6 +4,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 import psycopg2  # type: ignore
+from psycopg2.pool import ThreadedConnectionPool  # type: ignore
 from flask import g, has_request_context  # type: ignore
 
 from config import (
@@ -29,6 +30,37 @@ from threading import Lock
 
 SCHEMA_LOCK = Lock()
 SCHEMA_READY = False
+_CONNECTION_POOL = None
+
+
+def get_connection_pool():
+    global _CONNECTION_POOL
+    if _CONNECTION_POOL is None:
+        with SCHEMA_LOCK:
+            if _CONNECTION_POOL is None:
+                connection_kwargs = psycopg2.extensions.parse_dsn(DATABASE_URL)
+                connection_kwargs["connect_timeout"] = DB_CONNECT_TIMEOUT
+                _CONNECTION_POOL = ThreadedConnectionPool(
+                    minconn=5,
+                    maxconn=20,
+                    **connection_kwargs,
+                )
+    return _CONNECTION_POOL
+
+
+def release_connection(connection):
+    if connection is None:
+        return
+    try:
+        pool = get_connection_pool()
+        if connection.closed:
+            return
+        pool.putconn(connection)
+    except Exception:
+        try:
+            connection.close()
+        except Exception:
+            pass
 
 
 def reset_schema_cache():
@@ -53,14 +85,18 @@ class ManagedConnection:
             try:
                 self._connection.rollback()
             except Exception:
-                self._connection.close()
+                try:
+                    self._connection.close()
+                except Exception:
+                    pass
         if self._close_on_exit and not self._connection.closed:
-            self._connection.close()
+            release_connection(self._connection)
         return False
 
 
 def create_connection():
-    return psycopg2.connect(DATABASE_URL, connect_timeout=DB_CONNECT_TIMEOUT)
+    pool = get_connection_pool()
+    return pool.getconn()
 
 
 def get_connection():

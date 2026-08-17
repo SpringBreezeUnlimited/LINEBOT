@@ -169,6 +169,7 @@ from database import (
     ManagedConnection,
     create_connection,
     get_connection,
+    release_connection,
     ensure_reservations_table,
     sync_reservation_owner_numbers,
     ensure_types_table,
@@ -230,9 +231,14 @@ from validators import normalize_type_name, validate_type_name, validate_type_fl
 @app.teardown_appcontext
 def close_request_connection(_exception=None):
     connection = getattr(g, "_db_connection", None)
-    if connection is not None and not connection.closed:
-        connection.close()
-    g.pop("_db_connection", None)
+    if connection is not None:
+        try:
+            if not connection.closed:
+                release_connection(connection)
+        finally:
+            g.pop("_db_connection", None)
+    else:
+        g.pop("_db_connection", None)
 
 
 @app.before_request
