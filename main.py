@@ -288,6 +288,8 @@ def apply_security_headers(response):
 def initialize_database_once():
     if request.endpoint == "static":
         return
+    if request.path in ("/health", "/healthz", "/readyz"):
+        return
     if request.path == "/login" and request.method == "GET":
         # ログイン画面の表示だけはDB初期化なしで通す。POST時や他画面では従来どおり初期化する。
         return
@@ -321,6 +323,24 @@ def csrf_protect():
                 notice="session_expired",
             )
             return redirect(login_redirect)
+
+
+@app.route("/health")
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok", "version": APP_VERSION}), 200
+
+
+@app.route("/readyz")
+def readyz():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        return jsonify({"status": "ready", "version": APP_VERSION}), 200
+    except Exception:
+        app.logger.exception("readiness check failed")
+        return jsonify({"status": "unready", "version": APP_VERSION}), 503
 
 
 @app.route("/login", methods=["GET", "POST"])

@@ -22,6 +22,18 @@
 3. ワークフロー `.github/workflows/process-call-queue.yml` は 1 分ごとに実行され、GitHub Actions から手動実行も可能です。
 4. 毎日 0:00 JST に待機中・呼出中の予約は自動でキャンセルされます。この深夜キャンセルではユーザー通知は送りません。
 
+## Zabbix での死活監視
+- Liveness（プロセス生存確認）: `GET /health` または `GET /healthz`
+   - 正常時: `200` / `{"status":"ok","version":"v..."}`
+- Readiness（DB疎通込み）: `GET /readyz`
+   - 正常時: `200` / `{"status":"ready","version":"v..."}`
+   - 異常時: `503` / `{"status":"unready","version":"v..."}`
+
+運用の目安:
+1. まず `healthz` を 1 分間隔で監視し、Webプロセス停止を検知する。
+2. 追加で `readyz` を監視し、DB障害や接続不可を検知する。
+3. トリガー条件は「HTTPステータスが 200 以外」またはレスポンスJSONの `status` 不一致で設定する。
+
 ## データベースの定期バックアップ
 
 GitHub Actions の `.github/workflows/database-backup.yml` が、毎週日曜 03:00 JST にフルバックアップ、月曜から土曜の 03:30 JST に差分バックアップを実行します。バックアップは 90 日間 Actions artifact に保持されます。

@@ -102,6 +102,77 @@ def test_text_compression_gzip(client):
     assert "gzip" in response.headers.get("Content-Encoding", "").lower()
 
 
+def test_healthz_endpoint_returns_ok(client):
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["version"]
+
+
+def test_health_endpoint_alias_returns_ok(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+
+
+def test_readyz_returns_200_when_db_is_available(client, app_module, monkeypatch):
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, _query, _params=None):
+            return None
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ready"
+
+
+def test_readyz_returns_503_when_db_is_unavailable(client, app_module, monkeypatch):
+    def fail_connection():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(app_module, "get_connection", fail_connection)
+    response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.get_json()["status"] == "unready"
+
+
+def test_initialize_database_once_skips_health_routes(app_module, monkeypatch):
+    called = {"count": 0}
+
+    def fake_ensure_schema():
+        called["count"] += 1
+
+    monkeypatch.setattr(app_module, "ensure_database_schema", fake_ensure_schema)
+
+    with app_module.app.test_request_context("/health"):
+        app_module.initialize_database_once()
+    with app_module.app.test_request_context("/healthz"):
+        app_module.initialize_database_once()
+    with app_module.app.test_request_context("/readyz"):
+        app_module.initialize_database_once()
+    with app_module.app.test_request_context("/admin"):
+        app_module.initialize_database_once()
+
+    assert called["count"] == 1
+
+
 def test_build_type_image_url_prefers_public_base_url(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://example.com")
     assert app_module.build_type_image_url(3) == "https://example.com/reservation-type-images/3"
