@@ -28,6 +28,8 @@ logger = logging.getLogger("database")
 
 from threading import Lock
 
+# 接続プールの初期化とスキーマ初期化は入れ子で呼ばれるため、別々に管理する。
+POOL_LOCK = Lock()
 SCHEMA_LOCK = Lock()
 SCHEMA_READY = False
 _CONNECTION_POOL = None
@@ -36,7 +38,7 @@ _CONNECTION_POOL = None
 def get_connection_pool():
     global _CONNECTION_POOL
     if _CONNECTION_POOL is None:
-        with SCHEMA_LOCK:
+        with POOL_LOCK:
             if _CONNECTION_POOL is None:
                 connection_kwargs = psycopg2.extensions.parse_dsn(DATABASE_URL)
                 connection_kwargs["connect_timeout"] = DB_CONNECT_TIMEOUT
