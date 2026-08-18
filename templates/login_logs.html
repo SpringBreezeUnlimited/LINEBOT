@@ -152,7 +152,7 @@
                                 </form>
                                 <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/delete"
                                     class="d-inline"
-                                    onsubmit="return confirm('アカウント「{{ account[1] }}」を削除します。よろしいですか？');">
+                                    data-inline-confirm="アカウント「{{ account[1] }}」を削除します。よろしいですか？">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" {% if
                                         current_admin_account_id==account[0] %}disabled{% endif %}>削除</button>
@@ -223,5 +223,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/inline-confirm.min.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/login_logs.min.js') }}" defer></script>
 {% endblock %}

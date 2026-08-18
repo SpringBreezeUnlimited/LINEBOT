@@ -60,15 +60,15 @@
             <div class="alert alert-danger mb-3" role="alert">
                 インポートすると現在のデータを上書きします。復元後はログアウトされます。
             </div>
-            <form method="POST" action="/admin/backup/import" enctype="multipart/form-data" id="backup-import-form">
+            <form method="POST" action="/admin/backup/import" enctype="multipart/form-data" id="backup-import-form"
+                data-inline-confirm="本当にインポートしますか？現在のデータはすべて上書きされます。">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3">
                     <label for="backup-file-input" class="form-label">バックアップファイル (.json)</label>
                     <input type="file" class="form-control" id="backup-file-input" name="backup_file" accept=".json"
                         required>
                 </div>
-                <button type="submit" class="btn btn-danger" id="backup-import-btn"
-                    onclick="return confirm('本当にインポートしますか？現在のデータはすべて上書きされます。')">
+                <button type="submit" class="btn btn-danger" id="backup-import-btn">
                     全体復元
                 </button>
             </form>
@@ -117,7 +117,8 @@
                                       action="/admin/backup/import/{{ account.id }}"
                                       enctype="multipart/form-data"
                                       id="account-import-form-{{ account.id }}"
-                                      class="d-flex gap-2 align-items-center">
+                                      class="d-flex gap-2 align-items-center"
+                                      data-inline-confirm="アカウント「{{ account.login_id }}」の種類・予約データを復元しますか？現在のデータは上書きされます。">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <input type="file"
                                            class="form-control form-control-sm"
@@ -128,8 +129,7 @@
                                            style="max-width:220px;">
                                     <button type="submit"
                                             class="btn btn-sm btn-danger"
-                                            id="account-import-btn-{{ account.id }}"
-                                            onclick="return confirm('アカウント「{{ account.login_id }}」の種類・予約データを復元しますか？現在のデータは上書きされます。')">
+                                            id="account-import-btn-{{ account.id }}">
                                         復元
                                     </button>
                                 </form>
@@ -146,4 +146,8 @@
     </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/inline-confirm.min.js') }}" defer></script>
 {% endblock %}
