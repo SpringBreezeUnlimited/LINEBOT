@@ -506,7 +506,6 @@ body.app-shell {
     line-height: 1.1;
     font-weight: 700;
     color: var(--color-brand-dark);
-    word-break: break-word;
 }
 
 .type-card__price {
