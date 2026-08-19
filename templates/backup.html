@@ -39,6 +39,30 @@
     <div class="alert alert-success mb-3" role="alert">{{ import_success }}</div>
     {% endif %}
 
+    {% if global_reservation_delete_enabled %}
+    <div class="card mb-4 backup-panel border-danger">
+        <div class="card-body">
+            <div class="section-intro">
+                <h2 class="text-danger">全アカウントの予約を削除</h2>
+                <p class="text-muted">全アカウントの予約データを完全に削除します。この操作は取り消せません。</p>
+            </div>
+            <div class="alert alert-danger mb-3" role="alert">
+                実行する場合は確認欄に「全アカウントの予約を削除」と入力してください。
+            </div>
+            <form method="POST" action="/admin/backup/delete-all-reservations" class="d-flex gap-2 align-items-end"
+                data-inline-confirm="全アカウントの予約を完全に削除します。本当に実行しますか？">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <div>
+                    <label for="delete-all-reservations-confirmation" class="form-label">確認文字列</label>
+                    <input type="text" class="form-control" id="delete-all-reservations-confirmation" name="confirmation"
+                        autocomplete="off" required>
+                </div>
+                <button type="submit" class="btn btn-danger">予約を一括削除</button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- 全体エクスポート -->
     <div class="card mb-4 backup-panel">
         <div class="card-body">

@@ -319,6 +319,105 @@ def test_admin_backup_page_forbidden_for_regular_admin(app_module, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# admin_delete_all_reservations: 明示的な環境変数と確認文字列
+# ---------------------------------------------------------------------------
+
+
+class _DeleteCursor:
+    rowcount = 7
+
+    def __init__(self):
+        self.queries = []
+
+    def execute(self, query, params=None):
+        self.queries.append((query, params))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+class _DeleteConnection:
+    def __init__(self, cursor):
+        self.cursor_instance = cursor
+        self.commits = 0
+
+    def cursor(self):
+        return self.cursor_instance
+
+    def commit(self):
+        self.commits += 1
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_admin_delete_all_reservations_requires_feature_flag(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.backup_routes, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.backup_routes, "GLOBAL_RESERVATION_DELETE_ENABLED", False)
+    cursor = _DeleteCursor()
+    monkeypatch.setattr(
+        app_module.backup_routes, "get_connection", lambda: _DeleteConnection(cursor)
+    )
+
+    with app_module.app.test_request_context(
+        "/admin/backup/delete-all-reservations",
+        method="POST",
+        data={"confirmation": "全アカウントの予約を削除"},
+    ):
+        response = app_module.backup_routes.admin_delete_all_reservations()
+
+    assert response.status_code == 302
+    assert cursor.queries == []
+
+
+def test_admin_delete_all_reservations_deletes_everything_when_enabled(
+    app_module, monkeypatch
+):
+    monkeypatch.setattr(app_module.backup_routes, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.backup_routes, "GLOBAL_RESERVATION_DELETE_ENABLED", True)
+    cursor = _DeleteCursor()
+    connection = _DeleteConnection(cursor)
+    monkeypatch.setattr(app_module.backup_routes, "get_connection", lambda: connection)
+
+    with app_module.app.test_request_context(
+        "/admin/backup/delete-all-reservations",
+        method="POST",
+        data={"confirmation": "全アカウントの予約を削除"},
+    ):
+        response = app_module.backup_routes.admin_delete_all_reservations()
+
+    assert response.status_code == 302
+    assert cursor.queries == [("DELETE FROM reservations", None)]
+    assert connection.commits == 1
+    assert "7" in response.headers["Location"]
+
+
+def test_admin_delete_all_reservations_rejects_wrong_confirmation(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.backup_routes, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.backup_routes, "GLOBAL_RESERVATION_DELETE_ENABLED", True)
+    cursor = _DeleteCursor()
+    monkeypatch.setattr(
+        app_module.backup_routes, "get_connection", lambda: _DeleteConnection(cursor)
+    )
+
+    with app_module.app.test_request_context(
+        "/admin/backup/delete-all-reservations",
+        method="POST",
+        data={"confirmation": "削除"},
+    ):
+        response = app_module.backup_routes.admin_delete_all_reservations()
+
+    assert response.status_code == 302
+    assert cursor.queries == []
+
+
+# ---------------------------------------------------------------------------
 # admin_backup_export: 認可ガードと成功パス
 # ---------------------------------------------------------------------------
 

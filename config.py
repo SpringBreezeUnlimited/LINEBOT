@@ -84,8 +84,11 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.163"
-APP_RELEASED_AT = "2026-08-18 00:00 JST"
+APP_VERSION = "v1.0.164"
+APP_RELEASED_AT = "2026-08-19 00:00 JST"
+GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
+    "ENABLE_GLOBAL_RESERVATION_DELETE", False
+)
 PUBLIC_BASE_URL = (os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
 ALLOWED_TYPE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 FLEX_SAFE_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}

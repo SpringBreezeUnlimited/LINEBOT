@@ -60,6 +60,7 @@ from blueprints.backup_routes import (
     admin_backup_export_account,
     admin_backup_import,
     admin_backup_import_account,
+    admin_delete_all_reservations,
 )
 from blueprints.line_routes import handler, callback, handle_message
 
@@ -161,6 +162,7 @@ _BACKUP_ROUTES = [
     ("/admin/backup/export/<int:account_id>", "admin_backup_export_account", admin_backup_export_account, None),
     ("/admin/backup/import", "admin_backup_import", admin_backup_import, ["POST"]),
     ("/admin/backup/import/<int:account_id>", "admin_backup_import_account", admin_backup_import_account, ["POST"]),
+    ("/admin/backup/delete-all-reservations", "admin_delete_all_reservations", admin_delete_all_reservations, ["POST"]),
 ]
 
 _LINE_ROUTES = [

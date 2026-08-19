@@ -12,7 +12,12 @@ from datetime import datetime
 
 from flask import request, session, redirect, url_for, render_template, jsonify, Response, abort  # type: ignore
 
-from config import JST, APP_VERSION, ROLE_ADMIN
+from config import (
+    JST,
+    APP_VERSION,
+    ROLE_ADMIN,
+    GLOBAL_RESERVATION_DELETE_ENABLED,
+)
 from database import get_connection
 import database
 import auth
@@ -301,6 +306,61 @@ def admin_backup_page():
         csrf_token=get_csrf_token(),
         is_audit_admin=True,
         admin_accounts=admin_accounts,
+        global_reservation_delete_enabled=GLOBAL_RESERVATION_DELETE_ENABLED,
+    )
+
+
+def admin_delete_all_reservations():
+    """環境変数で明示的に有効化された場合だけ全予約を削除する。"""
+    if not is_audit_admin_authenticated():
+        if is_admin_authenticated():
+            abort(403)
+        return redirect(url_for("login"))
+
+    if not GLOBAL_RESERVATION_DELETE_ENABLED:
+        return redirect(
+            url_for(
+                "admin_backup_page",
+                import_error=(
+                    "全アカウント予約削除は無効です。"
+                    "ENABLE_GLOBAL_RESERVATION_DELETE=true を設定して再起動してください。"
+                ),
+            )
+        )
+
+    if request.form.get("confirmation") != "全アカウントの予約を削除":
+        return redirect(
+            url_for(
+                "admin_backup_page",
+                import_error="確認文字列が一致しないため、予約は削除されませんでした。",
+            )
+        )
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM reservations")
+                deleted_count = cur.rowcount
+            conn.commit()
+    except Exception:
+        logger.exception("Failed to delete all reservations")
+        return redirect(
+            url_for(
+                "admin_backup_page",
+                import_error="予約の一括削除に失敗しました。データベースを確認してください。",
+            )
+        )
+
+    logger.warning(
+        "All reservations deleted by audit admin login_id=%s count=%s",
+        session.get("admin_login_id", ""),
+        deleted_count,
+    )
+    return redirect(
+        url_for(
+            "admin_backup_page",
+            import_success=f"全アカウントの予約を{deleted_count}件削除しました。",
+        )
     )
 
 
