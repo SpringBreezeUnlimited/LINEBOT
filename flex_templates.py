@@ -77,7 +77,7 @@ def call_notification(
         "body": {
             "type": "box",
             "layout": "vertical",
-            "paddingAll": "20px",
+            "paddingAll": "16px",
             "contents": [
                 {
                     "type": "text",
@@ -92,7 +92,7 @@ def call_notification(
                     "text": no_str,
                     "align": "center",
                     "weight": "bold",
-                    "size": "5xl",
+                    "size": "4xl",
                     "color": "#00A900",
                     "margin": "lg",
                 },
@@ -102,10 +102,11 @@ def call_notification(
                     "text": shop_name or "admin",
                     "align": "center",
                     "weight": "bold",
-                    "size": "xl",
+                    "size": "lg",
                     "color": "#444444",
                     "margin": "lg",
-                },
+                    "maxLines": 1,
+                    },
                 *(
                     [
                         {
@@ -113,9 +114,10 @@ def call_notification(
                             "text": type_name,
                             "align": "center",
                             "weight": "bold",
-                            "size": "xl",
+                            "size": "lg",
                             "color": "#444444",
                             "margin": "none",
+                            "maxLines": 1,
                         }
                     ]
                     if type_name
@@ -126,7 +128,7 @@ def call_notification(
                     "text": "ご用意ができました",
                     "align": "center",
                     "weight": "bold",
-                    "size": "xl",
+                    "size": "lg",
                     "color": "#444444",
                     "margin": "none",
                 },
@@ -137,7 +139,7 @@ def call_notification(
                         "時間を過ぎると自動でキャンセルされます。"
                     ),
                     "wrap": True,
-                    "size": "md",
+                    "size": "sm",
                     "color": "#444444",
                     "margin": "xl",
                 },
