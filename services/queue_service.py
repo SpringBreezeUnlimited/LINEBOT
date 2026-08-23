@@ -62,11 +62,13 @@ def should_run_midnight_cancel(now=None) -> bool:
     return current.tm_hour == 0 and current.tm_min == 0
 
 
-def build_call_message(reservation_no: int, called_at=None) -> dict:
+def build_call_message(reservation_no: int, called_at=None, shop_name: str = "admin") -> dict:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
     timeout_label = timeout_at.strftime("%H:%M")
-    return call_notification(reservation_no, timeout_label, CALL_TIMEOUT_MINUTES)
+    return call_notification(
+        reservation_no, timeout_label, CALL_TIMEOUT_MINUTES, shop_name=shop_name
+    )
 
 
 def hour_digit(now=None) -> int:

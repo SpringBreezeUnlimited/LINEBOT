@@ -63,7 +63,12 @@ def reservation_confirmation(
     return bubble_from_title_and_text(title, body_text, hero_url=image_url)
 
 
-def call_notification(reservation_no: int | str, timeout_label: str, call_minutes: int) -> Dict:
+def call_notification(
+    reservation_no: int | str,
+    timeout_label: str,
+    call_minutes: int,
+    shop_name: str = "admin",
+) -> Dict:
     no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
     bubble = {
         "type": "bubble",
@@ -93,7 +98,7 @@ def call_notification(reservation_no: int | str, timeout_label: str, call_minute
                 {"type": "separator", "margin": "lg"},
                 {
                     "type": "text",
-                    "text": "admin",
+                    "text": shop_name or "admin",
                     "align": "center",
                     "weight": "bold",
                     "size": "xl",

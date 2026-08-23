@@ -2324,6 +2324,12 @@ def test_build_call_message_uses_ticket_ready_card(app_module):
     assert "呼出中" not in text
 
 
+def test_build_call_message_uses_admin_name(app_module):
+    message = app_module.build_call_message(15, shop_name="manager01")
+    assert "manager01" in flex_message_text(message)
+    assert "admin" not in flex_message_text(message)
+
+
 def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
     sent_messages = []
 

@@ -1134,7 +1134,13 @@ def admin_call(res_id):
             conn.commit()
 
     try:
-        send_push_message(user_id, build_call_message(display_no))
+        send_push_message(
+            user_id,
+            build_call_message(
+                display_no,
+                shop_name=session.get("admin_login_id") or "admin",
+            ),
+        )
     except Exception:
         logger.exception(
             "Failed to send LINE push message for reservation %s user_id=%s",
