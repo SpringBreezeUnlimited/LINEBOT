@@ -29,6 +29,14 @@ def bubble_from_title_and_text(title: str, text: str, hero_url: str | None = Non
             "contents": [{"type": "text", "text": text, "wrap": True}],
         },
     }
+    hero = build_hero_image(hero_url)
+    if hero:
+        bubble["hero"] = hero
+    return {
+        "type": "flex",
+        "altText": title + " - 通知",
+        "contents": bubble,
+    }
 
 
 def ticket_status_card(
@@ -54,16 +62,6 @@ def ticket_status_card(
     if hero:
         bubble["hero"] = hero
     return {"type": "flex", "altText": title + " - 通知", "contents": bubble}
-    hero = build_hero_image(hero_url)
-    if hero:
-        bubble["hero"] = hero
-    return {
-        "type": "flex",
-        "altText": title + " - 通知",
-        "contents": bubble,
-    }
-
-
 def reservation_confirmation(
     reservation_no: int | str,
     type_name: str | None,
