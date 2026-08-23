@@ -1109,7 +1109,8 @@ def admin_call(res_id):
                       AND r.status = %s
                       AND r.type_id = t.id
                       AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
-                    RETURNING user_id, COALESCE(reservation_no, r.id)
+                    RETURNING user_id, COALESCE(reservation_no, r.id),
+                              (SELECT name FROM reservation_types WHERE id = reservations.type_id)
                 """,
                 (STATUS_CALLED, CALL_ORIGIN_MANUAL, res_id, STATUS_WAITING, current_admin_account_id),
             )
@@ -1131,6 +1132,7 @@ def admin_call(res_id):
                 abort(404)
             user_id = row[0]
             display_no = row[1] or res_id
+            type_name = row[2] if len(row) > 2 else None
             conn.commit()
 
     try:
@@ -1139,6 +1141,7 @@ def admin_call(res_id):
             build_call_message(
                 display_no,
                 shop_name=session.get("admin_login_id") or "admin",
+                type_name=type_name,
             ),
         )
     except Exception:

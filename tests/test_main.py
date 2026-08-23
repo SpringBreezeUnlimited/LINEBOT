@@ -2330,6 +2330,13 @@ def test_build_call_message_uses_admin_name(app_module):
     assert "admin" not in flex_message_text(message)
 
 
+def test_build_call_message_includes_type_name(app_module):
+    message = app_module.build_call_message(15, type_name="カレー")
+    text = flex_message_text(message)
+    assert "カレー" in text
+    assert text.index("カレー") < text.index("ご用意ができました")
+
+
 def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
     sent_messages = []
 

@@ -62,12 +62,21 @@ def should_run_midnight_cancel(now=None) -> bool:
     return current.tm_hour == 0 and current.tm_min == 0
 
 
-def build_call_message(reservation_no: int, called_at=None, shop_name: str = "admin") -> dict:
+def build_call_message(
+    reservation_no: int,
+    called_at=None,
+    shop_name: str = "admin",
+    type_name: str | None = None,
+) -> dict:
     called_dt = datetime.now(JST) if called_at is None else called_at.astimezone(JST)
     timeout_at = called_dt + timedelta(minutes=CALL_TIMEOUT_MINUTES)
     timeout_label = timeout_at.strftime("%H:%M")
     return call_notification(
-        reservation_no, timeout_label, CALL_TIMEOUT_MINUTES, shop_name=shop_name
+        reservation_no,
+        timeout_label,
+        CALL_TIMEOUT_MINUTES,
+        shop_name=shop_name,
+        type_name=type_name,
     )
 
 
@@ -375,7 +384,8 @@ def process_queued_calls(now=None):
                             SELECT id FROM selected_rows
                         )
                           AND status = %s
-                        RETURNING id, user_id, COALESCE(reservation_no, id)
+                    RETURNING id, user_id, COALESCE(reservation_no, id),
+                              (SELECT name FROM reservation_types WHERE id = reservations.type_id)
                     """,
                     (STATUS_WAITING, auto_call_count, STATUS_CALLED, CALL_ORIGIN_AUTO, STATUS_WAITING),
                 )
@@ -388,12 +398,18 @@ def process_queued_calls(now=None):
         res_id = auto_row[0]
         user_id = auto_row[1]
         reservation_no = auto_row[2] if len(auto_row) > 2 else res_id
+        type_name = auto_row[3] if len(auto_row) > 3 else None
         try:
             # Build Flex call notification; alt text will be used as fallback when needed
             timeout_at = (
                 datetime.now(JST) + timedelta(minutes=CALL_TIMEOUT_MINUTES)
             ).strftime("%H:%M")
-            flex = call_notification(reservation_no or res_id, timeout_at, CALL_TIMEOUT_MINUTES)
+            flex = call_notification(
+                reservation_no or res_id,
+                timeout_at,
+                CALL_TIMEOUT_MINUTES,
+                type_name=type_name,
+            )
             send_push_message(user_id, flex)
             sent_ids.append(res_id)
         except Exception:

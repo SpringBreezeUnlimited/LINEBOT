@@ -68,6 +68,7 @@ def call_notification(
     timeout_label: str,
     call_minutes: int,
     shop_name: str = "admin",
+    type_name: str | None = None,
 ) -> Dict:
     no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
     bubble = {
@@ -105,6 +106,21 @@ def call_notification(
                     "color": "#444444",
                     "margin": "lg",
                 },
+                *(
+                    [
+                        {
+                            "type": "text",
+                            "text": type_name,
+                            "align": "center",
+                            "weight": "bold",
+                            "size": "xl",
+                            "color": "#444444",
+                            "margin": "none",
+                        }
+                    ]
+                    if type_name
+                    else []
+                ),
                 {
                     "type": "text",
                     "text": "ご用意ができました",
