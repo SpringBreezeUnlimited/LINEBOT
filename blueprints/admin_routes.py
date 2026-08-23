@@ -1109,8 +1109,7 @@ def admin_call(res_id):
                       AND r.status = %s
                       AND r.type_id = t.id
                       AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
-                    RETURNING user_id, COALESCE(reservation_no, r.id),
-                              (SELECT name FROM reservation_types WHERE id = reservations.type_id)
+                    RETURNING user_id, COALESCE(reservation_no, r.id), type_id
                 """,
                 (STATUS_CALLED, CALL_ORIGIN_MANUAL, res_id, STATUS_WAITING, current_admin_account_id),
             )
@@ -1132,7 +1131,11 @@ def admin_call(res_id):
                 abort(404)
             user_id = row[0]
             display_no = row[1] or res_id
-            type_name = row[2] if len(row) > 2 else None
+            type_name = None
+            if len(row) > 2 and row[2] is not None:
+                cur.execute("SELECT name FROM reservation_types WHERE id = %s", (row[2],))
+                type_row = cur.fetchone()
+                type_name = type_row[0] if type_row else None
             conn.commit()
 
     try:
