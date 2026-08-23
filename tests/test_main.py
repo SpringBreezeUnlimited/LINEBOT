@@ -2316,9 +2316,11 @@ def test_build_call_message_uses_ticket_ready_card(app_module):
     text = flex_message_text(message)
     assert "チケット番号" in text
     assert "0015" in text
-    assert "demoshop" in text
+    assert "admin" in text
     assert "ご用意ができました" in text
-    assert "上記の商品が出来上がりました" in text
+    assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in text
+    assert "10:15" in text
+    assert "自動でキャンセル" in text
     assert "呼出中" not in text
 
 

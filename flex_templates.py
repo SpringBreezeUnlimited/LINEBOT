@@ -64,7 +64,6 @@ def reservation_confirmation(
 
 
 def call_notification(reservation_no: int | str, timeout_label: str, call_minutes: int) -> Dict:
-    del timeout_label, call_minutes
     no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
     bubble = {
         "type": "bubble",
@@ -94,7 +93,7 @@ def call_notification(reservation_no: int | str, timeout_label: str, call_minute
                 {"type": "separator", "margin": "lg"},
                 {
                     "type": "text",
-                    "text": "demoshop",
+                    "text": "admin",
                     "align": "center",
                     "weight": "bold",
                     "size": "xl",
@@ -112,7 +111,10 @@ def call_notification(reservation_no: int | str, timeout_label: str, call_minute
                 },
                 {
                     "type": "text",
-                    "text": "上記の商品が出来上がりました\nこの画面を表示して\ndemoshopまで受け取りに来てください",
+                    "text": (
+                        f"{call_minutes}分以内（{timeout_label}まで）にお越しください。\n"
+                        "時間を過ぎると自動でキャンセルされます。"
+                    ),
                     "wrap": True,
                     "size": "md",
                     "color": "#444444",
