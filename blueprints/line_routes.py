@@ -438,18 +438,18 @@ def process_reservation(event, user_id, user_message):
                                 reservation_id=res_id,
                                 owner_admin_id=existing_owner_admin_id,
                             )
-                            body = f"予約済みです。番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                            body = f"予約済みです。チケット番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                         else:
                             cur.execute(
                                 "SELECT COUNT(*) FROM reservations WHERE status = %s AND owner_admin_id IS NULL AND id < %s",
                                 (STATUS_WAITING, res_id),
                             )
-                            body = f"予約済みです。番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
+                            body = f"予約済みです。チケット番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
                     elif status == STATUS_CALLED:
                         if existing_type_name:
-                            body = f"【呼出中】番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
+                            body = f"【呼出中】チケット番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
                         else:
-                            body = f"【呼出中】番号: {fmt_no(display_no)} 会場へお越しください！"
+                            body = f"【呼出中】チケット番号: {fmt_no(display_no)} 会場へお越しください！"
                     send_flex_notice(event.reply_token, "予約状況", body)
                     return
                 else:
@@ -498,18 +498,18 @@ def process_reservation(event, user_id, user_message):
                                             owner_admin_id=existing_owner_admin_id,
                                         )
                                     )
-                                    body = f"予約済みです。番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                    body = f"予約済みです。チケット番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
                                 else:
                                     cur.execute(
                                         "SELECT COUNT(*) FROM reservations WHERE status = %s AND owner_admin_id IS NULL AND id < %s",
                                         (STATUS_WAITING, res_id),
                                     )
-                                    body = f"予約済みです。番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
+                                    body = f"予約済みです。チケット番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
                             elif status == STATUS_CALLED:
                                 if existing_type_name:
-                                    body = f"【呼出中】番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
+                                    body = f"【呼出中】チケット番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
                                 else:
-                                    body = f"【呼出中】番号: {fmt_no(display_no)} 会場へお越しください！"
+                                    body = f"【呼出中】チケット番号: {fmt_no(display_no)} 会場へお越しください！"
                             send_flex_notice(event.reply_token, "予約状況", body)
                             return
                         raise
@@ -532,14 +532,14 @@ def process_reservation(event, user_id, user_message):
                             if type_owner_login_id
                             else ""
                         )
-                        body = f"【受付完了】番号: {fmt_no(reservation_no)} / 種類: {type_name}{owner_text}{price_text} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】チケット番号: {fmt_no(reservation_no)} / 種類: {type_name}{owner_text}{price_text} / 待ち: {waiting_people_ahead}人"
                     else:
                         cur.execute(
                             "SELECT COUNT(*) FROM reservations WHERE status = %s AND id < %s",
                             (STATUS_WAITING, new_id),
                         )
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
-                        body = f"【受付完了】番号: {fmt_no(reservation_no)} / 待ち: {waiting_people_ahead}人"
+                        body = f"【受付完了】チケット番号: {fmt_no(reservation_no)} / 待ち: {waiting_people_ahead}人"
                     refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(
                         waiting_people_ahead
@@ -572,7 +572,7 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(
                         event.reply_token,
                         "キャンセル完了",
-                        f"受付番号 {fmt_no(cancelled_no)} をキャンセルしました。",
+                        f"受付チケット番号 {fmt_no(cancelled_no)} をキャンセルしました。",
                     )
                 else:
                     send_flex_notice(
@@ -623,12 +623,12 @@ def process_reservation(event, user_id, user_message):
                         )
                         if type_name:
                             body = (
-                                f"番号: {fmt_no(display_no)} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
+                                f"チケット番号: {fmt_no(display_no)} / 種類: {type_name} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         else:
                             body = (
-                                f"番号: {fmt_no(display_no)} / あなたの前: {waiting_people_ahead}人"
+                                f"チケット番号: {fmt_no(display_no)} / あなたの前: {waiting_people_ahead}人"
                                 f"\n現在の目安待ち時間: {estimated_minutes}分"
                             )
                         send_flex_notice(event.reply_token, "待ち時間", body)
@@ -636,7 +636,7 @@ def process_reservation(event, user_id, user_message):
                         send_flex_notice(
                             event.reply_token,
                             "呼出中",
-                            f"【呼出中】番号: {fmt_no(display_no)} です。会場へお越しください。",
+                            f"【呼出中】チケット番号: {fmt_no(display_no)} です。会場へお越しください。",
                         )
                 return
             else:

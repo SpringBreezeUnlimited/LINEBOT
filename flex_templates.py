@@ -48,7 +48,11 @@ def reservation_confirmation(
     image_url: str | None = None,
 ) -> Dict:
     title = "受付完了"
-    lines = [f"番号: {reservation_no:04d}" if isinstance(reservation_no, int) else f"番号: {reservation_no}"]
+    lines = [
+        f"チケット番号: {reservation_no:04d}"
+        if isinstance(reservation_no, int)
+        else f"チケット番号: {reservation_no}"
+    ]
     if type_name:
         lines.append(f"種類: {type_name}")
     if owner_name:
@@ -60,13 +64,64 @@ def reservation_confirmation(
 
 
 def call_notification(reservation_no: int | str, timeout_label: str, call_minutes: int) -> Dict:
-    title = "呼出中"
+    del timeout_label, call_minutes
     no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
-    body_text = (
-        f"番号: {no_str}\n{call_minutes}分以内（{timeout_label}まで）にお越しください。"
-        "\n時間を過ぎると自動でキャンセルされます。"
-    )
-    return bubble_from_title_and_text(title, body_text)
+    bubble = {
+        "type": "bubble",
+        "size": "mega",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "paddingAll": "20px",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "チケット番号",
+                    "align": "center",
+                    "weight": "bold",
+                    "size": "lg",
+                    "color": "#444444",
+                },
+                {
+                    "type": "text",
+                    "text": no_str,
+                    "align": "center",
+                    "weight": "bold",
+                    "size": "5xl",
+                    "color": "#00A900",
+                    "margin": "lg",
+                },
+                {"type": "separator", "margin": "lg"},
+                {
+                    "type": "text",
+                    "text": "demoshop",
+                    "align": "center",
+                    "weight": "bold",
+                    "size": "xl",
+                    "color": "#444444",
+                    "margin": "lg",
+                },
+                {
+                    "type": "text",
+                    "text": "ご用意ができました",
+                    "align": "center",
+                    "weight": "bold",
+                    "size": "xl",
+                    "color": "#444444",
+                    "margin": "none",
+                },
+                {
+                    "type": "text",
+                    "text": "上記の商品が出来上がりました\nこの画面を表示して\ndemoshopまで受け取りに来てください",
+                    "wrap": True,
+                    "size": "md",
+                    "color": "#444444",
+                    "margin": "xl",
+                },
+            ],
+        },
+    }
+    return {"type": "flex", "altText": "ご用意ができました", "contents": bubble}
 
 
 def wait_time_status(
@@ -78,7 +133,7 @@ def wait_time_status(
     title = "現在の待ち時間"
     if reservation_no:
         no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
-        line = f"番号: {no_str} / あなたの前: {waiting}人"
+        line = f"チケット番号: {no_str} / あなたの前: {waiting}人"
     else:
         line = f"現在の待ち人数: {waiting}人"
     if type_name:
@@ -91,7 +146,7 @@ def cancel_notification(reservation_no: int | str | None) -> Dict:
     title = "キャンセル完了"
     if reservation_no:
         no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
-        body_text = f"キャンセルした番号: {no_str}"
+        body_text = f"キャンセルしたチケット番号: {no_str}"
     else:
         body_text = "キャンセルが完了しました。"
     return bubble_from_title_and_text(title, body_text)
@@ -100,5 +155,5 @@ def cancel_notification(reservation_no: int | str | None) -> Dict:
 def auto_cancel_notification(reservation_no: int | str) -> Dict:
     title = "自動キャンセル"
     no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
-    body_text = f"番号 {no_str} は時間切れのためキャンセルされました。"
+    body_text = f"チケット番号 {no_str} は時間切れのためキャンセルされました。"
     return bubble_from_title_and_text(title, body_text)

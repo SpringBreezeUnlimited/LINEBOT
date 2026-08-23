@@ -213,7 +213,7 @@ function buildRow(row) {
     const identity = document.createElement('div');
     const label = document.createElement('div');
     label.className = 'admin-reservation-card__label';
-    label.textContent = '番号';
+    label.textContent = 'チケット番号';
     const value = document.createElement('div');
     value.className = 'admin-reservation-card__value';
     value.textContent = row.display_no ?? row.id ?? '';

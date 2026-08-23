@@ -56,7 +56,7 @@
             <div class="filter-sort-col">
                 <label class="form-label">並べ替え</label>
                 <select id="sort-by" class="form-select">
-                    <option value="id" {% if sort_by=='id' %}selected{% endif %}>番号</option>
+                    <option value="id" {% if sort_by=='id' %}selected{% endif %}>チケット番号</option>
                     <option value="status" {% if sort_by=='status' %}selected{% endif %}>状態</option>
                     <option value="type" {% if sort_by=='type' %}selected{% endif %}>種類</option>
                 </select>
@@ -130,7 +130,7 @@
                     data-call-origin="{{ row.call_origin or '' }}" data-status="{{ row.status }}">
                     <div class="admin-reservation-card__header">
                         <div>
-                            <div class="admin-reservation-card__label">番号</div>
+                            <div class="admin-reservation-card__label">チケット番号</div>
                             <div class="admin-reservation-card__value">{{ row.display_no }}</div>
                         </div>
                         <div class="admin-reservation-card__status">

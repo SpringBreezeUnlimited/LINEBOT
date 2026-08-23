@@ -50,7 +50,7 @@
                     <label class="form-label">並べ替え</label>
                     <div class="d-flex gap-2">
                         <select id="history-sort-by" class="form-select">
-                            <option value="id" {% if sort_by=='id' %}selected{% endif %}>番号</option>
+                            <option value="id" {% if sort_by=='id' %}selected{% endif %}>チケット番号</option>
                             <option value="created_at" {% if sort_by=='created_at' %}selected{% endif %}>受付時刻</option>
                             <option value="status" {% if sort_by=='status' %}selected{% endif %}>状態</option>
                             <option value="type" {% if sort_by=='type' %}selected{% endif %}>種類</option>
@@ -79,7 +79,7 @@
                         data-service-duration-label="{{ format_duration(row[9]) if row[9] is not none else '-' }}">
                         <div class="history-card__header">
                             <div>
-                                <div class="history-card__label">番号</div>
+                                <div class="history-card__label">チケット番号</div>
                                 <div class="history-card__value">{{ row[1] }}</div>
                             </div>
                             <div class="history-card__status">

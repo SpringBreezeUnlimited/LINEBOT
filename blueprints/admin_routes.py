@@ -1019,7 +1019,7 @@ def admin_history_export():
         writer = csv.writer(output)
         writer.writerow(
             [
-                "番号",
+                "チケット番号",
                 "種類",
                 "状態",
                 "呼出方法",
@@ -1125,7 +1125,7 @@ def admin_call(res_id):
                     return redirect(
                         url_for(
                             "admin_page",
-                            call_error=f"受付番号 {fmt_no(existing[1] or res_id)} は直前にキャンセルされたため呼出できませんでした。",
+                            call_error=f"受付チケット番号 {fmt_no(existing[1] or res_id)} は直前にキャンセルされたため呼出できませんでした。",
                         )
                     )
                 abort(404)

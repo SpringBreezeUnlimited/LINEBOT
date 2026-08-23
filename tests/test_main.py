@@ -11,7 +11,7 @@ from linebot.v3.messaging.models.flex_image import FlexImage
 
 def flex_message_text(message):
     assert message["type"] == "flex"
-    header = message["contents"]["header"]["contents"]
+    header = message["contents"].get("header", {}).get("contents", [])
     body = message["contents"]["body"]["contents"]
     title = header[0]["text"] if header else ""
     body_text = "\n".join(item["text"] for item in body if item.get("type") == "text")
@@ -2310,15 +2310,16 @@ def test_should_run_call_batch_uses_localtime_when_now_none(app_module, monkeypa
     assert app_module.should_run_call_batch() is True
 
 
-def test_build_call_message_includes_timeout_minutes_and_deadline(app_module):
+def test_build_call_message_uses_ticket_ready_card(app_module):
     called_at = datetime(2026, 4, 19, 10, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
     message = app_module.build_call_message(15, called_at=called_at)
     text = flex_message_text(message)
-    assert "呼出中" in text
-    assert "番号: 0015" in text
-    assert f"{app_module.CALL_TIMEOUT_MINUTES}分以内" in text
-    assert "10:15" in text
-    assert "自動でキャンセル" in text
+    assert "チケット番号" in text
+    assert "0015" in text
+    assert "demoshop" in text
+    assert "ご用意ができました" in text
+    assert "上記の商品が出来上がりました" in text
+    assert "呼出中" not in text
 
 
 def test_expire_called_reservations_updates_called_rows(app_module, monkeypatch):
@@ -3038,7 +3039,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
     app_module.process_reservation(event, "U-123", "予約 相談")
 
     assert sent_texts
-    assert "【受付完了】番号: 001" in sent_texts[0]
+    assert "【受付完了】チケット番号: 001" in sent_texts[0]
     assert " / 種類: 相談 / 待ち: 2人" in sent_texts[0]
     assert "現在の目安待ち時間: 3分" in sent_texts[0]
 
@@ -3255,7 +3256,7 @@ def test_process_reservation_cancel_commits_when_cancelled(app_module, monkeypat
     app_module.process_reservation(event, "U-cancel", "キャンセル")
 
     assert sent_texts
-    assert "受付番号 000042 をキャンセルしました。" in sent_texts[-1]
+    assert "受付チケット番号 000042 をキャンセルしました。" in sent_texts[-1]
     assert commits
 
 
@@ -3317,7 +3318,7 @@ def test_admin_history_export_includes_extended_columns(app_module, monkeypatch)
 
     rows = list(csv.reader(text.splitlines()))
     assert rows[0] == [
-        "番号",
+        "チケット番号",
         "種類",
         "状態",
         "呼出方法",
