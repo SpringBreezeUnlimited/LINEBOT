@@ -75,6 +75,7 @@ if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
 # 負荷テスト用: true にすると LINE への実際の push/reply 送信をスキップする。
 # 本番では絶対に true にしないこと。
 LOAD_TEST_MODE = (os.getenv("LOAD_TEST_MODE") or "").strip().lower() == "true"
+LOAD_TEST_TOKEN = (os.getenv("LOAD_TEST_TOKEN") or "").strip()
 
 raw_db_url = (os.getenv("DATABASE_URL") or "").strip()
 if not raw_db_url:
@@ -84,7 +85,7 @@ DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.175"
+APP_VERSION = "v1.0.176"
 APP_RELEASED_AT = "2026-09-04 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False

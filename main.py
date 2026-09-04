@@ -43,6 +43,7 @@ from config import (
     CHANNEL_ACCESS_TOKEN,
     CHANNEL_SECRET,
     LOAD_TEST_MODE,
+    LOAD_TEST_TOKEN,
     DATABASE_URL,
     DB_CONNECT_TIMEOUT,
     OWNER_LINE_ID,
@@ -288,7 +289,7 @@ def apply_security_headers(response):
 def initialize_database_once():
     if request.endpoint == "static":
         return
-    if request.path in ("/health", "/healthz", "/readyz"):
+    if request.path in ("/health", "/healthz", "/readyz", "/loadtest/db"):
         return
     if request.path == "/login" and request.method == "GET":
         # ログイン画面の表示だけはDB初期化なしで通す。POST時や他画面では従来どおり初期化する。
@@ -351,6 +352,11 @@ def readyz():
 def loadtest_db():
     if not LOAD_TEST_MODE:
         abort(404)
+    request_token = (request.headers.get("X-Loadtest-Token") or "").strip()
+    if not LOAD_TEST_TOKEN or not secrets.compare_digest(
+        request_token, LOAD_TEST_TOKEN
+    ):
+        abort(403)
 
     load_test_user_id = f"loadtest-{uuid.uuid4()}"
     try:

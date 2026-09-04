@@ -159,8 +159,30 @@ def test_loadtest_db_returns_404_when_disabled(client, app_module, monkeypatch):
     assert response.status_code == 404
 
 
+def test_loadtest_db_rejects_invalid_token_without_database_access(
+    client, app_module, monkeypatch
+):
+    monkeypatch.setattr(app_module, "LOAD_TEST_MODE", True)
+    monkeypatch.setattr(app_module, "LOAD_TEST_TOKEN", "expected-token")
+    database_accessed = False
+
+    def fail_connection():
+        nonlocal database_accessed
+        database_accessed = True
+        raise AssertionError("database must not be accessed")
+
+    monkeypatch.setattr(app_module, "get_connection", fail_connection)
+    response = client.post(
+        "/loadtest/db", headers={"X-Loadtest-Token": "wrong-token"}
+    )
+
+    assert response.status_code == 403
+    assert database_accessed is False
+
+
 def test_loadtest_db_uses_database_and_cleans_up(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "LOAD_TEST_MODE", True)
+    monkeypatch.setattr(app_module, "LOAD_TEST_TOKEN", "expected-token")
     executed = []
 
     class FakeCursor:
@@ -192,7 +214,9 @@ def test_loadtest_db_uses_database_and_cleans_up(client, app_module, monkeypatch
             executed.append(("COMMIT", None))
 
     monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
-    response = client.post("/loadtest/db")
+    response = client.post(
+        "/loadtest/db", headers={"X-Loadtest-Token": "expected-token"}
+    )
 
     assert response.status_code == 200
     assert response.get_json()["status"] == "ok"
@@ -204,12 +228,15 @@ def test_loadtest_db_uses_database_and_cleans_up(client, app_module, monkeypatch
 
 def test_loadtest_db_returns_503_when_database_fails(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "LOAD_TEST_MODE", True)
+    monkeypatch.setattr(app_module, "LOAD_TEST_TOKEN", "expected-token")
 
     def fail_connection():
         raise RuntimeError("db down")
 
     monkeypatch.setattr(app_module, "get_connection", fail_connection)
-    response = client.post("/loadtest/db")
+    response = client.post(
+        "/loadtest/db", headers={"X-Loadtest-Token": "expected-token"}
+    )
     assert response.status_code == 503
     assert response.get_json()["status"] == "error"
 

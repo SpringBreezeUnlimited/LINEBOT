@@ -27,9 +27,11 @@
 - Liveness（プロセス生存確認）: `GET /health` または `GET /healthz`
    - 正常時: `200` / `{"status":"ok","version":"v..."}`
 - Readiness（DB疎通込み）: `GET /readyz`
-- 負荷テスト用DB操作: `POST /loadtest/db`（`LOAD_TEST_MODE=true` のときのみ有効）
-   - 正常時: `200` / `{"status":"ready","version":"v..."}`
-   - 異常時: `503` / `{"status":"unready","version":"v..."}`
+- 負荷テスト用DB操作: `POST /loadtest/db`（`LOAD_TEST_MODE=true` と `LOAD_TEST_TOKEN` の設定が必要）
+   - ヘッダー: `X-Loadtest-Token: <LOAD_TEST_TOKEN>`
+   - 正常時: `200` / `{"status":"ok","version":"v..."}`
+   - トークン不一致時: `403`
+   - DB異常時: `503` / `{"status":"error","version":"v..."}`
 
 運用の目安:
 1. まず `healthz` を 1 分間隔で監視し、Webプロセス停止を検知する。
