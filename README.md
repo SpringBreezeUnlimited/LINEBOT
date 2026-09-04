@@ -27,6 +27,7 @@
 - Liveness（プロセス生存確認）: `GET /health` または `GET /healthz`
    - 正常時: `200` / `{"status":"ok","version":"v..."}`
 - Readiness（DB疎通込み）: `GET /readyz`
+- 負荷テスト用DB操作: `POST /loadtest/db`（`LOAD_TEST_MODE=true` のときのみ有効）
    - 正常時: `200` / `{"status":"ready","version":"v..."}`
    - 異常時: `503` / `{"status":"unready","version":"v..."}`
 

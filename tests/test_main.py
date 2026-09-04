@@ -153,6 +153,67 @@ def test_readyz_returns_503_when_db_is_unavailable(client, app_module, monkeypat
     assert response.get_json()["status"] == "unready"
 
 
+def test_loadtest_db_returns_404_when_disabled(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "LOAD_TEST_MODE", False)
+    response = client.post("/loadtest/db")
+    assert response.status_code == 404
+
+
+def test_loadtest_db_uses_database_and_cleans_up(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "LOAD_TEST_MODE", True)
+    executed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            executed.append((query, params))
+
+        def fetchone(self):
+            return (42,)
+
+    class FakeConnection:
+        closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            executed.append(("COMMIT", None))
+
+    monkeypatch.setattr(app_module, "get_connection", lambda: FakeConnection())
+    response = client.post("/loadtest/db")
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+    assert executed[0][0].lstrip().startswith("INSERT INTO reservations")
+    assert "SELECT id FROM reservations" in executed[1][0]
+    assert executed[2][0].startswith("DELETE FROM reservations")
+    assert executed[3][0] == "COMMIT"
+
+
+def test_loadtest_db_returns_503_when_database_fails(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "LOAD_TEST_MODE", True)
+
+    def fail_connection():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(app_module, "get_connection", fail_connection)
+    response = client.post("/loadtest/db")
+    assert response.status_code == 503
+    assert response.get_json()["status"] == "error"
+
+
 def test_initialize_database_once_skips_health_routes(app_module, monkeypatch):
     called = {"count": 0}
 

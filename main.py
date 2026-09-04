@@ -299,7 +299,11 @@ def initialize_database_once():
 @app.before_request
 def csrf_protect():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        if request.path in ("/callback", "/tasks/process-call-queue"):
+        if request.path in (
+            "/callback",
+            "/tasks/process-call-queue",
+            "/loadtest/db",
+        ):
             return
         if request.path.startswith("/admin/login-logs") or request.path.startswith(
             "/admin/admin-accounts"
@@ -341,6 +345,38 @@ def readyz():
     except Exception:
         app.logger.exception("readiness check failed")
         return jsonify({"status": "unready", "version": APP_VERSION}), 503
+
+
+@app.route("/loadtest/db", methods=["POST"])
+def loadtest_db():
+    if not LOAD_TEST_MODE:
+        abort(404)
+
+    load_test_user_id = f"loadtest-{uuid.uuid4()}"
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO reservations (user_id, message, status)
+                    VALUES (%s, %s, 'cancelled')
+                    RETURNING id
+                    """,
+                    (load_test_user_id, "load test"),
+                )
+                reservation_id = cur.fetchone()[0]
+                cur.execute(
+                    "SELECT id FROM reservations WHERE id = %s AND user_id = %s",
+                    (reservation_id, load_test_user_id),
+                )
+                if cur.fetchone() is None:
+                    raise RuntimeError("load test reservation was not found")
+                cur.execute("DELETE FROM reservations WHERE id = %s", (reservation_id,))
+            conn.commit()
+        return jsonify({"status": "ok", "version": APP_VERSION}), 200
+    except Exception:
+        app.logger.exception("load test database operation failed")
+        return jsonify({"status": "error", "version": APP_VERSION}), 503
 
 
 @app.route("/login", methods=["GET", "POST"])
