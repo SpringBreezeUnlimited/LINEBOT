@@ -21,7 +21,7 @@
             {% if not is_audit_admin %}
             <a class="nav-pill" href="/admin">受付</a>
             <a class="nav-pill" href="/admin/types">種類</a>
-            <a class="nav-pill" href="/admin/history">過去ログ</a>
+            <a class="nav-pill" href="/admin/history">ログ</a>
             {% endif %}
             <a class="nav-pill is-active" href="/admin/login-logs">ログイン履歴</a>
             <a class="nav-pill" href="/admin/backup">バックアップ</a>
@@ -151,8 +151,7 @@
                                     </button>
                                 </form>
                                 <form method="POST" action="/admin/admin-accounts/{{ account[0] }}/delete"
-                                    class="d-inline"
-                                    data-inline-confirm="アカウント「{{ account[1] }}」を削除します。よろしいですか？">
+                                    class="d-inline" data-inline-confirm="アカウント「{{ account[1] }}」を削除します。よろしいですか？">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" {% if
                                         current_admin_account_id==account[0] %}disabled{% endif %}>削除</button>

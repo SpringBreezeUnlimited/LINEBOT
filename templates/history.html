@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}過去ログ{% endblock %}
+{% block title %}ログ{% endblock %}
 
 {% block styles %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/history.min.css') }}">
@@ -18,7 +18,7 @@
         <nav class="nav-pills" aria-label="管理ページ">
             <a class="nav-pill" href="/admin">受付</a>
             <a class="nav-pill" href="/admin/types">種類</a>
-            <a class="nav-pill is-active" href="/admin/history">過去ログ</a>
+            <a class="nav-pill is-active" href="/admin/history">ログ</a>
             <form method="POST" action="/logout" class="mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="nav-pill">ログアウト</button>
@@ -32,7 +32,7 @@
 <div class="container page-stack">
     <div class="hero-panel">
         <div class="hero-kicker">Archive</div>
-        <h1>過去ログ</h1>
+        <h1>ログ</h1>
     </div>
     <div class="card mb-4">
         <div class="card-body">
