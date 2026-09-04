@@ -380,12 +380,14 @@ def send_flex_notice(reply_token: str, title: str, body: str, hero_url: str | No
     )
 
 
-def build_type_image_url(type_id: int | None) -> str | None:
+def build_type_image_url(type_id: int | None, image_version: int | None = None) -> str | None:
     if not type_id:
         return None
     path = f"/reservation-type-images/{type_id}"
     if has_request_context():
         path = url_for("reservation_type_image", type_id=type_id)
+    if image_version is not None:
+        path += f"?v={int(image_version)}"
     if PUBLIC_BASE_URL:
         return f"{PUBLIC_BASE_URL}{path}"
     if has_request_context():

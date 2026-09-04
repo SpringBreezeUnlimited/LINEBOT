@@ -124,7 +124,7 @@ def process_reservation(event, user_id, user_message):
                         return
                     cur.execute(
                         """
-                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type, price
+                            SELECT id, name, accepting, owner_admin_id, flavor_text, image_mime_type, image_version, price
                             FROM reservation_types
                             WHERE name = %s
                         """,
@@ -148,7 +148,8 @@ def process_reservation(event, user_id, user_message):
                     type_owner_admin_id = type_row[3]
                     type_flavor_text = type_row[4]
                     type_image_mime_type = type_row[5]
-                    type_price = type_row[6] if len(type_row) > 6 else 0
+                    type_image_version = type_row[6] if len(type_row) > 6 else 1
+                    type_price = type_row[7] if len(type_row) > 7 else 0
                     type_owner_login_id = None
                     owner_accepting = True
                     if type_owner_admin_id is not None:
@@ -160,7 +161,7 @@ def process_reservation(event, user_id, user_message):
                         if owner_row:
                             type_owner_login_id = owner_row[0]
                             owner_accepting = bool(owner_row[1]) and bool(owner_row[2])
-                    type_image_url = build_type_image_url(type_id)
+                    type_image_url = build_type_image_url(type_id, type_image_version)
                     if not owner_accepting:
                         send_flex_notice(
                             event.reply_token,
@@ -189,7 +190,7 @@ def process_reservation(event, user_id, user_message):
                 else:
                     cur.execute(
                         """
-                            SELECT id, name, flavor_text, accepting, image_mime_type, price, owner_admin_id
+                            SELECT id, name, flavor_text, accepting, image_mime_type, image_version, price, owner_admin_id
                             FROM reservation_types
                             ORDER BY id ASC
                             LIMIT 10
@@ -224,12 +225,17 @@ def process_reservation(event, user_id, user_message):
                         flavor_text = type_row[2]
                         accepting = type_row[3]
                         image_mime_type = type_row[4]
-                        price = type_row[5] if len(type_row) > 5 else 0
-                        owner_admin_id = type_row[6] if len(type_row) > 6 else None
+                        image_version = type_row[5] if len(type_row) > 5 else 1
+                        price = type_row[6] if len(type_row) > 6 else 0
+                        owner_admin_id = type_row[7] if len(type_row) > 7 else None
                         owner_login_id = owner_login_ids.get(owner_admin_id)
                         owner_accepting = owner_accepting_states.get(owner_admin_id, True)
                         effective_accepting = accepting and owner_accepting
-                        image_url = build_type_image_url(type_id) if image_mime_type else None
+                        image_url = (
+                            build_type_image_url(type_id, image_version)
+                            if image_mime_type
+                            else None
+                        )
                         # header box
                         header = {
                             "type": "box",

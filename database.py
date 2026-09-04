@@ -361,6 +361,10 @@ def ensure_types_table():
             """)
             cur.execute("""
                 ALTER TABLE reservation_types
+                ADD COLUMN IF NOT EXISTS image_version BIGINT NOT NULL DEFAULT 1
+            """)
+            cur.execute("""
+                ALTER TABLE reservation_types
                 ADD COLUMN IF NOT EXISTS image_path TEXT NOT NULL DEFAULT ''
                 """)
             cur.execute("""

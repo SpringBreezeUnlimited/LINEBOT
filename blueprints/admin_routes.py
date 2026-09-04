@@ -712,7 +712,8 @@ def admin_types_update_image(type_id):
                     UPDATE reservation_types
                     SET image_data = %s,
                         image_mime_type = %s,
-                        image_filename = %s
+                        image_filename = %s,
+                        image_version = image_version + 1
                     WHERE id = %s AND owner_admin_id = %s
                 """,
                 (

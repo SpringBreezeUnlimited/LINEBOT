@@ -175,13 +175,13 @@ def test_initialize_database_once_skips_health_routes(app_module, monkeypatch):
 
 def test_build_type_image_url_prefers_public_base_url(app_module, monkeypatch):
     monkeypatch.setattr(app_module, "PUBLIC_BASE_URL", "https://example.com")
-    assert app_module.build_type_image_url(3) == "https://example.com/reservation-type-images/3"
+    assert app_module.build_type_image_url(3, 2) == "https://example.com/reservation-type-images/3?v=2"
 
 
 def test_build_type_image_url_forces_https_from_request(app_module, monkeypatch):
     monkeypatch.setattr(app_module.line_service, "PUBLIC_BASE_URL", "")
     with app_module.app.test_request_context("/", base_url="http://api.example.com"):
-        assert app_module.build_type_image_url(3) == "https://api.example.com/reservation-type-images/3"
+        assert app_module.build_type_image_url(3, 2) == "https://api.example.com/reservation-type-images/3?v=2"
 
 
 def test_build_flex_component_handles_image(app_module):
@@ -3564,7 +3564,7 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     # First bubble (相談 - Accepting)
     bubble_1 = bubbles[0]
     assert bubble_1["header"]["contents"][0]["text"] == "相談"
-    assert bubble_1["hero"]["url"].endswith("/reservation-type-images/1")
+    assert bubble_1["hero"]["url"].endswith("/reservation-type-images/1?v=1")
     assert bubble_1["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付中"
     assert bubble_1["body"]["contents"][2]["text"] == "個別相談を受け付けます。"
     assert bubble_1["footer"]["contents"][0]["type"] == "button"
