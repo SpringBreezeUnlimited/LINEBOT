@@ -33,6 +33,35 @@
    - トークン不一致時: `403`
    - DB異常時: `503` / `{"status":"error","version":"v..."}`
 
+### k6で実予約処理を負荷試験する
+
+実DBへ予約を作成する100 RPS・10分のシナリオを `loadtests/reservation-callback-100rps.js` に用意しています。試験用環境では、以下を設定してください。
+
+- `LOAD_TEST_MODE=true`（LINEへの返信・Push送信をスキップ）
+- `WEBHOOK_RATE_LIMIT_COUNT` を10000以上に設定（100 RPSを1分間受けるため。境界値による429を避ける）
+- `RESERVATION_TYPE` と同名の受付中・管理者割り当て済み予約種別
+- 実行元から到達可能な `BASE_URL`
+
+```bash
+k6 run \
+   -e BASE_URL=https://test.example.com \
+   -e CHANNEL_SECRET="$CHANNEL_SECRET" \
+   -e RESERVATION_TYPE=相談 \
+   -e RUN_ID="$(date +%Y%m%d%H%M%S)" \
+   loadtests/reservation-callback-100rps.js
+```
+
+このシナリオはLINE署名を生成し、異なるユーザーIDで `予約 相談` を送信します。`/callback` は内部エラーでもLINE再送防止のため200を返すため、k6のHTTP成功率だけではDB登録成功率を判定できません。試験後に、送信リクエスト数（100 RPS × 600秒 = 60000）と予約登録数をDBで照合してください。
+
+```sql
+SELECT COUNT(*) AS loadtest_reservations
+FROM reservations
+WHERE user_id LIKE 'Uloadtest<実行時のRUN_ID>%'
+   AND created_at >= CURRENT_TIMESTAMP - INTERVAL '15 minutes';
+```
+
+試験後に作成データを削除する場合は、対象時刻とユーザーIDの条件を確認してから実行してください。
+
 運用の目安:
 1. まず `healthz` を 1 分間隔で監視し、Webプロセス停止を検知する。
 2. 追加で `readyz` を監視し、DB障害や接続不可を検知する。
