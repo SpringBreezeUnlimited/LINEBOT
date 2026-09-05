@@ -6,6 +6,7 @@
 形でmain.py側で登録する。
 """
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import psycopg2  # type: ignore
 from flask import request, abort  # type: ignore
@@ -19,6 +20,7 @@ from config import (
     STATUS_WAITING,
     STATUS_CALLED,
     STATUS_CANCELLED,
+    WEBHOOK_ASYNC_WORKERS,
 )
 from database import get_connection, is_accepting_new, is_webhook_rate_limited, get_accepting_type_names
 import services.line_service as line_service
@@ -36,6 +38,23 @@ from validators import normalize_type_name, validate_type_name
 logger = logging.getLogger("line_routes")
 
 handler = WebhookHandler(CHANNEL_SECRET)
+_WEBHOOK_EXECUTOR = ThreadPoolExecutor(
+    max_workers=WEBHOOK_ASYNC_WORKERS,
+    thread_name_prefix="line-webhook",
+)
+
+
+def _process_webhook(webhook_handler, body: str, signature: str, ip: str) -> None:
+    try:
+        webhook_handler.handle(body, signature)
+    except Exception:
+        # 受付後の処理失敗は再送を誘発しないようログだけ記録する。
+        logger.exception(
+            "Failed to process LINE webhook event ip=%s signature=%s body_len=%s",
+            ip,
+            (signature or "")[:64],
+            len(body) if body is not None else 0,
+        )
 
 
 def callback():
@@ -47,18 +66,19 @@ def callback():
         abort(400)
     body = request.get_data(as_text=True)
     try:
-        handler.handle(body, signature)
+        # 署名検証とJSON解析だけを同期で行い、予約処理は応答後に実行する。
+        handler.parser.parse(body, signature, as_payload=True)
     except InvalidSignatureError:
         abort(400)
     except Exception:
-        # ハンドラー内の一時的な失敗で5xxを返すとLINEが再送し、二重処理につながるため200で吸収する。
         logger.exception(
-            "Failed to process LINE webhook event ip=%s signature=%s body_len=%s",
+            "Failed to validate LINE webhook event ip=%s signature=%s body_len=%s",
             ip,
             (signature or "")[:64],
             len(body) if body is not None else 0,
         )
         return "OK"
+    _WEBHOOK_EXECUTOR.submit(_process_webhook, handler, body, signature, ip)
     return "OK"
 
 IGNORED_REPLY_MESSAGE = "https://ukweb.ikura.workers.dev/"

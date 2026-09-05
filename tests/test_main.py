@@ -1,4 +1,5 @@
 import csv
+import threading
 from io import BytesIO
 from datetime import datetime
 from types import SimpleNamespace
@@ -2286,6 +2287,11 @@ def test_callback_invalid_signature_returns_400(client, app_module, monkeypatch)
     monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
 
     class InvalidSignatureHandler:
+        class parser:
+            @staticmethod
+            def parse(_body, _signature, as_payload=False):
+                raise app_module.InvalidSignatureError("bad")
+
         @staticmethod
         def handle(_body, _signature):
             raise app_module.InvalidSignatureError("bad")
@@ -2315,11 +2321,17 @@ def test_callback_rate_limited_returns_429(client, app_module, monkeypatch):
 def test_callback_success_returns_ok(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
     monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
+    handled = threading.Event()
 
     class DummyHandler:
+        class parser:
+            @staticmethod
+            def parse(_body, _signature, as_payload=False):
+                return object()
+
         @staticmethod
         def handle(_body, _signature):
-            return None
+            handled.set()
 
     monkeypatch.setattr(app_module, "handler", DummyHandler())
     monkeypatch.setattr(app_module.line_routes, "handler", DummyHandler())
@@ -2332,6 +2344,7 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch):
     )
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "OK"
+    assert handled.wait(timeout=1)
 
 
 def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
@@ -2339,6 +2352,11 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
 
     class FailingHandler:
+        class parser:
+            @staticmethod
+            def parse(_body, _signature, as_payload=False):
+                return object()
+
         @staticmethod
         def handle(_body, _signature):
             raise RuntimeError("temporary downstream failure")
