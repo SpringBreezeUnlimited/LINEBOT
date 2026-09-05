@@ -821,11 +821,46 @@ def get_last_auto_call_summary(values=None):
 
 
 def get_runtime_settings(admin_id: int | None = None):
-    values = get_settings(RUNTIME_SETTING_KEYS)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT key, value FROM app_settings WHERE key = ANY(%s)",
+                (list(RUNTIME_SETTING_KEYS),),
+            )
+            values = {row[0]: row[1] for row in cur.fetchall()}
+            if admin_id is None:
+                cur.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM admin_accounts
+                        WHERE active = TRUE AND accepting_new = TRUE
+                    )
+                    """
+                )
+                accepting_row = cur.fetchone()
+                accepting_new = (
+                    bool(accepting_row[0]) if accepting_row is not None else False
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT accepting_new, active
+                    FROM admin_accounts
+                    WHERE id = %s
+                    """,
+                    (admin_id,),
+                )
+                accepting_row = cur.fetchone()
+                accepting_new = (
+                    True
+                    if accepting_row is None
+                    else bool(accepting_row[0]) and bool(accepting_row[1])
+                )
     raw_auto_call_count = (values.get("auto_call_count") or "0").strip()
     auto_call_count = int(raw_auto_call_count) if raw_auto_call_count.isdigit() else 0
     return {
-        "accepting_new": is_accepting_new(admin_id),
+        "accepting_new": accepting_new,
         "auto_call_count": auto_call_count,
         "last_auto_call": get_last_auto_call_summary(values),
         "latest_auto_call": get_auto_call_summary("last", values),
