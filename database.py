@@ -4,6 +4,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 import psycopg2  # type: ignore
+import redis  # type: ignore
 from psycopg2.pool import ThreadedConnectionPool  # type: ignore
 from flask import g, has_request_context  # type: ignore
 
@@ -22,6 +23,7 @@ from config import (
     WAIT_TIME_SETTING_KEYS,
     AUTO_CALL_SETTING_KEYS,
     RUNTIME_SETTING_KEYS,
+    REDIS_URL,
 )
 
 logger = logging.getLogger("database")
@@ -33,6 +35,28 @@ POOL_LOCK = Lock()
 SCHEMA_LOCK = Lock()
 SCHEMA_READY = False
 _CONNECTION_POOL = None
+_REDIS_CLIENT = None
+_WEBHOOK_RATE_LIMIT_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
+
+
+def get_redis_client():
+    global _REDIS_CLIENT
+    if not REDIS_URL:
+        return None
+    if _REDIS_CLIENT is None:
+        _REDIS_CLIENT = redis.Redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=DB_CONNECT_TIMEOUT,
+            socket_timeout=DB_CONNECT_TIMEOUT,
+        )
+    return _REDIS_CLIENT
 
 
 def get_connection_pool():
@@ -680,6 +704,19 @@ def record_login_failure(ip: str):
 
 
 def is_webhook_rate_limited(ip: str) -> bool:
+    redis_client = get_redis_client()
+    if redis_client is not None:
+        try:
+            count = redis_client.eval(
+                _WEBHOOK_RATE_LIMIT_SCRIPT,
+                1,
+                f"webhook:rate:{ip}",
+                WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
+            )
+            return int(count) > WEBHOOK_RATE_LIMIT_COUNT
+        except Exception:
+            logger.exception("Failed to check webhook rate limit with Redis for ip=%s", ip)
+            return True
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:

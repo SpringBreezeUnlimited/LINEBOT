@@ -12,6 +12,7 @@
 2. Render のダッシュボードで以下の環境変数を設定します。
    - `ALLOWED_HOSTS`: Render のアプリドメイン（例: `myapp.onrender.com`）。複数ドメインはカンマまたは空白区切りで指定できます。
    - その他の必須変数: `SECRET_KEY`, `ADMIN_PASSWORD_HASH`, `AUDIT_ADMIN_PASSWORD_HASH`, `CHANNEL_ACCESS_TOKEN`, `CHANNEL_SECRET`, `DATABASE_URL`, `OWNER_LINE_ID`
+   - 任意の `REDIS_URL` を設定すると、Webhookのレート制限をPostgreSQLではなくRedisで処理します。未設定時は従来のPostgreSQL方式です。
 3. デプロイします。Render は `Procfile` を自動検出して Gunicorn で起動します。
    - 本番では `ALLOWED_HOSTS` の設定が必須です。未設定だとアプリは起動に失敗します。
 

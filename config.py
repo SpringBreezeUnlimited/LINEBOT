@@ -82,10 +82,11 @@ if not raw_db_url:
     raise RuntimeError("DATABASE_URL is required")
 DATABASE_URL = normalize_db_url(raw_db_url)
 DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
+REDIS_URL = (os.getenv("REDIS_URL") or "").strip()
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.179"
+APP_VERSION = "v1.0.180"
 APP_RELEASED_AT = "2026-09-05 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False

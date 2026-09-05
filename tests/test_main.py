@@ -1192,6 +1192,26 @@ def test_is_webhook_rate_limited_on_exception_returns_true(app_module, monkeypat
     assert app_module.is_webhook_rate_limited("127.0.0.1") is True
 
 
+def test_is_webhook_rate_limited_uses_redis_when_configured(app_module, monkeypatch):
+    class FakeRedis:
+        def eval(self, script, numkeys, key, window_seconds):
+            assert "INCR" in script
+            assert numkeys == 1
+            assert key == "webhook:rate:127.0.0.1"
+            assert window_seconds == app_module.WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
+            return app_module.WEBHOOK_RATE_LIMIT_COUNT + 1
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", FakeRedis())
+    monkeypatch.setattr(
+        app_module.database,
+        "get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("PostgreSQL must not be used")),
+    )
+
+    assert app_module.is_webhook_rate_limited("127.0.0.1") is True
+
+
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200
