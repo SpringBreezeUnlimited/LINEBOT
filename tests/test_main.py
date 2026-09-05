@@ -2318,7 +2318,8 @@ def test_callback_rate_limited_returns_429(client, app_module, monkeypatch):
     assert response.status_code == 429
 
 
-def test_callback_success_returns_ok(client, app_module, monkeypatch):
+def test_callback_success_returns_ok(client, app_module, monkeypatch, caplog):
+    caplog.set_level(20, logger="line_routes")
     monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
     monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
     handled = threading.Event()
@@ -2345,6 +2346,16 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch):
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "OK"
     assert handled.wait(timeout=1)
+    assert any(
+        "metric=webhook_request" in record.message
+        and "result=accepted" in record.message
+        for record in caplog.records
+    )
+    assert any(
+        "metric=webhook_background" in record.message
+        and "result=success" in record.message
+        for record in caplog.records
+    )
 
 
 def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):

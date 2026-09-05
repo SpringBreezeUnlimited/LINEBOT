@@ -6,6 +6,7 @@
 形でmain.py側で登録する。
 """
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import psycopg2  # type: ignore
@@ -45,9 +46,12 @@ _WEBHOOK_EXECUTOR = ThreadPoolExecutor(
 
 
 def _process_webhook(webhook_handler, body: str, signature: str, ip: str) -> None:
+    started_at = time.perf_counter()
     try:
         webhook_handler.handle(body, signature)
+        result = "success"
     except Exception:
+        result = "error"
         # 受付後の処理失敗は再送を誘発しないようログだけ記録する。
         logger.exception(
             "Failed to process LINE webhook event ip=%s signature=%s body_len=%s",
@@ -55,16 +59,32 @@ def _process_webhook(webhook_handler, body: str, signature: str, ip: str) -> Non
             (signature or "")[:64],
             len(body) if body is not None else 0,
         )
+    finally:
+        logger.info(
+            "metric=webhook_background duration_ms=%.2f result=%s body_len=%s",
+            (time.perf_counter() - started_at) * 1000,
+            result,
+            len(body) if body is not None else 0,
+        )
 
 
 def callback():
+    started_at = time.perf_counter()
     ip = request.remote_addr or "unknown"
+    rate_limit_started_at = time.perf_counter()
     if is_webhook_rate_limited(ip):
+        logger.info(
+            "metric=webhook_request duration_ms=%.2f rate_limit_ms=%.2f result=rate_limited",
+            (time.perf_counter() - started_at) * 1000,
+            (time.perf_counter() - rate_limit_started_at) * 1000,
+        )
         abort(429)
+    rate_limit_ms = (time.perf_counter() - rate_limit_started_at) * 1000
     signature = request.headers.get("X-Line-Signature")
     if not signature:
         abort(400)
     body = request.get_data(as_text=True)
+    validation_started_at = time.perf_counter()
     try:
         # 署名検証とJSON解析だけを同期で行い、予約処理は応答後に実行する。
         handler.parser.parse(body, signature, as_payload=True)
@@ -78,7 +98,15 @@ def callback():
             len(body) if body is not None else 0,
         )
         return "OK"
+    validation_ms = (time.perf_counter() - validation_started_at) * 1000
     _WEBHOOK_EXECUTOR.submit(_process_webhook, handler, body, signature, ip)
+    logger.info(
+        "metric=webhook_request duration_ms=%.2f rate_limit_ms=%.2f validation_ms=%.2f result=accepted body_len=%s",
+        (time.perf_counter() - started_at) * 1000,
+        rate_limit_ms,
+        validation_ms,
+        len(body) if body is not None else 0,
+    )
     return "OK"
 
 IGNORED_REPLY_MESSAGE = "https://ukweb.ikura.workers.dev/"
