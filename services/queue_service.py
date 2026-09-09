@@ -88,12 +88,19 @@ def hour_digit(now=None) -> int:
     return {10: 1, 11: 2, 12: 3, 13: 4, 14: 5}.get(dt.hour, 0)
 
 
-def get_management_no(owner_admin_id: int | None = None) -> int:
+def get_management_no(owner_admin_id: int | None = None, cur=None) -> int:
+    def get_value(key: str, default: str) -> str:
+        if cur is None:
+            return get_setting(key, default)
+        cur.execute("SELECT value FROM app_settings WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return row[0] if row else default
+
     if owner_admin_id is not None:
-        val = get_setting(f"management_no_{owner_admin_id}", "")
+        val = get_value(f"management_no_{owner_admin_id}", "")
         if val.isdigit():
             return int(val) % 10
-    val = get_setting("management_no", "0")
+    val = get_value("management_no", "0")
     return int(val) % 10 if val.isdigit() else 0
 
 
@@ -137,20 +144,20 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     6 桁固定の整数 XXZYZA を採番して返す。
     表示には fmt_no() を使用する。
     
-    admin_accounts の採番更新だけを短いトランザクションで確定し、
-    その後の予約 INSERT が採番行のロックを保持しないようにする。
+    採番状態は専用テーブルで更新し、呼び出し元の予約トランザクションで確定する。
     """
     cur.execute(
         """
-            UPDATE admin_accounts
-            SET next_reservation_no = CASE
-                                WHEN COALESCE(next_reservation_no, 1) < 1
-                                    OR COALESCE(next_reservation_no, 1) > 999 THEN 2
-                                WHEN COALESCE(next_reservation_no, 1) = 999 THEN 1
-                ELSE COALESCE(next_reservation_no, 1) + 1
+            INSERT INTO reservation_number_sequences (owner_admin_id, next_sequence)
+            VALUES (%s, 2)
+            ON CONFLICT (owner_admin_id) DO UPDATE
+            SET next_sequence = CASE
+                WHEN reservation_number_sequences.next_sequence < 1
+                    OR reservation_number_sequences.next_sequence > 999 THEN 2
+                WHEN reservation_number_sequences.next_sequence = 999 THEN 1
+                ELSE reservation_number_sequences.next_sequence + 1
             END
-            WHERE id = %s
-            RETURNING next_reservation_no
+            RETURNING next_sequence
         """,
         (owner_admin_id,),
     )
@@ -159,10 +166,8 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
         raise ValueError("owner admin account not found")
     next_seq = int(row[0] or 1)
     seq = next_seq - 1 if next_seq > 1 else 999
-    cur.connection.commit()
-
     z_digit = (owner_admin_id - 1) % 10
-    a_digit = get_management_no(owner_admin_id)
+    a_digit = get_management_no(owner_admin_id, cur=cur)
 
     y_digit = secrets.randbelow(10)
     return seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
@@ -250,7 +255,51 @@ def cancel_active_reservations_without_notification() -> int:
         return 0
 
 
-def refresh_wait_time_estimate(now=None, owner_admin_id=None):
+def _refresh_wait_time_estimate_with_cursor(cur, current_dt, owner_admin_id):
+    minute_label = current_dt.strftime("%m-%d %H:%M")
+    if owner_admin_id is None:
+        cur.execute(
+            "SELECT COUNT(*) FROM reservations WHERE status = %s",
+            (STATUS_WAITING,),
+        )
+    else:
+        cur.execute(
+            """
+                SELECT COUNT(*)
+                FROM reservations r
+                JOIN reservation_types t ON r.type_id = t.id
+                WHERE r.status = %s AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
+            """,
+            (STATUS_WAITING, owner_admin_id),
+        )
+    waiting_count = int(cur.fetchone()[0] or 0)
+    estimated_minutes = calculate_wait_time_minutes(waiting_count)
+    estimated_seconds = estimated_minutes * 60
+    if owner_admin_id is None:
+        for key, value in {
+            "last_wait_time_run_at": minute_label,
+            "last_wait_time_estimated_seconds": str(estimated_seconds),
+            "last_wait_time_waiting_count": str(waiting_count),
+            "last_wait_time_avg_service_seconds": "0",
+        }.items():
+            cur.execute(
+                """
+                    INSERT INTO app_settings (key, value)
+                    VALUES (%s, %s)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """,
+                (key, value),
+            )
+    return {
+        "run_at": minute_label,
+        "waiting_count": waiting_count,
+        "avg_service_seconds": 0,
+        "estimated_seconds": estimated_seconds,
+        "message": f"現在の目安待ち時間: {estimated_minutes}分",
+    }
+
+
+def refresh_wait_time_estimate(now=None, owner_admin_id=None, cur=None):
     # 目安待ち時間は「前に並んでいる人数 × 0.5 + 2分」で算出し、整数分で保存する。
     current_dt = datetime.now(JST) if now is None else now
     minute_label = current_dt.strftime("%m-%d %H:%M")
@@ -262,6 +311,10 @@ def refresh_wait_time_estimate(now=None, owner_admin_id=None):
         "message": "現在の目安待ち時間: 2分",
     }
     try:
+        if cur is not None:
+            return _refresh_wait_time_estimate_with_cursor(
+                cur, current_dt, owner_admin_id
+            )
         with get_connection() as conn:
             with conn.cursor() as cur:
                 if owner_admin_id is None:

@@ -575,6 +575,10 @@ def process_reservation(event, user_id, user_message):
                             send_flex_notice(event.reply_token, "予約状況", body)
                             return
                         raise
+                    refresh_wait_time_estimate(
+                        owner_admin_id=type_owner_admin_id,
+                        cur=cur,
+                    )
                     conn.commit()
                     logger.info(
                         "Created reservation %s by user %s type_id=%s",
@@ -602,7 +606,6 @@ def process_reservation(event, user_id, user_message):
                         )
                         waiting_people_ahead = int(cur.fetchone()[0] or 0)
                         body = f"【受付完了】チケット番号: {fmt_no(reservation_no)} / 待ち: {waiting_people_ahead}人"
-                    refresh_wait_time_estimate(owner_admin_id=type_owner_admin_id)
                     estimated_minutes = calculate_wait_time_minutes(
                         waiting_people_ahead
                     )

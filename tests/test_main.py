@@ -401,6 +401,8 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
+            elif "reservation_number_sequences" in query:
+                self._last = (2,)
             elif "next_reservation_no" in query and "FROM admin_accounts" in query:
                 self._last = (1,)
             elif "FROM admin_accounts" in query and "login_id" in query:
@@ -453,7 +455,7 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda now=None, owner_admin_id=None: {
+        lambda now=None, owner_admin_id=None, cur=None: {
             "message": "現在の目安待ち時間: 6分",
             "estimated_seconds": 360,
         },
@@ -461,7 +463,7 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
     monkeypatch.setattr(
         app_module.line_routes,
         "refresh_wait_time_estimate",
-        lambda now=None, owner_admin_id=None: {
+        lambda now=None, owner_admin_id=None, cur=None: {
             "message": "現在の目安待ち時間: 6分",
             "estimated_seconds": 360,
         },
@@ -517,19 +519,23 @@ def test_allocate_admin_reservation_no_generates_xxxyza_format(app_module, monke
             self.connection = FakeConnection()
 
         def execute(self, query, params=None):
-            if "UPDATE admin_accounts" in query:
+            if "reservation_number_sequences" in query:
                 pass
 
         def fetchone(self):
             return (2,)
 
-    monkeypatch.setattr(app_module.queue_service, "get_management_no", lambda owner_admin_id=None: 0)
+    monkeypatch.setattr(
+        app_module.queue_service,
+        "get_management_no",
+        lambda owner_admin_id=None, cur=None: 0,
+    )
     cur = FakeCursor()
     res = app_module.allocate_admin_reservation_no(cur, owner_admin_id=1)
     # XXX=001, Y=?, Z=0, A=0 -> res >= 1000 and res <= 1990
     assert 1000 <= res <= 1990
     assert app_module.fmt_no(res).endswith("00")  # Z=0, A=0
-    assert cur.connection.commit_count == 1
+    assert cur.connection.commit_count == 0
 
 
 def test_fmt_no_formats_as_six_digits(app_module):
@@ -3109,6 +3115,8 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
                 self._last = (1, "相談", True, 7, "説明", "")
             elif "WHERE r.user_id = %s AND r.status IN" in query:
                 self._last = None
+            elif "reservation_number_sequences" in query:
+                self._last = (2,)
             elif "next_reservation_no" in query and "FROM admin_accounts" in query:
                 self._last = (1,)
             elif "FROM admin_accounts" in query and "login_id" in query:
@@ -3161,7 +3169,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
     monkeypatch.setattr(
         app_module,
         "refresh_wait_time_estimate",
-        lambda now=None, owner_admin_id=None: {
+            lambda now=None, owner_admin_id=None, cur=None: {
             "message": "現在の目安待ち時間: 6分",
             "estimated_seconds": 360,
         },
@@ -3169,7 +3177,7 @@ def test_process_reservation_new_booking_replies_with_latest_wait_time(
     monkeypatch.setattr(
         app_module.line_routes,
         "refresh_wait_time_estimate",
-        lambda now=None, owner_admin_id=None: {
+            lambda now=None, owner_admin_id=None, cur=None: {
             "message": "現在の目安待ち時間: 6分",
             "estimated_seconds": 360,
         },

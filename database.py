@@ -296,25 +296,6 @@ def sync_reservation_owner_numbers(cur):
             WHERE r.id = numbered.id
         """
     )
-    cur.execute(
-        """
-            UPDATE admin_accounts a
-            SET next_reservation_no = GREATEST(
-                a.next_reservation_no,
-                COALESCE(next_numbers.next_reservation_no, 1)
-            )
-            FROM (
-                SELECT owner_admin_id, COALESCE(MAX(reservation_no), 0) + 1 AS next_reservation_no
-                FROM reservations
-                WHERE owner_admin_id IS NOT NULL
-                  AND reservation_no IS NOT NULL
-                GROUP BY owner_admin_id
-            ) AS next_numbers
-            WHERE a.id = next_numbers.owner_admin_id
-        """
-    )
-
-
 def ensure_types_table():
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -440,6 +421,27 @@ def ensure_admin_accounts_table():
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
                     ON admin_accounts (role, active)
                 """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS reservation_number_sequences (
+                    owner_admin_id INTEGER PRIMARY KEY REFERENCES admin_accounts(id) ON DELETE CASCADE,
+                    next_sequence INTEGER NOT NULL DEFAULT 1
+                )
+            """)
+            cur.execute("""
+                INSERT INTO reservation_number_sequences (owner_admin_id, next_sequence)
+                SELECT a.id, GREATEST(
+                    1,
+                    COALESCE(MAX(r.reservation_no), 0) + 1
+                )
+                FROM admin_accounts a
+                LEFT JOIN reservations r ON r.owner_admin_id = a.id
+                GROUP BY a.id
+                ON CONFLICT (owner_admin_id) DO UPDATE SET
+                    next_sequence = GREATEST(
+                        reservation_number_sequences.next_sequence,
+                        EXCLUDED.next_sequence
+                    )
+            """)
             cur.execute(
                 """
                     INSERT INTO admin_accounts (login_id, password_hash, role)
