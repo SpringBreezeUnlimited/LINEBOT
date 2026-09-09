@@ -137,63 +137,35 @@ def allocate_admin_reservation_no(cur, owner_admin_id: int) -> int:
     6 桁固定の整数 XXZYZA を採番して返す。
     表示には fmt_no() を使用する。
     
-    改善: unique index の衝突を活用して、SELECT の繰り返しを削減。
+    admin_accounts の採番更新だけを短いトランザクションで確定し、
+    その後の予約 INSERT が採番行のロックを保持しないようにする。
     """
     cur.execute(
         """
-            SELECT next_reservation_no
-            FROM admin_accounts
+            UPDATE admin_accounts
+            SET next_reservation_no = CASE
+                                WHEN COALESCE(next_reservation_no, 1) < 1
+                                    OR COALESCE(next_reservation_no, 1) > 999 THEN 2
+                                WHEN COALESCE(next_reservation_no, 1) = 999 THEN 1
+                ELSE COALESCE(next_reservation_no, 1) + 1
+            END
             WHERE id = %s
-            FOR UPDATE
+            RETURNING next_reservation_no
         """,
         (owner_admin_id,),
     )
     row = cur.fetchone()
     if not row:
         raise ValueError("owner admin account not found")
-    seq = int(row[0] or 1)
-    if seq > 999 or seq < 1:
-        seq = 1
+    next_seq = int(row[0] or 1)
+    seq = next_seq - 1 if next_seq > 1 else 999
+    cur.connection.commit()
 
     z_digit = (owner_admin_id - 1) % 10
     a_digit = get_management_no(owner_admin_id)
 
-    res_no = None
-    for attempt in range(999):
-        y_digit = secrets.randbelow(10)
-        candidate = seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
-        try:
-            cur.execute(
-                """
-                    SELECT 1 FROM reservations 
-                    WHERE owner_admin_id = %s AND reservation_no = %s 
-                    LIMIT 1
-                """,
-                (owner_admin_id, candidate),
-            )
-            if not cur.fetchone():
-                res_no = candidate
-                break
-        except Exception:
-            pass
-        
-        if res_no is None and attempt % 10 == 9:
-            seq = seq + 1 if seq < 999 else 1
-
-    if res_no is None:
-        y_digit = secrets.randbelow(10)
-        res_no = seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
-
-    next_seq = seq + 1 if seq < 999 else 1
-    cur.execute(
-        """
-            UPDATE admin_accounts
-            SET next_reservation_no = %s
-            WHERE id = %s
-        """,
-        (next_seq, owner_admin_id),
-    )
-    return res_no
+    y_digit = secrets.randbelow(10)
+    return seq * 1000 + y_digit * 100 + z_digit * 10 + a_digit
 
 
 def fmt_no(reservation_no: int | str) -> str:

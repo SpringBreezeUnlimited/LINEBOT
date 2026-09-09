@@ -505,23 +505,23 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
 
 
 def test_allocate_admin_reservation_no_generates_xxxyza_format(app_module, monkeypatch):
+    class FakeConnection:
+        def __init__(self):
+            self.commit_count = 0
+
+        def commit(self):
+            self.commit_count += 1
+
     class FakeCursor:
         def __init__(self):
-            self.seq = 1
+            self.connection = FakeConnection()
 
         def execute(self, query, params=None):
-            if "SELECT next_reservation_no" in query:
-                pass
-            elif "SELECT 1 FROM reservations" in query:
-                pass
-            elif "UPDATE admin_accounts" in query:
+            if "UPDATE admin_accounts" in query:
                 pass
 
         def fetchone(self):
-            if self.seq == 1:
-                self.seq += 1
-                return (1,)
-            return None
+            return (2,)
 
     monkeypatch.setattr(app_module.queue_service, "get_management_no", lambda owner_admin_id=None: 0)
     cur = FakeCursor()
@@ -529,6 +529,7 @@ def test_allocate_admin_reservation_no_generates_xxxyza_format(app_module, monke
     # XXX=001, Y=?, Z=0, A=0 -> res >= 1000 and res <= 1990
     assert 1000 <= res <= 1990
     assert app_module.fmt_no(res).endswith("00")  # Z=0, A=0
+    assert cur.connection.commit_count == 1
 
 
 def test_fmt_no_formats_as_six_digits(app_module):
