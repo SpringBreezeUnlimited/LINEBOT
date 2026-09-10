@@ -515,21 +515,90 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(event.reply_token, "予約状況", body)
                     return
                 else:
-                    try:
-                        reservation_no = allocate_admin_reservation_no(
-                            cur, type_owner_admin_id
-                        )
-                        cur.execute(
-                            """
-                                INSERT INTO reservations (
-                                    user_id, message, type_id, owner_admin_id, reservation_no
-                                ) VALUES (%s, %s, %s, %s, %s)
-                                RETURNING id
-                            """,
-                            (user_id, "", type_id, type_owner_admin_id, reservation_no),
-                        )
-                        new_id = cur.fetchone()[0]
-                    except psycopg2.IntegrityError:
+                    for allocation_attempt in range(10):
+                        try:
+                            reservation_no = allocate_admin_reservation_no(
+                                cur, type_owner_admin_id
+                            )
+                            cur.execute(
+                                """
+                                    INSERT INTO reservations (
+                                        user_id, message, type_id, owner_admin_id, reservation_no
+                                    ) VALUES (%s, %s, %s, %s, %s)
+                                    RETURNING id
+                                """,
+                                (user_id, "", type_id, type_owner_admin_id, reservation_no),
+                            )
+                            new_id = cur.fetchone()[0]
+                            break
+                        except psycopg2.IntegrityError as integrity_error:
+                            constraint_name = getattr(
+                                getattr(integrity_error, "diag", None),
+                                "constraint_name",
+                                None,
+                            )
+                            if constraint_name == "uq_reservations_owner_reservation_no":
+                                conn.rollback()
+                                if allocation_attempt < 9:
+                                    continue
+                                logger.exception(
+                                    "Reservation number allocation exhausted for user %s",
+                                    user_id,
+                                )
+                                send_flex_notice(
+                                    event.reply_token,
+                                    "受付エラー",
+                                    "予約番号の発行に失敗しました。時間をおいて再度お試しください。",
+                                )
+                                return
+                            if constraint_name != "uq_reservations_user_active":
+                                raise
+
+                            conn.rollback()
+                            cur.execute(
+                                """
+                                    SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, r.type_id, t.name, COALESCE(r.owner_admin_id, t.owner_admin_id)
+                                    FROM reservations r
+                                    LEFT JOIN reservation_types t ON r.type_id = t.id
+                                    WHERE r.user_id = %s AND r.status IN (%s, %s)
+                                    ORDER BY r.id DESC LIMIT 1
+                                """,
+                                (user_id, STATUS_WAITING, STATUS_CALLED),
+                            )
+                            existing_after_conflict = cur.fetchone()
+                            if existing_after_conflict:
+                                (
+                                    res_id,
+                                    display_no,
+                                    status,
+                                    _existing_type_id,
+                                    existing_type_name,
+                                    existing_owner_admin_id,
+                                ) = existing_after_conflict
+                                if status == STATUS_WAITING:
+                                    if existing_owner_admin_id is not None:
+                                        waiting_people_ahead = (
+                                            count_waiting_people_ahead_by_owner(
+                                                cur,
+                                                reservation_id=res_id,
+                                                owner_admin_id=existing_owner_admin_id,
+                                            )
+                                        )
+                                        body = f"予約済みです。チケット番号: {fmt_no(display_no)} / 種類: {existing_type_name} / 待ち: {waiting_people_ahead}人"
+                                    else:
+                                        cur.execute(
+                                            "SELECT COUNT(*) FROM reservations WHERE status = %s AND owner_admin_id IS NULL AND id < %s",
+                                            (STATUS_WAITING, res_id),
+                                        )
+                                        body = f"予約済みです。チケット番号: {fmt_no(display_no)} / 待ち: {cur.fetchone()[0]}人"
+                                elif status == STATUS_CALLED:
+                                    if existing_type_name:
+                                        body = f"【呼出中】チケット番号: {fmt_no(display_no)} / 種類: {existing_type_name} 会場へお越しください！"
+                                    else:
+                                        body = f"【呼出中】チケット番号: {fmt_no(display_no)} 会場へお越しください！"
+                                send_flex_notice(event.reply_token, "予約状況", body)
+                                return
+                            raise
                         conn.rollback()
                         cur.execute(
                             """

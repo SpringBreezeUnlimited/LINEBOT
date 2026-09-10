@@ -356,6 +356,9 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
         def cursor(self):
             return FakeCursor()
 
+        def rollback(self):
+            return None
+
         def commit(self):
             return None
 
@@ -385,9 +388,17 @@ def test_ensure_reservations_table_adds_type_id_column(app_module, monkeypatch):
 def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeypatch):
     queries = []
 
+    class ReservationNumberCollision(app_module.psycopg2.IntegrityError):
+        @property
+        def diag(self):
+            return SimpleNamespace(
+                constraint_name="uq_reservations_owner_reservation_no"
+            )
+
     class FakeCursor:
         def __init__(self):
             self._last = None
+            self.insert_attempts = 0
 
         def __enter__(self):
             return self
@@ -412,6 +423,9 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
             elif "SELECT reservation_no FROM reservations" in query:
                 self._last_all = []
             elif "INSERT INTO reservations" in query:
+                self.insert_attempts += 1
+                if self.insert_attempts == 1:
+                    raise ReservationNumberCollision()
                 self._last = (10,)
             elif "SELECT 1 FROM reservations" in query:
                 self._last = None
@@ -440,6 +454,9 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
 
         def cursor(self):
             return FakeCursor()
+
+        def rollback(self):
+            return None
 
         def commit(self):
             return None
@@ -493,7 +510,7 @@ def test_process_reservation_persists_user_id_on_new_booking(app_module, monkeyp
         for query, params in queries
         if "INSERT INTO reservations" in query
     ]
-    assert len(insert_queries) == 1
+    assert len(insert_queries) == 2
     inserted = insert_queries[0]
     # (user_id, message, type_id, owner_admin_id, reservation_no) の 5 要素
     assert inserted[0] == "U-123"
