@@ -29,7 +29,16 @@ from flask_compress import Compress  # type: ignore
 from linebot.v3.webhooks import MessageEvent, TextMessageContent  # type: ignore
 from werkzeug.middleware.proxy_fix import ProxyFix  # type: ignore
 
-from config import parse_bool_env, SECRET_KEY, ADMIN_PASSWORD_DEPRECATED_SET, SESSION_IDLE_TIMEOUT_SECONDS, APP_VERSION, APP_RELEASED_AT
+from config import (
+    parse_bool_env,
+    SECRET_KEY,
+    ADMIN_PASSWORD_DEPRECATED_SET,
+    SESSION_IDLE_TIMEOUT_SECONDS,
+    APP_VERSION,
+    APP_RELEASED_AT,
+    MAX_REQUEST_BODY_BYTES,
+    TRUSTED_PROXY_HOPS,
+)
 from auth import AppSessionInterface
 from formatting import format_duration_from_seconds
 from services.queue_service import format_call_origin
@@ -182,7 +191,13 @@ def create_app():
     app = Flask(__name__)
     Compress(app)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 1800
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    if TRUSTED_PROXY_HOPS:
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app,
+            x_for=TRUSTED_PROXY_HOPS,
+            x_proto=TRUSTED_PROXY_HOPS,
+            x_host=TRUSTED_PROXY_HOPS,
+        )
 
     minify_css_files()
     minify_js_files()
@@ -194,6 +209,7 @@ def create_app():
         )
 
     app.config.update(
+        MAX_CONTENT_LENGTH=MAX_REQUEST_BODY_BYTES,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=parse_bool_env("SESSION_COOKIE_SECURE", True),

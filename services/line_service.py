@@ -39,6 +39,7 @@ from config import (
     ALLOWED_TYPE_IMAGE_EXTENSIONS,
     FLEX_SAFE_IMAGE_EXTENSIONS,
     MAX_TYPE_IMAGE_SIZE,
+    MAX_TYPE_IMAGE_UPLOAD_BYTES,
     JPEG_QUALITY,
 )
 
@@ -406,7 +407,9 @@ def save_type_image_upload(image_file) -> tuple[bytes, str, str]:
     suffix = Path(secure_filename(filename)).suffix.lower()
     if suffix not in ALLOWED_TYPE_IMAGE_EXTENSIONS:
         raise ValueError("画像は jpg, jpeg, png, gif, webp のみアップロードできます。")
-    raw_data = image_file.read()
+    raw_data = image_file.read(MAX_TYPE_IMAGE_UPLOAD_BYTES + 1)
+    if len(raw_data) > MAX_TYPE_IMAGE_UPLOAD_BYTES:
+        raise ValueError("画像ファイルが大きすぎます。")
     if not raw_data:
         return b"", "", ""
 

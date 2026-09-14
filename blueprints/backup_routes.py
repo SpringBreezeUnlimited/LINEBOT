@@ -17,6 +17,7 @@ from config import (
     APP_VERSION,
     ROLE_ADMIN,
     GLOBAL_RESERVATION_DELETE_ENABLED,
+    MAX_BACKUP_FILE_BYTES,
 )
 from database import get_connection
 import database
@@ -41,6 +42,14 @@ BACKUP_TABLES = [
     "webhook_request_records",
 ]
 _VALID_BACKUP_TABLES = frozenset(BACKUP_TABLES)
+
+
+def _read_backup_file(uploaded_file) -> bytes:
+    """バックアップを上限付きで読み込み、メモリ消費を制限する。"""
+    raw = uploaded_file.read(MAX_BACKUP_FILE_BYTES + 1)
+    if len(raw) > MAX_BACKUP_FILE_BYTES:
+        raise ValueError("バックアップファイルが大きすぎます。")
+    return raw
 
 
 def validate_table_name(table_name: str) -> str:
@@ -457,7 +466,7 @@ def admin_backup_import():
         )
 
     try:
-        raw = uploaded_file.read()
+        raw = _read_backup_file(uploaded_file)
         backup_data = json.loads(raw.decode("utf-8"))
     except Exception:
         return redirect(
@@ -540,7 +549,7 @@ def admin_backup_import_account(account_id):
         )
 
     try:
-        raw = uploaded_file.read()
+        raw = _read_backup_file(uploaded_file)
         backup_data = json.loads(raw.decode("utf-8"))
     except Exception:
         return redirect(

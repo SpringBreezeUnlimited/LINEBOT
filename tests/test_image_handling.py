@@ -33,6 +33,14 @@ def test_save_type_image_upload_returns_empty_when_file_body_empty(app_module):
     assert (data, mimetype, filename) == (b"", "", "")
 
 
+def test_save_type_image_upload_rejects_oversized_payload(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.line_service, "MAX_TYPE_IMAGE_UPLOAD_BYTES", 4)
+    image_file = BytesIO(b"12345")
+    image_file.filename = "image.jpg"
+    with pytest.raises(ValueError, match="大きすぎます"):
+        app_module.save_type_image_upload(image_file)
+
+
 @pytest.mark.parametrize(
     "filename",
     ["malware.exe", "script.svg", "archive.zip", "noext", "shell.php.png.php"],

@@ -64,6 +64,19 @@ def test_deserialize_value_ignores_unknown_type_tag(app_module):
     assert br._deserialize_value(payload) == payload
 
 
+def test_read_backup_file_rejects_oversized_payload(app_module, monkeypatch):
+    br = app_module.backup_routes
+    monkeypatch.setattr(br, "MAX_BACKUP_FILE_BYTES", 4)
+    with pytest.raises(ValueError, match="大きすぎます"):
+        br._read_backup_file(BytesIO(b"12345"))
+
+
+def test_read_backup_file_accepts_payload_at_limit(app_module, monkeypatch):
+    br = app_module.backup_routes
+    monkeypatch.setattr(br, "MAX_BACKUP_FILE_BYTES", 4)
+    assert br._read_backup_file(BytesIO(b"1234")) == b"1234"
+
+
 # ---------------------------------------------------------------------------
 # _import_table: カラム名インジェクション対策
 # ---------------------------------------------------------------------------

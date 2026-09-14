@@ -1190,6 +1190,10 @@ def test_apply_security_headers_admin_page(app_module):
         assert "no-store" in result.headers.get("Cache-Control", "")
 
 
+def test_request_body_limit_is_configured(app_module):
+    assert app_module.app.config["MAX_CONTENT_LENGTH"] == 64 * 1024 * 1024
+
+
 def test_is_login_rate_limited_on_exception_returns_true(app_module, monkeypatch):
     monkeypatch.setattr(
         app_module.database,

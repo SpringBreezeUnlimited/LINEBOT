@@ -86,7 +86,7 @@ REDIS_URL = (os.getenv("REDIS_URL") or "").strip()
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.193"
+APP_VERSION = "v1.0.194"
 APP_RELEASED_AT = "2026-09-05 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False
@@ -98,6 +98,20 @@ MAX_TYPE_IMAGE_SIZE = (1920, 1080)
 JPEG_QUALITY = 85
 
 FORCE_HTTPS = parse_bool_env("FORCE_HTTPS", True)
+
+# リバースプロキシが付与する Forwarded 系ヘッダーを信頼する段数。
+# アプリを直接公開する場合は 0 にして、外部からのヘッダー偽装を防ぐ。
+TRUSTED_PROXY_HOPS = parse_int_env("TRUSTED_PROXY_HOPS", 1, 0, 3)
+
+MAX_REQUEST_BODY_BYTES = parse_int_env(
+    "MAX_REQUEST_BODY_BYTES", 64 * 1024 * 1024, 1024, 256 * 1024 * 1024
+)
+MAX_BACKUP_FILE_BYTES = parse_int_env(
+    "MAX_BACKUP_FILE_BYTES", 50 * 1024 * 1024, 1024, 256 * 1024 * 1024
+)
+MAX_TYPE_IMAGE_UPLOAD_BYTES = parse_int_env(
+    "MAX_TYPE_IMAGE_UPLOAD_BYTES", 10 * 1024 * 1024, 1024, 100 * 1024 * 1024
+)
 
 ALLOWED_HOSTS = parse_allowed_hosts(os.getenv("ALLOWED_HOSTS", ""))
 
