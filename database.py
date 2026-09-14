@@ -19,6 +19,8 @@ from config import (
     LOGIN_WINDOW_SECONDS,
     WEBHOOK_RATE_LIMIT_COUNT,
     WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
+    USER_REQUEST_RATE_LIMIT_COUNT,
+    USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
     STATUS_WAITING,
     WAIT_TIME_SETTING_KEYS,
     AUTO_CALL_SETTING_KEYS,
@@ -584,6 +586,17 @@ def ensure_rate_limit_tables():
                 CREATE INDEX IF NOT EXISTS idx_webhook_request_records_ip_requested_at
                 ON webhook_request_records (ip_address, requested_at DESC)
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_request_records (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_user_request_records_user_requested_at
+                ON user_request_records (user_id, requested_at DESC)
+            """)
             conn.commit()
 
 
@@ -670,6 +683,9 @@ def cleanup_rate_limit_records():
                 cur.execute(
                     "DELETE FROM webhook_request_records WHERE requested_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
                 )
+                cur.execute(
+                    "DELETE FROM user_request_records WHERE requested_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
+                )
                 conn.commit()
     except Exception:
         logger.exception("Failed to cleanup rate limit records")
@@ -740,6 +756,47 @@ def is_webhook_rate_limited(ip: str) -> bool:
                 return False
     except Exception:
         logger.exception("Failed to check webhook rate limit for ip=%s", ip)
+        return True
+
+
+def is_user_request_rate_limited(user_id: str) -> bool:
+    """同一LINEユーザーのメッセージ処理をRedis優先でレート制限する。"""
+    if not user_id:
+        return True
+    redis_client = get_redis_client()
+    if redis_client is not None:
+        try:
+            count = redis_client.eval(
+                _WEBHOOK_RATE_LIMIT_SCRIPT,
+                1,
+                f"user:rate:{user_id}",
+                USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
+            )
+            return int(count) > USER_REQUEST_RATE_LIMIT_COUNT
+        except Exception:
+            logger.exception("Failed to check user rate limit user_id=%s", user_id)
+            return True
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                window_start = datetime.now(timezone.utc) - timedelta(
+                    seconds=USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS
+                )
+                cur.execute(
+                    "SELECT COUNT(*) FROM user_request_records WHERE user_id = %s AND requested_at > %s",
+                    (user_id, window_start),
+                )
+                count = cur.fetchone()[0]
+                if count >= USER_REQUEST_RATE_LIMIT_COUNT:
+                    return True
+                cur.execute(
+                    "INSERT INTO user_request_records (user_id) VALUES (%s)",
+                    (user_id,),
+                )
+                conn.commit()
+                return False
+    except Exception:
+        logger.exception("Failed to check user rate limit user_id=%s", user_id)
         return True
 
 

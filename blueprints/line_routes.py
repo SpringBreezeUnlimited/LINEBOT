@@ -23,7 +23,13 @@ from config import (
     STATUS_CANCELLED,
     WEBHOOK_ASYNC_WORKERS,
 )
-from database import get_connection, is_accepting_new, is_webhook_rate_limited, get_accepting_type_names
+from database import (
+    get_connection,
+    is_accepting_new,
+    is_webhook_rate_limited,
+    is_user_request_rate_limited,
+    get_accepting_type_names,
+)
 import services.line_service as line_service
 from services.line_service import build_type_image_url, send_flex_notice, send_reply_message
 import services.queue_service as queue_service
@@ -130,6 +136,13 @@ def handle_message(event):
     if should_ignore_reply_message(user_message):
         return
     user_id = event.source.user_id
+    if is_user_request_rate_limited(user_id):
+        send_flex_notice(
+            event.reply_token,
+            "しばらくお待ちください",
+            "リクエストが集中しています。少し時間をおいて再度お試しください。",
+        )
+        return
     try:
         process_reservation(event, user_id, user_message)
     except Exception:

@@ -1241,6 +1241,21 @@ def test_is_webhook_rate_limited_uses_redis_when_configured(app_module, monkeypa
     assert app_module.is_webhook_rate_limited("127.0.0.1") is True
 
 
+def test_is_user_request_rate_limited_uses_redis(app_module, monkeypatch):
+    class FakeRedis:
+        def eval(self, script, numkeys, key, window_seconds):
+            assert key == "user:rate:U-123"
+            assert window_seconds == app_module.database.USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS
+            return app_module.database.USER_REQUEST_RATE_LIMIT_COUNT + 1
+
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", FakeRedis())
+    assert app_module.database.is_user_request_rate_limited("U-123") is True
+
+
+def test_is_user_request_rate_limited_rejects_missing_user_id(app_module):
+    assert app_module.database.is_user_request_rate_limited("") is True
+
+
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200
@@ -2420,6 +2435,12 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
 def test_handle_message_keeps_processing_after_reservation_error(app_module, monkeypatch):
     processed_messages = []
 
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "is_user_request_rate_limited",
+        lambda _user_id: False,
+    )
+
     def fake_process_reservation(event, user_id, user_message):
         processed_messages.append(user_message)
         if len(processed_messages) == 1:
@@ -2443,6 +2464,36 @@ def test_handle_message_keeps_processing_after_reservation_error(app_module, mon
     app_module.handle_message(second_event)
 
     assert processed_messages == ["予約 相談", "待ち時間"]
+
+
+def test_handle_message_blocks_rate_limited_user(app_module, monkeypatch):
+    processed_messages = []
+    replies = []
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "is_user_request_rate_limited",
+        lambda _user_id: True,
+    )
+    monkeypatch.setattr(
+        app_module,
+        "process_reservation",
+        lambda *args: processed_messages.append(args),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "send_flex_notice",
+        lambda *args: replies.append(args),
+    )
+
+    event = SimpleNamespace(
+        message=SimpleNamespace(text="予約 相談"),
+        source=SimpleNamespace(user_id="U-limited"),
+        reply_token="reply-token",
+    )
+    app_module.handle_message(event)
+
+    assert processed_messages == []
+    assert replies[0][1] == "しばらくお待ちください"
 
 
 def test_managed_connection_rolls_back_on_exception(app_module, monkeypatch):
