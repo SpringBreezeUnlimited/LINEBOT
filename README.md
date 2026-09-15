@@ -13,6 +13,7 @@
    - `ALLOWED_HOSTS`: Render のアプリドメイン（例: `myapp.onrender.com`）。複数ドメインはカンマまたは空白区切りで指定できます。
    - その他の必須変数: `SECRET_KEY`, `ADMIN_PASSWORD_HASH`, `AUDIT_ADMIN_PASSWORD_HASH`, `CHANNEL_ACCESS_TOKEN`, `CHANNEL_SECRET`, `DATABASE_URL`, `OWNER_LINE_ID`
    - 任意の `REDIS_URL` を設定すると、Webhookのレート制限をPostgreSQLではなくRedisで処理します。未設定時は従来のPostgreSQL方式です。
+   - Azure Managed RedisでEntra ID認証を使う場合は、`REDIS_URL=rediss://ホスト名:6380/0`、`REDIS_ENTRA_ID_ENABLED=true`、`REDIS_ENTRA_IDENTITY_TYPE=system_assigned`を設定します。ユーザー割り当てマネージドIDでは`REDIS_ENTRA_IDENTITY_TYPE=user_assigned`と`REDIS_ENTRA_ID_CLIENT_ID`も設定してください。
    - `USER_REQUEST_RATE_LIMIT_COUNT` と `USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS` で、同一LINEユーザーの予約・キャンセル・待ち時間確認などの処理回数を設定できます（デフォルトは60秒あたり10回）。
    - `WEBHOOK_ASYNC_WORKERS` でWebhookのバックグラウンド処理ワーカー数を調整できます（デフォルト4）。
    - Webhookの受信確認は `metric=webhook_received`、処理時間は `metric=webhook_request`（受付・署名検証）と `metric=webhook_background`（予約処理）としてログ出力されます。

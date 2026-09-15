@@ -26,6 +26,10 @@ from config import (
     AUTO_CALL_SETTING_KEYS,
     RUNTIME_SETTING_KEYS,
     REDIS_URL,
+    REDIS_ENTRA_ID_ENABLED,
+    REDIS_ENTRA_IDENTITY_TYPE,
+    REDIS_ENTRA_ID_CLIENT_ID,
+    REDIS_ENTRA_ID_RESOURCE,
 )
 
 logger = logging.getLogger("database")
@@ -52,11 +56,40 @@ def get_redis_client():
     if not REDIS_URL:
         return None
     if _REDIS_CLIENT is None:
+        redis_options = {
+            "decode_responses": True,
+            "socket_connect_timeout": DB_CONNECT_TIMEOUT,
+            "socket_timeout": DB_CONNECT_TIMEOUT,
+        }
+        if REDIS_ENTRA_ID_ENABLED:
+            from redis_entraid.cred_provider import create_from_managed_identity
+            from redis_entraid.identity_provider import (
+                ManagedIdentityIdType,
+                ManagedIdentityType,
+            )
+
+            if REDIS_ENTRA_IDENTITY_TYPE == "user_assigned":
+                if not REDIS_ENTRA_ID_CLIENT_ID:
+                    raise RuntimeError(
+                        "REDIS_ENTRA_ID_CLIENT_ID is required for user_assigned identity"
+                    )
+                identity_type = ManagedIdentityType.USER_ASSIGNED
+                identity_kwargs = {
+                    "id_type": ManagedIdentityIdType.CLIENT_ID,
+                    "id_value": REDIS_ENTRA_ID_CLIENT_ID,
+                }
+            else:
+                identity_type = ManagedIdentityType.SYSTEM_ASSIGNED
+                identity_kwargs = {}
+
+            redis_options["credential_provider"] = create_from_managed_identity(
+                identity_type=identity_type,
+                resource=REDIS_ENTRA_ID_RESOURCE,
+                **identity_kwargs,
+            )
         _REDIS_CLIENT = redis.Redis.from_url(
             REDIS_URL,
-            decode_responses=True,
-            socket_connect_timeout=DB_CONNECT_TIMEOUT,
-            socket_timeout=DB_CONNECT_TIMEOUT,
+            **redis_options,
         )
     return _REDIS_CLIENT
 

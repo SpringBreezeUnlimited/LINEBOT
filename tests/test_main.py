@@ -1256,6 +1256,38 @@ def test_is_user_request_rate_limited_rejects_missing_user_id(app_module):
     assert app_module.database.is_user_request_rate_limited("") is True
 
 
+def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch):
+    provider = object()
+    captured = {}
+
+    def fake_create_provider(**kwargs):
+        captured.update(kwargs)
+        return provider
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url, **options):
+            captured["url"] = url
+            captured["options"] = options
+            return cls()
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "rediss://redis.example:6380/0")
+    monkeypatch.setattr(app_module.database, "REDIS_ENTRA_ID_ENABLED", True)
+    monkeypatch.setattr(app_module.database, "REDIS_ENTRA_IDENTITY_TYPE", "system_assigned")
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", None)
+    monkeypatch.setattr(
+        "redis_entraid.cred_provider.create_from_managed_identity",
+        fake_create_provider,
+    )
+    monkeypatch.setattr(app_module.database.redis, "Redis", FakeRedis)
+
+    app_module.database.get_redis_client()
+
+    assert captured["url"] == "rediss://redis.example:6380/0"
+    assert captured["options"]["credential_provider"] is provider
+    assert captured["resource"] == "https://redis.azure.com/"
+
+
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200

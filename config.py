@@ -83,11 +83,19 @@ if not raw_db_url:
 DATABASE_URL = normalize_db_url(raw_db_url)
 DB_CONNECT_TIMEOUT = parse_int_env("DB_CONNECT_TIMEOUT", 5, 1, 60)
 REDIS_URL = (os.getenv("REDIS_URL") or "").strip()
+REDIS_ENTRA_ID_ENABLED = parse_bool_env("REDIS_ENTRA_ID_ENABLED", False)
+REDIS_ENTRA_IDENTITY_TYPE = (
+    os.getenv("REDIS_ENTRA_IDENTITY_TYPE") or "system_assigned"
+).strip().lower()
+REDIS_ENTRA_ID_CLIENT_ID = (os.getenv("REDIS_ENTRA_ID_CLIENT_ID") or "").strip()
+REDIS_ENTRA_ID_RESOURCE = (
+    os.getenv("REDIS_ENTRA_ID_RESOURCE") or "https://redis.azure.com/"
+).strip()
 
 OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
 
-APP_VERSION = "v1.0.196"
-APP_RELEASED_AT = "2026-09-05 00:00 JST"
+APP_VERSION = "v1.0.197"
+APP_RELEASED_AT = "2026-09-15 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False
 )
