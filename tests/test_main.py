@@ -1256,7 +1256,7 @@ def test_is_user_request_rate_limited_rejects_missing_user_id(app_module):
     assert app_module.database.is_user_request_rate_limited("") is True
 
 
-def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch):
+def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch, caplog):
     provider = object()
     captured = {}
 
@@ -1281,11 +1281,15 @@ def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch):
     )
     monkeypatch.setattr(app_module.database.redis, "Redis", FakeRedis)
 
-    app_module.database.get_redis_client()
+    with caplog.at_level("INFO", logger="database"):
+        app_module.database.get_redis_client()
 
     assert captured["url"] == "rediss://redis.example:6380/0"
     assert captured["options"]["credential_provider"] is provider
     assert captured["resource"] == "https://redis.azure.com/"
+    assert "entra_id=True" in caplog.text
+    assert "identity_type=system_assigned" in caplog.text
+    assert "redis.example" not in caplog.text
 
 
 def test_get_redis_client_logs_when_redis_is_enabled(app_module, monkeypatch, caplog):
@@ -1304,6 +1308,43 @@ def test_get_redis_client_logs_when_redis_is_enabled(app_module, monkeypatch, ca
 
     assert "Redis is enabled for rate limiting" in caplog.text
     assert "redis.example" not in caplog.text
+
+
+def test_get_redis_client_returns_none_without_redis_url_and_does_not_log(
+    app_module, monkeypatch, caplog
+):
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "")
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", None)
+
+    with caplog.at_level("INFO", logger="database"):
+        assert app_module.database.get_redis_client() is None
+
+    assert "Redis is enabled for rate limiting" not in caplog.text
+
+
+def test_get_redis_client_logs_only_once_for_reused_client(
+    app_module, monkeypatch, caplog
+):
+    class FakeRedis:
+        calls = 0
+
+        @classmethod
+        def from_url(cls, url, **options):
+            cls.calls += 1
+            return cls()
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(app_module.database, "REDIS_ENTRA_ID_ENABLED", False)
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", None)
+    monkeypatch.setattr(app_module.database.redis, "Redis", FakeRedis)
+
+    with caplog.at_level("INFO", logger="database"):
+        first = app_module.database.get_redis_client()
+        second = app_module.database.get_redis_client()
+
+    assert first is second
+    assert FakeRedis.calls == 1
+    assert caplog.text.count("Redis is enabled for rate limiting") == 1
 
 
 def test_login_get_ok(client):
