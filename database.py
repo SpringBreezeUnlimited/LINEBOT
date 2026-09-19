@@ -776,6 +776,12 @@ def is_webhook_rate_limited(ip: str) -> bool:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # COUNT と INSERT を同一キーのトランザクションロックで直列化する。
+                # Redis 未使用時でも、複数ワーカーで上限を超えて通過しないようにする。
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                    (f"webhook:rate:{ip}",),
+                )
                 window_start = datetime.now(timezone.utc) - timedelta(
                     seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
                 )
@@ -817,6 +823,11 @@ def is_user_request_rate_limited(user_id: str) -> bool:
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
+                # 同じLINEユーザーの判定と記録を原子的に行う。
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                    (f"user:rate:{user_id}",),
+                )
                 window_start = datetime.now(timezone.utc) - timedelta(
                     seconds=USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS
                 )

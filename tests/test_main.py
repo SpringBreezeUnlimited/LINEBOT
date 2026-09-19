@@ -1180,7 +1180,7 @@ def test_is_authenticated_as_inactive_account_clears_session(app_module, monkeyp
 def test_apply_security_headers_admin_page(app_module):
     app_module.FORCE_HTTPS = True
     with app_module.app.test_request_context(
-        "/admin", headers={"X-Forwarded-Proto": "https"}
+        "/admin", base_url="https://example.com"
     ):
         response = app_module.app.response_class("ok")
         result = app_module.apply_security_headers(response)
@@ -1188,6 +1188,25 @@ def test_apply_security_headers_admin_page(app_module):
         assert result.headers.get("X-Frame-Options") == "DENY"
         assert "Strict-Transport-Security" in result.headers
         assert "no-store" in result.headers.get("Cache-Control", "")
+
+
+def test_untrusted_forwarded_proto_does_not_bypass_https_redirect(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.auth, "FORCE_HTTPS", True)
+    with app_module.app.test_request_context(
+        "/admin", base_url="http://example.com", headers={"X-Forwarded-Proto": "https"}
+    ):
+        response = app_module.enforce_https()
+        assert response.status_code == 301
+        assert response.headers["Location"] == "https://example.com/admin"
+
+
+def test_untrusted_forwarded_proto_does_not_enable_hsts(app_module):
+    with app_module.app.test_request_context(
+        "/", base_url="http://example.com", headers={"X-Forwarded-Proto": "https"}
+    ):
+        response = app_module.app.response_class("ok")
+        result = app_module.apply_security_headers(response)
+        assert "Strict-Transport-Security" not in result.headers
 
 
 def test_request_body_limit_is_configured(app_module):
@@ -1254,6 +1273,46 @@ def test_is_user_request_rate_limited_uses_redis(app_module, monkeypatch):
 
 def test_is_user_request_rate_limited_rejects_missing_user_id(app_module):
     assert app_module.database.is_user_request_rate_limited("") is True
+
+
+def test_user_rate_limit_db_fallback_locks_the_user_before_counting(app_module, monkeypatch):
+    queries = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, query, params=None):
+            queries.append((query, params))
+
+        def fetchone(self):
+            return (0,)
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "")
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", None)
+    monkeypatch.setattr(app_module.database, "get_connection", lambda: FakeConnection())
+
+    assert app_module.database.is_user_request_rate_limited("U-123") is False
+    assert "pg_advisory_xact_lock" in queries[0][0]
+    assert queries[0][1] == ("user:rate:U-123",)
+    assert "SELECT COUNT(*) FROM user_request_records" in queries[1][0]
+    assert "INSERT INTO user_request_records" in queries[2][0]
 
 
 def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch, caplog):

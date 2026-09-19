@@ -272,10 +272,8 @@ def apply_security_headers(response):
     ):
         response.headers["Cache-Control"] = "no-store"
 
-    forwarded_proto = (
-        (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
-    )
-    if request.is_secure or forwarded_proto == "https":
+    # ProxyFix が信頼済みプロキシのヘッダーだけを request.is_secure に反映する。
+    if request.is_secure:
         response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains"
         )

@@ -92,7 +92,7 @@ REDIS_ENTRA_ID_RESOURCE = (
     os.getenv("REDIS_ENTRA_ID_RESOURCE") or "https://redis.azure.com/"
 ).strip()
 
-APP_VERSION = "v1.0.201"
+APP_VERSION = "v1.0.202"
 APP_RELEASED_AT = "2026-09-15 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False
@@ -121,8 +121,14 @@ MAX_TYPE_IMAGE_UPLOAD_BYTES = parse_int_env(
 
 ALLOWED_HOSTS = parse_allowed_hosts(os.getenv("ALLOWED_HOSTS", ""))
 
-# 本番環境はデプロイ先にかかわらず明示的に指定する。
-APP_ENV = (os.getenv("APP_ENV") or "development").strip().lower()
+# 本番環境はデプロイ先にかかわらず明示的に指定する。APP_ENV の設定漏れ時も、
+# Render と Azure Container Apps では安全側の production として扱う。
+_DEFAULT_APP_ENV = (
+    "production" if os.getenv("RENDER") or os.getenv("CONTAINER_APP_NAME") else "development"
+)
+APP_ENV = (os.getenv("APP_ENV") or _DEFAULT_APP_ENV).strip().lower()
+if APP_ENV not in {"development", "production"}:
+    raise RuntimeError("APP_ENV must be either development or production")
 if APP_ENV == "production" and not ALLOWED_HOSTS:
     raise RuntimeError(
         "ALLOWED_HOSTS is required when APP_ENV=production. Set it to your app domain(s)"

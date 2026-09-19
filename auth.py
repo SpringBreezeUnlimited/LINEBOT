@@ -192,11 +192,6 @@ def enforce_https():
         return
     if request.is_secure:
         return
-    forwarded_proto = (
-        (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
-    )
-    if forwarded_proto == "https":
-        return
     secure_url = request.url.replace("http://", "https://", 1)
     return redirect(secure_url, code=301)
 

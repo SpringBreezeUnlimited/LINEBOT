@@ -10,7 +10,7 @@
 ## Render へのデプロイ
 1. [Render.com](https://render.com) で新しい Web Service を作成します。
 2. Render のダッシュボードで以下の環境変数を設定します。
-   - `APP_ENV=production` を設定してください。デプロイ先に関係なく、本番時の安全チェックを有効にします。
+   - `APP_ENV=production` を設定してください。`production` と `development` 以外は起動エラーになります。Render と Azure Container Apps では設定漏れ時も安全側で `production` として扱います。
    - `ALLOWED_HOSTS`: Render のアプリドメイン（例: `myapp.onrender.com`）。複数ドメインはカンマまたは空白区切りで指定できます。
    - その他の必須変数: `SECRET_KEY`, `ADMIN_PASSWORD_HASH`, `AUDIT_ADMIN_PASSWORD_HASH`, `CHANNEL_ACCESS_TOKEN`, `CHANNEL_SECRET`, `DATABASE_URL`
    - 任意の `REDIS_URL` を設定すると、Webhookのレート制限をPostgreSQLではなくRedisで処理します。未設定時は従来のPostgreSQL方式です。

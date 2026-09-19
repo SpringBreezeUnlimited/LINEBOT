@@ -63,6 +63,7 @@ jobs:
                     --name "$CONTAINER_APP_NAME" \
                     --resource-group "$RESOURCE_GROUP" \
                     --image "$image" \
+                    --set-env-vars APP_ENV=production \
                     --revision-suffix "$revision_suffix"
                   az containerapp ingress traffic set \
                     --name "$CONTAINER_APP_NAME" \
