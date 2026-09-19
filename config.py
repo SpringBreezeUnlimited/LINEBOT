@@ -92,9 +92,7 @@ REDIS_ENTRA_ID_RESOURCE = (
     os.getenv("REDIS_ENTRA_ID_RESOURCE") or "https://redis.azure.com/"
 ).strip()
 
-OWNER_LINE_ID = os.getenv("OWNER_LINE_ID", "").strip()
-
-APP_VERSION = "v1.0.197"
+APP_VERSION = "v1.0.198"
 APP_RELEASED_AT = "2026-09-15 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False

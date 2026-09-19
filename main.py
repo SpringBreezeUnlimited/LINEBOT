@@ -46,7 +46,6 @@ from config import (
     LOAD_TEST_TOKEN,
     DATABASE_URL,
     DB_CONNECT_TIMEOUT,
-    OWNER_LINE_ID,
     APP_VERSION,
     APP_RELEASED_AT,
     PUBLIC_BASE_URL,
