@@ -92,7 +92,7 @@ REDIS_ENTRA_ID_RESOURCE = (
     os.getenv("REDIS_ENTRA_ID_RESOURCE") or "https://redis.azure.com/"
 ).strip()
 
-APP_VERSION = "v1.0.198"
+APP_VERSION = "v1.0.199"
 APP_RELEASED_AT = "2026-09-15 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False
@@ -121,11 +121,11 @@ MAX_TYPE_IMAGE_UPLOAD_BYTES = parse_int_env(
 
 ALLOWED_HOSTS = parse_allowed_hosts(os.getenv("ALLOWED_HOSTS", ""))
 
-# 本番環境での安全性チェック
-IS_PRODUCTION = bool(os.getenv("RENDER"))
-if IS_PRODUCTION and not ALLOWED_HOSTS:
+# 本番環境はデプロイ先にかかわらず明示的に指定する。
+APP_ENV = (os.getenv("APP_ENV") or "development").strip().lower()
+if APP_ENV == "production" and not ALLOWED_HOSTS:
     raise RuntimeError(
-        "ALLOWED_HOSTS is required in production environment. Set it to your Render app domain(s)"
+        "ALLOWED_HOSTS is required when APP_ENV=production. Set it to your app domain(s)"
     )
 
 SESSION_IDLE_TIMEOUT_SECONDS = parse_int_env("SESSION_IDLE_TIMEOUT_SECONDS", 1800, 60, 86400)

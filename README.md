@@ -10,6 +10,7 @@
 ## Render へのデプロイ
 1. [Render.com](https://render.com) で新しい Web Service を作成します。
 2. Render のダッシュボードで以下の環境変数を設定します。
+   - `APP_ENV=production` を設定してください。デプロイ先に関係なく、本番時の安全チェックを有効にします。
    - `ALLOWED_HOSTS`: Render のアプリドメイン（例: `myapp.onrender.com`）。複数ドメインはカンマまたは空白区切りで指定できます。
    - その他の必須変数: `SECRET_KEY`, `ADMIN_PASSWORD_HASH`, `AUDIT_ADMIN_PASSWORD_HASH`, `CHANNEL_ACCESS_TOKEN`, `CHANNEL_SECRET`, `DATABASE_URL`
    - 任意の `REDIS_URL` を設定すると、Webhookのレート制限をPostgreSQLではなくRedisで処理します。未設定時は従来のPostgreSQL方式です。
@@ -22,6 +23,15 @@
 
 ## Azure Container Appsへの自動デプロイ
 `.github/workflows/deploy-azure-container-app.yml` は `main` へのpushでDockerイメージをビルドし、Azure Container Registryへpushした後、Container Appの新リビジョンへ更新します。初回のみ、GitHubリポジトリのSecretsに以下を登録してください。
+
+Azure Container App側の環境変数には、少なくとも次を設定してください。
+
+- `APP_ENV=production`
+- `ALLOWED_HOSTS`: Container Appの公開FQDN（複数ドメインはカンマまたは空白区切り）
+- `PUBLIC_BASE_URL`: `https://` を含む公開URL
+- `.env.example` にある必須の認証・DB・LINE設定
+
+`APP_ENV=production` の場合、`ALLOWED_HOSTS` が未設定だとアプリは起動に失敗します。`LOAD_TEST_MODE` は本番環境では絶対に `true` にしないでください。
 
 - `AZURE_CREDENTIALS`: AzureサービスプリンシパルのJSON。Container App更新とACR push権限が必要です。
 - `AZURE_RESOURCE_GROUP`: Container Appが属するリソースグループ名
