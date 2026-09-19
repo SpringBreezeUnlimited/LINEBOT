@@ -91,6 +91,11 @@ def get_redis_client():
             REDIS_URL,
             **redis_options,
         )
+        logger.info(
+            "Redis is enabled for rate limiting (entra_id=%s, identity_type=%s)",
+            REDIS_ENTRA_ID_ENABLED,
+            REDIS_ENTRA_IDENTITY_TYPE if REDIS_ENTRA_ID_ENABLED else "none",
+        )
     return _REDIS_CLIENT
 
 

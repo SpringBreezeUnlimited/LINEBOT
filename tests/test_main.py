@@ -1288,6 +1288,24 @@ def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch):
     assert captured["resource"] == "https://redis.azure.com/"
 
 
+def test_get_redis_client_logs_when_redis_is_enabled(app_module, monkeypatch, caplog):
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url, **options):
+            return cls()
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "rediss://redis.example:6380/0")
+    monkeypatch.setattr(app_module.database, "REDIS_ENTRA_ID_ENABLED", False)
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", None)
+    monkeypatch.setattr(app_module.database.redis, "Redis", FakeRedis)
+
+    with caplog.at_level("INFO", logger="database"):
+        app_module.database.get_redis_client()
+
+    assert "Redis is enabled for rate limiting" in caplog.text
+    assert "redis.example" not in caplog.text
+
+
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200
