@@ -1231,35 +1231,6 @@ def test_record_login_failure_on_exception_does_not_raise(app_module, monkeypatc
     app_module.record_login_failure("127.0.0.1")
 
 
-def test_is_webhook_rate_limited_on_exception_returns_true(app_module, monkeypatch):
-    monkeypatch.setattr(
-        app_module.database,
-        "get_connection",
-        lambda: (_ for _ in ()).throw(RuntimeError("db error")),
-    )
-    assert app_module.is_webhook_rate_limited("127.0.0.1") is True
-
-
-def test_is_webhook_rate_limited_uses_redis_when_configured(app_module, monkeypatch):
-    class FakeRedis:
-        def eval(self, script, numkeys, key, window_seconds):
-            assert "INCR" in script
-            assert numkeys == 1
-            assert key == "webhook:rate:127.0.0.1"
-            assert window_seconds == app_module.WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
-            return app_module.WEBHOOK_RATE_LIMIT_COUNT + 1
-
-    monkeypatch.setattr(app_module.database, "REDIS_URL", "redis://localhost:6379/0")
-    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", FakeRedis())
-    monkeypatch.setattr(
-        app_module.database,
-        "get_connection",
-        lambda: (_ for _ in ()).throw(AssertionError("PostgreSQL must not be used")),
-    )
-
-    assert app_module.is_webhook_rate_limited("127.0.0.1") is True
-
-
 def test_is_user_request_rate_limited_uses_redis(app_module, monkeypatch):
     class FakeRedis:
         def eval(self, script, numkeys, key, window_seconds):
@@ -2468,16 +2439,12 @@ def test_process_call_queue_task_success_returns_json(client, app_module, monkey
     assert body["sent_count"] == 1
 
 
-def test_callback_missing_signature_returns_400(client, app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
+def test_callback_missing_signature_returns_400(client, app_module):
     response = client.post("/callback", data="{}", content_type="application/json")
     assert response.status_code == 400
 
 
 def test_callback_invalid_signature_returns_400(client, app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
 
     class InvalidSignatureHandler:
         class parser:
@@ -2500,21 +2467,8 @@ def test_callback_invalid_signature_returns_400(client, app_module, monkeypatch)
     assert response.status_code == 400
 
 
-def test_callback_rate_limited_returns_429(client, app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: True)
-    response = client.post(
-        "/callback",
-        data="{}",
-        headers={"X-Line-Signature": "sig"},
-        content_type="application/json",
-    )
-    assert response.status_code == 429
-
-
 def test_callback_success_returns_ok(client, app_module, monkeypatch, caplog):
     caplog.set_level(20, logger="line_routes")
-    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
     handled = threading.Event()
 
     class DummyHandler:
@@ -2556,9 +2510,6 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch, caplog):
 
 
 def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
-
     class FailingHandler:
         class parser:
             @staticmethod

@@ -17,8 +17,6 @@ from config import (
     ROLE_AUDIT_ADMIN,
     LOGIN_MAX_ATTEMPTS,
     LOGIN_WINDOW_SECONDS,
-    WEBHOOK_RATE_LIMIT_COUNT,
-    WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
     USER_REQUEST_RATE_LIMIT_COUNT,
     USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS,
     STATUS_WAITING,
@@ -614,17 +612,6 @@ def ensure_rate_limit_tables():
                 ON login_attempt_records (ip_address, attempted_at DESC)
             """)
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS webhook_request_records (
-                    id SERIAL PRIMARY KEY,
-                    ip_address TEXT NOT NULL,
-                    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_webhook_request_records_ip_requested_at
-                ON webhook_request_records (ip_address, requested_at DESC)
-            """)
-            cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_request_records (
                     id SERIAL PRIMARY KEY,
                     user_id TEXT NOT NULL,
@@ -719,9 +706,6 @@ def cleanup_rate_limit_records():
                     "DELETE FROM login_attempt_records WHERE attempted_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
                 )
                 cur.execute(
-                    "DELETE FROM webhook_request_records WHERE requested_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
-                )
-                cur.execute(
                     "DELETE FROM user_request_records WHERE requested_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
                 )
                 conn.commit()
@@ -757,50 +741,6 @@ def record_login_failure(ip: str):
                 conn.commit()
     except Exception:
         logger.exception("Failed to record login failure for ip=%s", ip)
-
-
-def is_webhook_rate_limited(ip: str) -> bool:
-    redis_client = get_redis_client()
-    if redis_client is not None:
-        try:
-            count = redis_client.eval(
-                _WEBHOOK_RATE_LIMIT_SCRIPT,
-                1,
-                f"webhook:rate:{ip}",
-                WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
-            )
-            return int(count) > WEBHOOK_RATE_LIMIT_COUNT
-        except Exception:
-            logger.exception("Failed to check webhook rate limit with Redis for ip=%s", ip)
-            return True
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                # COUNT と INSERT を同一キーのトランザクションロックで直列化する。
-                # Redis 未使用時でも、複数ワーカーで上限を超えて通過しないようにする。
-                cur.execute(
-                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
-                    (f"webhook:rate:{ip}",),
-                )
-                window_start = datetime.now(timezone.utc) - timedelta(
-                    seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
-                )
-                cur.execute(
-                    "SELECT COUNT(*) FROM webhook_request_records WHERE ip_address = %s AND requested_at > %s",
-                    (ip, window_start),
-                )
-                count = cur.fetchone()[0]
-                if count >= WEBHOOK_RATE_LIMIT_COUNT:
-                    return True
-                cur.execute(
-                    "INSERT INTO webhook_request_records (ip_address) VALUES (%s)",
-                    (ip,),
-                )
-                conn.commit()
-                return False
-    except Exception:
-        logger.exception("Failed to check webhook rate limit for ip=%s", ip)
-        return True
 
 
 def is_user_request_rate_limited(user_id: str) -> bool:

@@ -13,8 +13,6 @@ def _line_signature(secret: str, body: str) -> str:
 
 
 def test_callback_accepts_valid_signature_and_rejects_fake(app_module, monkeypatch):
-    monkeypatch.setattr(app_module, "is_webhook_rate_limited", lambda _ip: False)
-    monkeypatch.setattr(app_module.line_routes, "is_webhook_rate_limited", lambda _ip: False)
     monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
     monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
     monkeypatch.setattr(app_module, "enforce_https", lambda: None)
@@ -40,6 +38,28 @@ def test_callback_accepts_valid_signature_and_rejects_fake(app_module, monkeypat
     assert ok.status_code == 200
     assert ok.get_data(as_text=True) == "OK"
     assert ng.status_code == 400
+
+
+def test_callback_does_not_limit_valid_webhooks_by_shared_source_ip(app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "ensure_database_schema", lambda: None)
+    monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
+    monkeypatch.setattr(app_module, "enforce_https", lambda: None)
+    app_module.app.config["TESTING"] = True
+
+    body = '{"destination":"U1234567890","events":[]}'
+    valid_signature = _line_signature("test-channel-secret", body)
+    with app_module.app.test_client() as client:
+        responses = [
+            client.post(
+                "/callback",
+                data=body,
+                content_type="application/json",
+                headers={"X-Line-Signature": valid_signature},
+            )
+            for _ in range(121)
+        ]
+
+    assert all(response.status_code == 200 for response in responses)
 
 
 def test_admin_call_concurrent_requests_only_one_succeeds(app_module, monkeypatch):

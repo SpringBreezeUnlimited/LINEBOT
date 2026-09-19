@@ -9,7 +9,7 @@
   - Session rotation on login (`session.clear()` + new CSRF token).
   - Idle timeout via `SESSION_IDLE_TIMEOUT_SECONDS`.
 - Login brute-force control (`LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS`).
-- Webhook abuse control (`WEBHOOK_RATE_LIMIT_COUNT`, `WEBHOOK_RATE_LIMIT_WINDOW_SECONDS`).
+- Valid LINE webhook messages are limited per LINE user (`USER_REQUEST_RATE_LIMIT_COUNT`, `USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS`), not by source IP because LINE may use shared IPs.
 - Host header allow-list (`ALLOWED_HOSTS`) and HTTPS enforcement (`FORCE_HTTPS`).
 - Response security headers:
   - Content-Security-Policy
@@ -32,6 +32,7 @@
 - Monitor logs for 400/403/429 spikes and incident indicators.
 - Add backups + restore drill for database.
 - If WAF is used, tune detection rules and verify false positives/negatives.
+- Apply source-IP or request-rate controls for unsigned `/callback` traffic at the WAF or Ingress layer; do not apply them to valid LINE webhooks by source IP.
 - Subscribe to vulnerability advisories for Flask, line-bot-sdk, psycopg2, gunicorn.
 
 ## Developer environment

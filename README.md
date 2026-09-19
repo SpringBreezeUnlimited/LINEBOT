@@ -65,7 +65,6 @@ Azure Container App側の環境変数には、少なくとも次を設定して�
 実DBへ予約を作成する100 RPS・10分のシナリオを `loadtests/reservation-callback-100rps.js` に用意しています。試験用環境では、以下を設定してください。
 
 - `LOAD_TEST_MODE=true`（LINEへの返信・Push送信をスキップ）
-- `WEBHOOK_RATE_LIMIT_COUNT` を10000以上に設定（100 RPSを1分間受けるため。境界値による429を避ける）
 - `RESERVATION_TYPE` と同名の受付中・管理者割り当て済み予約種別
 - 実行元から到達可能な `BASE_URL`
 
@@ -79,6 +78,8 @@ k6 run \
 ```
 
 このシナリオはLINE署名を生成し、異なるユーザーIDで `予約 相談` を送信します。`quoteToken` を含めたLINE SDKで認識可能なテキストイベントを生成します。`/callback` は内部エラーでもLINE再送防止のため200を返すため、k6のHTTP成功率だけではDB登録成功率を判定できません。試験後に、送信リクエスト数（100 RPS × 600秒 = 60000）と予約登録数をDBで照合し、Azureログの `Created reservation` 件数と `metric=webhook_background result=success` 件数も確認してください。
+
+`/callback` は、LINEプラットフォームが共有送信元IPを使うことを考慮し、送信元IPでは制限しません。正しいLINE署名を確認した後、メッセージ処理をLINEユーザー単位で制限します。署名のない大量アクセスへの対策は、Azure Front Door / WAF または Ingress のレート制限で実施してください。
 
 ### Webhookログの統計分析
 

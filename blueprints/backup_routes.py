@@ -39,7 +39,6 @@ BACKUP_TABLES = [
     "app_settings",
     "admin_login_logs",
     "login_attempt_records",
-    "webhook_request_records",
 ]
 _VALID_BACKUP_TABLES = frozenset(BACKUP_TABLES)
 
@@ -492,7 +491,6 @@ def admin_backup_import():
         "app_settings",
         "admin_login_logs",
         "login_attempt_records",
-        "webhook_request_records",
     ]
     try:
         with get_connection() as conn:

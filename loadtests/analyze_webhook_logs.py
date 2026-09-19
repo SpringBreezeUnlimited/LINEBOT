@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 METRIC_PATTERN = re.compile(r"metric=(?P<metric>\S+)")
-VALUE_PATTERN = re.compile(r"(?P<key>duration_ms|rate_limit_ms|validation_ms)=(?P<value>[0-9.]+)")
+VALUE_PATTERN = re.compile(r"(?P<key>duration_ms|validation_ms)=(?P<value>[0-9.]+)")
 
 
 def percentile(values: list[float], percentile_value: float) -> float:

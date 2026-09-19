@@ -62,8 +62,6 @@ from config import (
     MAX_USER_MESSAGE_CHARS,
     TYPE_NAME_PATTERN,
     LOGIN_ID_PATTERN,
-    WEBHOOK_RATE_LIMIT_COUNT,
-    WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
     CALL_TIMEOUT_MINUTES,
     ADMIN_REFRESH_INTERVAL_MS,
     BATCH_CALL_RUNNER_TOKEN,
@@ -185,7 +183,6 @@ from database import (
     cleanup_rate_limit_records,
     is_login_rate_limited,
     record_login_failure,
-    is_webhook_rate_limited,
 )
 
 import blueprints.main_routes as main_routes

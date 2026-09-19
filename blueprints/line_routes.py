@@ -26,7 +26,6 @@ from config import (
 from database import (
     get_connection,
     is_accepting_new,
-    is_webhook_rate_limited,
     is_user_request_rate_limited,
     get_accepting_type_names,
 )
@@ -85,15 +84,6 @@ def callback():
         ip,
         request.content_length or 0,
     )
-    rate_limit_started_at = time.perf_counter()
-    if is_webhook_rate_limited(ip):
-        logger.info(
-            "metric=webhook_request duration_ms=%.2f rate_limit_ms=%.2f result=rate_limited",
-            (time.perf_counter() - started_at) * 1000,
-            (time.perf_counter() - rate_limit_started_at) * 1000,
-        )
-        abort(429)
-    rate_limit_ms = (time.perf_counter() - rate_limit_started_at) * 1000
     signature = request.headers.get("X-Line-Signature")
     if not signature:
         abort(400)
@@ -115,9 +105,8 @@ def callback():
     validation_ms = (time.perf_counter() - validation_started_at) * 1000
     _WEBHOOK_EXECUTOR.submit(_process_webhook, handler, body, signature, ip)
     logger.info(
-        "metric=webhook_request duration_ms=%.2f rate_limit_ms=%.2f validation_ms=%.2f result=accepted body_len=%s",
+        "metric=webhook_request duration_ms=%.2f validation_ms=%.2f result=accepted body_len=%s",
         (time.perf_counter() - started_at) * 1000,
-        rate_limit_ms,
         validation_ms,
         len(body) if body is not None else 0,
     )
