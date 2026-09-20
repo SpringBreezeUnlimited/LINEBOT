@@ -1,7 +1,5 @@
 import csv
-import sys
 import threading
-from types import ModuleType
 from io import BytesIO
 from datetime import datetime
 from types import SimpleNamespace
@@ -1307,23 +1305,9 @@ def test_get_redis_client_uses_entra_id_provider(app_module, monkeypatch, caplog
     monkeypatch.setattr(app_module.database, "REDIS_ENTRA_ID_ENABLED", True)
     monkeypatch.setattr(app_module.database, "REDIS_ENTRA_IDENTITY_TYPE", "system_assigned")
     monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", None)
-    redis_entraid = ModuleType("redis_entraid")
-    cred_provider = ModuleType("redis_entraid.cred_provider")
-    identity_provider = ModuleType("redis_entraid.identity_provider")
-    identity_provider.ManagedIdentityIdType = type(
-        "ManagedIdentityIdType", (), {"CLIENT_ID": "client_id"}
-    )
-    identity_provider.ManagedIdentityType = type(
-        "ManagedIdentityType", (), {"SYSTEM_ASSIGNED": "system", "USER_ASSIGNED": "user"}
-    )
-    monkeypatch.setitem(sys.modules, "redis_entraid", redis_entraid)
-    monkeypatch.setitem(sys.modules, "redis_entraid.cred_provider", cred_provider)
-    monkeypatch.setitem(sys.modules, "redis_entraid.identity_provider", identity_provider)
     monkeypatch.setattr(
-        cred_provider,
-        "create_from_managed_identity",
+        "redis_entraid.cred_provider.create_from_managed_identity",
         fake_create_provider,
-        raising=False,
     )
     monkeypatch.setattr(app_module.database.redis, "Redis", FakeRedis)
 
@@ -2443,7 +2427,6 @@ def test_process_call_queue_task_invalid_token_returns_403(
 def test_process_call_queue_task_success_returns_json(client, app_module, monkeypatch):
     app_module.BATCH_CALL_RUNNER_TOKEN = "token"
     monkeypatch.setattr(app_module, "validate_batch_runner_token", lambda: True)
-    monkeypatch.setattr(app_module, "schedule_webhook_job_drain", lambda: True)
     monkeypatch.setattr(
         app_module,
         "process_queued_calls",
@@ -2500,21 +2483,6 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch, caplog):
 
     monkeypatch.setattr(app_module, "handler", DummyHandler())
     monkeypatch.setattr(app_module.line_routes, "handler", DummyHandler())
-    jobs = [(1, "{}", "sig", 1)]
-    monkeypatch.setattr(app_module.line_routes, "enqueue_webhook_job", lambda *_args: (1, True))
-    monkeypatch.setattr(
-        app_module.line_routes,
-        "claim_next_webhook_job",
-        lambda: jobs.pop(0) if jobs else None,
-    )
-    monkeypatch.setattr(app_module.line_routes, "mark_webhook_job_done", lambda _job_id: None)
-
-    class ImmediateExecutor:
-        @staticmethod
-        def submit(func):
-            func()
-
-    monkeypatch.setattr(app_module.line_routes, "_WEBHOOK_EXECUTOR", ImmediateExecutor())
 
     response = client.post(
         "/callback",
@@ -2524,7 +2492,7 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch, caplog):
     )
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "OK"
-    assert handled.is_set()
+    assert handled.wait(timeout=1)
     assert any(
         "metric=webhook_received" in record.message
         for record in caplog.records
@@ -2534,7 +2502,11 @@ def test_callback_success_returns_ok(client, app_module, monkeypatch, caplog):
         and "result=accepted" in record.message
         for record in caplog.records
     )
-    assert any("metric=webhook_background" in record.message and "result=success" in record.message for record in caplog.records)
+    assert any(
+        "metric=webhook_background" in record.message
+        and "result=success" in record.message
+        for record in caplog.records
+    )
 
 
 def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
@@ -2550,26 +2522,6 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
 
     monkeypatch.setattr(app_module, "handler", FailingHandler())
     monkeypatch.setattr(app_module.line_routes, "handler", FailingHandler())
-    jobs = [(1, "{}", "sig", 1)]
-    rescheduled = []
-    monkeypatch.setattr(app_module.line_routes, "enqueue_webhook_job", lambda *_args: (1, True))
-    monkeypatch.setattr(
-        app_module.line_routes,
-        "claim_next_webhook_job",
-        lambda: jobs.pop(0) if jobs else None,
-    )
-    monkeypatch.setattr(
-        app_module.line_routes,
-        "reschedule_webhook_job",
-        lambda *args: rescheduled.append(args),
-    )
-
-    class ImmediateExecutor:
-        @staticmethod
-        def submit(func):
-            func()
-
-    monkeypatch.setattr(app_module.line_routes, "_WEBHOOK_EXECUTOR", ImmediateExecutor())
 
     response = client.post(
         "/callback",
@@ -2579,25 +2531,9 @@ def test_callback_processing_error_returns_ok(client, app_module, monkeypatch):
     )
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "OK"
-    assert rescheduled and rescheduled[0][0] == 1
 
 
-def test_callback_returns_503_when_durable_queue_is_full(client, app_module, monkeypatch):
-    class DummyHandler:
-        class parser:
-            @staticmethod
-            def parse(_body, _signature, as_payload=False):
-                return object()
-
-    monkeypatch.setattr(app_module.line_routes, "handler", DummyHandler())
-    monkeypatch.setattr(app_module.line_routes, "enqueue_webhook_job", lambda *_args: None)
-    response = client.post(
-        "/callback", data="{}", headers={"X-Line-Signature": "sig"}, content_type="application/json"
-    )
-    assert response.status_code == 503
-
-
-def test_handle_message_propagates_reservation_error_for_durable_retry(app_module, monkeypatch):
+def test_handle_message_keeps_processing_after_reservation_error(app_module, monkeypatch):
     processed_messages = []
 
     monkeypatch.setattr(
@@ -2625,8 +2561,7 @@ def test_handle_message_propagates_reservation_error_for_durable_retry(app_modul
         reply_token="reply-token-2",
     )
 
-    with pytest.raises(RuntimeError, match="temporary failure"):
-        app_module.handle_message(first_event)
+    app_module.handle_message(first_event)
     app_module.handle_message(second_event)
 
     assert processed_messages == ["予約 相談", "待ち時間"]

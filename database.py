@@ -1,5 +1,4 @@
 """DB接続管理、スキーマ初期化・マイグレーション、設定テーブル・レートリミットDB操作。"""
-import hashlib
 import logging
 import math
 from datetime import datetime, timedelta, timezone
@@ -29,9 +28,6 @@ from config import (
     REDIS_ENTRA_IDENTITY_TYPE,
     REDIS_ENTRA_ID_CLIENT_ID,
     REDIS_ENTRA_ID_RESOURCE,
-    WEBHOOK_PENDING_JOB_LIMIT,
-    WEBHOOK_JOB_LEASE_SECONDS,
-    WEBHOOK_JOB_RETRY_SECONDS,
 )
 
 logger = logging.getLogger("database")
@@ -629,32 +625,6 @@ def ensure_rate_limit_tables():
             conn.commit()
 
 
-def ensure_webhook_jobs_table():
-    """Create the durable, bounded queue used after LINE signature validation."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS webhook_jobs (
-                    id BIGSERIAL PRIMARY KEY,
-                    delivery_key TEXT NOT NULL UNIQUE,
-                    body TEXT NOT NULL,
-                    signature TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    next_attempt_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    locked_at TIMESTAMP,
-                    last_error TEXT,
-                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("""
-                CREATE INDEX IF NOT EXISTS idx_webhook_jobs_ready
-                ON webhook_jobs (status, next_attempt_at, id)
-            """)
-            conn.commit()
-
-
 def migrate_legacy_queued_calls():
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -678,7 +648,6 @@ def ensure_database_schema():
         ensure_settings_table()
         ensure_admin_login_logs_table()
         ensure_rate_limit_tables()
-        ensure_webhook_jobs_table()
         migrate_legacy_queued_calls()
         SCHEMA_READY = True
 
@@ -739,9 +708,6 @@ def cleanup_rate_limit_records():
                 cur.execute(
                     "DELETE FROM user_request_records WHERE requested_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
                 )
-                cur.execute(
-                    "DELETE FROM webhook_jobs WHERE status = 'done' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '1 day'"
-                )
                 conn.commit()
     except Exception:
         logger.exception("Failed to cleanup rate limit records")
@@ -775,107 +741,6 @@ def record_login_failure(ip: str):
                 conn.commit()
     except Exception:
         logger.exception("Failed to record login failure for ip=%s", ip)
-
-
-def enqueue_webhook_job(body: str, signature: str):
-    """Persist a verified delivery before acknowledging it to LINE.
-
-    Returns ``(job_id, inserted)``.  ``None`` means that the bounded queue is
-    full; the caller must return a retryable response instead of dropping the
-    delivery.
-    """
-    delivery_key = hashlib.sha256(body.encode("utf-8")).hexdigest()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            # A single lock makes the capacity check and insert atomic across
-            # Gunicorn workers without penalising unrelated application data.
-            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("webhook:jobs",))
-            cur.execute(
-                "SELECT id FROM webhook_jobs WHERE delivery_key = %s",
-                (delivery_key,),
-            )
-            existing = cur.fetchone()
-            if existing:
-                conn.commit()
-                return int(existing[0]), False
-            cur.execute(
-                "SELECT COUNT(*) FROM webhook_jobs WHERE status IN ('pending', 'processing')"
-            )
-            if int(cur.fetchone()[0]) >= WEBHOOK_PENDING_JOB_LIMIT:
-                conn.commit()
-                return None
-            cur.execute(
-                """
-                INSERT INTO webhook_jobs (delivery_key, body, signature)
-                VALUES (%s, %s, %s)
-                RETURNING id
-                """,
-                (delivery_key, body, signature),
-            )
-            job_id = int(cur.fetchone()[0])
-            conn.commit()
-            return job_id, True
-
-
-def claim_next_webhook_job():
-    """Claim one due job, including leases left by a stopped worker."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                WITH candidate AS (
-                    SELECT id
-                    FROM webhook_jobs
-                    WHERE (status = 'pending' AND next_attempt_at <= CURRENT_TIMESTAMP)
-                       OR (status = 'processing'
-                           AND locked_at < CURRENT_TIMESTAMP - make_interval(secs => %s))
-                    ORDER BY created_at, id
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                )
-                UPDATE webhook_jobs AS jobs
-                SET status = 'processing', attempts = attempts + 1,
-                    locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                FROM candidate
-                WHERE jobs.id = candidate.id
-                RETURNING jobs.id, jobs.body, jobs.signature, jobs.attempts
-                """,
-                (WEBHOOK_JOB_LEASE_SECONDS,),
-            )
-            row = cur.fetchone()
-            conn.commit()
-            return row
-
-
-def mark_webhook_job_done(job_id: int):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE webhook_jobs
-                SET status = 'done', locked_at = NULL, last_error = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                """,
-                (job_id,),
-            )
-            conn.commit()
-
-
-def reschedule_webhook_job(job_id: int, error: str):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE webhook_jobs
-                SET status = 'pending', locked_at = NULL,
-                    next_attempt_at = CURRENT_TIMESTAMP + make_interval(secs => %s),
-                    last_error = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                """,
-                (WEBHOOK_JOB_RETRY_SECONDS, error[:1000], job_id),
-            )
-            conn.commit()
 
 
 def is_user_request_rate_limited(user_id: str) -> bool:

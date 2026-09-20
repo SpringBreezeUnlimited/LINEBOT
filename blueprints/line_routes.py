@@ -8,7 +8,6 @@
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from threading import BoundedSemaphore
 
 import psycopg2  # type: ignore
 from flask import request, abort  # type: ignore
@@ -23,17 +22,12 @@ from config import (
     STATUS_CALLED,
     STATUS_CANCELLED,
     WEBHOOK_ASYNC_WORKERS,
-    MAX_WEBHOOK_BODY_BYTES,
 )
 from database import (
     get_connection,
     is_accepting_new,
     is_user_request_rate_limited,
     get_accepting_type_names,
-    enqueue_webhook_job,
-    claim_next_webhook_job,
-    mark_webhook_job_done,
-    reschedule_webhook_job,
 )
 import services.line_service as line_service
 from services.line_service import build_type_image_url, send_flex_notice, send_reply_message
@@ -55,52 +49,29 @@ _WEBHOOK_EXECUTOR = ThreadPoolExecutor(
     max_workers=WEBHOOK_ASYNC_WORKERS,
     thread_name_prefix="line-webhook",
 )
-_WEBHOOK_WORKER_SLOTS = BoundedSemaphore(WEBHOOK_ASYNC_WORKERS)
 
 
-def _drain_webhook_jobs() -> None:
-    """Process durable deliveries without allowing an unbounded memory queue."""
+def _process_webhook(webhook_handler, body: str, signature: str, ip: str) -> None:
+    started_at = time.perf_counter()
     try:
-        while True:
-            job = claim_next_webhook_job()
-            if not job:
-                return
-            job_id, body, signature, attempts = job
-            started_at = time.perf_counter()
-            try:
-                handler.handle(body, signature)
-                mark_webhook_job_done(job_id)
-                result = "success"
-            except Exception as error:
-                result = "retry"
-                logger.exception(
-                    "Failed to process durable LINE webhook job_id=%s attempts=%s body_len=%s",
-                    job_id,
-                    attempts,
-                    len(body),
-                )
-                reschedule_webhook_job(job_id, str(error))
-            logger.info(
-                "metric=webhook_background duration_ms=%.2f result=%s job_id=%s body_len=%s",
-                (time.perf_counter() - started_at) * 1000,
-                result,
-                job_id,
-                len(body),
-            )
-    finally:
-        _WEBHOOK_WORKER_SLOTS.release()
-
-
-def schedule_webhook_job_drain() -> bool:
-    """Start one bounded worker if capacity is available."""
-    if not _WEBHOOK_WORKER_SLOTS.acquire(blocking=False):
-        return False
-    try:
-        _WEBHOOK_EXECUTOR.submit(_drain_webhook_jobs)
+        webhook_handler.handle(body, signature)
+        result = "success"
     except Exception:
-        _WEBHOOK_WORKER_SLOTS.release()
-        raise
-    return True
+        result = "error"
+        # 受付後の処理失敗は再送を誘発しないようログだけ記録する。
+        logger.exception(
+            "Failed to process LINE webhook event ip=%s signature=%s body_len=%s",
+            ip,
+            (signature or "")[:64],
+            len(body) if body is not None else 0,
+        )
+    finally:
+        logger.info(
+            "metric=webhook_background duration_ms=%.2f result=%s body_len=%s",
+            (time.perf_counter() - started_at) * 1000,
+            result,
+            len(body) if body is not None else 0,
+        )
 
 
 def callback():
@@ -116,15 +87,7 @@ def callback():
     signature = request.headers.get("X-Line-Signature")
     if not signature:
         abort(400)
-    if request.content_length is not None and request.content_length > MAX_WEBHOOK_BODY_BYTES:
-        abort(413)
-    body_bytes = request.get_data(cache=False)
-    if len(body_bytes) > MAX_WEBHOOK_BODY_BYTES:
-        abort(413)
-    try:
-        body = body_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        abort(400)
+    body = request.get_data(as_text=True)
     validation_started_at = time.perf_counter()
     try:
         # 署名検証とJSON解析だけを同期で行い、予約処理は応答後に実行する。
@@ -140,22 +103,11 @@ def callback():
         )
         return "OK"
     validation_ms = (time.perf_counter() - validation_started_at) * 1000
-    try:
-        queued = enqueue_webhook_job(body, signature)
-    except Exception:
-        logger.exception("Failed to persist verified LINE webhook ip=%s body_len=%s", ip, len(body))
-        abort(503)
-    if queued is None:
-        logger.warning("LINE webhook queue is full ip=%s body_len=%s", ip, len(body))
-        abort(503)
-    _job_id, inserted = queued
-    if inserted:
-        schedule_webhook_job_drain()
+    _WEBHOOK_EXECUTOR.submit(_process_webhook, handler, body, signature, ip)
     logger.info(
-        "metric=webhook_request duration_ms=%.2f validation_ms=%.2f result=accepted queued=%s body_len=%s",
+        "metric=webhook_request duration_ms=%.2f validation_ms=%.2f result=accepted body_len=%s",
         (time.perf_counter() - started_at) * 1000,
         validation_ms,
-        inserted,
         len(body) if body is not None else 0,
     )
     return "OK"
@@ -180,7 +132,14 @@ def handle_message(event):
             "リクエストが集中しています。少し時間をおいて再度お試しください。",
         )
         return
-    process_reservation(event, user_id, user_message)
+    try:
+        process_reservation(event, user_id, user_message)
+    except Exception:
+        logger.exception(
+            "Failed to process LINE message user_id=%s message=%s",
+            user_id,
+            user_message,
+        )
 
 
 def process_reservation(event, user_id, user_message):
