@@ -17,6 +17,8 @@ def test_callback_accepts_valid_signature_and_rejects_fake(app_module, monkeypat
     monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
     monkeypatch.setattr(app_module, "enforce_https", lambda: None)
     app_module.app.config["TESTING"] = True
+    monkeypatch.setattr(app_module.line_routes, "enqueue_webhook_job", lambda *_args: (1, True))
+    monkeypatch.setattr(app_module.line_routes, "schedule_webhook_job_drain", lambda: True)
 
     body = '{"destination":"U1234567890","events":[]}'
     valid_signature = _line_signature("test-channel-secret", body)
@@ -45,6 +47,8 @@ def test_callback_does_not_limit_valid_webhooks_by_shared_source_ip(app_module, 
     monkeypatch.setattr(app_module, "enforce_host_allowlist", lambda: None)
     monkeypatch.setattr(app_module, "enforce_https", lambda: None)
     app_module.app.config["TESTING"] = True
+    monkeypatch.setattr(app_module.line_routes, "enqueue_webhook_job", lambda *_args: (1, True))
+    monkeypatch.setattr(app_module.line_routes, "schedule_webhook_job_drain", lambda: True)
 
     body = '{"destination":"U1234567890","events":[]}'
     valid_signature = _line_signature("test-channel-secret", body)

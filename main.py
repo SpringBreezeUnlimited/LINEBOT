@@ -159,7 +159,14 @@ from auth import (
 )
 
 import blueprints.line_routes as line_routes
-from blueprints.line_routes import handler, callback, handle_message, process_reservation, should_ignore_reply_message
+from blueprints.line_routes import (
+    handler,
+    callback,
+    handle_message,
+    process_reservation,
+    should_ignore_reply_message,
+    schedule_webhook_job_drain,
+)
 
 import database
 from database import (
@@ -431,6 +438,7 @@ def process_call_queue_task():
         return jsonify({"error": "batch runner token is not configured"}), 503
     if not validate_batch_runner_token():
         abort(403)
+    schedule_webhook_job_drain()
     result = process_queued_calls()
     return jsonify(result)
 

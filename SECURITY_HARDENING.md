@@ -10,6 +10,7 @@
   - Idle timeout via `SESSION_IDLE_TIMEOUT_SECONDS`.
 - Login brute-force control (`LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_SECONDS`).
 - Valid LINE webhook messages are limited per LINE user (`USER_REQUEST_RATE_LIMIT_COUNT`, `USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS`), not by source IP because LINE may use shared IPs.
+- Verified LINE webhooks are written to a bounded PostgreSQL queue before `200` is returned.  Worker failures are retried by the scheduled queue task, and a full or unavailable queue returns `503` so LINE can retry delivery.
 - Host header allow-list (`ALLOWED_HOSTS`) and HTTPS enforcement (`FORCE_HTTPS`).
 - Response security headers:
   - Content-Security-Policy
