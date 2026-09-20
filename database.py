@@ -625,6 +625,43 @@ def ensure_rate_limit_tables():
             conn.commit()
 
 
+def ensure_webhook_events_table():
+    """Webhook再送時の重複処理を防ぐためのイベントID記録テーブルを作成する。"""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS webhook_events (
+                    webhook_event_id TEXT PRIMARY KEY,
+                    received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_webhook_events_received_at
+                ON webhook_events (received_at)
+            """)
+            conn.commit()
+
+
+def claim_webhook_event(webhook_event_id: str | None) -> bool:
+    """イベントIDを初回だけ確保し、初回処理ならTrueを返す。"""
+    if not webhook_event_id:
+        return True
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO webhook_events (webhook_event_id)
+                VALUES (%s)
+                ON CONFLICT (webhook_event_id) DO NOTHING
+                RETURNING webhook_event_id
+                """,
+                (webhook_event_id,),
+            )
+            claimed = cur.fetchone() is not None
+            conn.commit()
+            return claimed
+
+
 def migrate_legacy_queued_calls():
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -648,6 +685,7 @@ def ensure_database_schema():
         ensure_settings_table()
         ensure_admin_login_logs_table()
         ensure_rate_limit_tables()
+        ensure_webhook_events_table()
         migrate_legacy_queued_calls()
         SCHEMA_READY = True
 

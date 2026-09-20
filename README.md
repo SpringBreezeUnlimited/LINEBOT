@@ -17,6 +17,7 @@
    - Azure Managed RedisでEntra ID認証を使う場合は、`REDIS_URL=rediss://ホスト名:6380/0`、`REDIS_ENTRA_ID_ENABLED=true`、`REDIS_ENTRA_IDENTITY_TYPE=system_assigned`を設定します。ユーザー割り当てマネージドIDでは`REDIS_ENTRA_IDENTITY_TYPE=user_assigned`と`REDIS_ENTRA_ID_CLIENT_ID`も設定してください。
    - `USER_REQUEST_RATE_LIMIT_COUNT` と `USER_REQUEST_RATE_LIMIT_WINDOW_SECONDS` で、同一LINEユーザーの予約・キャンセル・待ち時間確認などの処理回数を設定できます（デフォルトは60秒あたり10回）。
    - `WEBHOOK_ASYNC_WORKERS` でWebhookのバックグラウンド処理ワーカー数を調整できます（デフォルト4）。
+   - LINE DevelopersコンソールのWebhook設定で「Webhookの再送」を有効にしてください。アプリは `webhookEventId` をDBに記録し、再送された同一イベントを二重処理しません。
    - Webhookの受信確認は `metric=webhook_received`、処理時間は `metric=webhook_request`（受付・署名検証）と `metric=webhook_background`（予約処理）としてログ出力されます。
 3. デプロイします。Render は `Procfile` を自動検出して Gunicorn で起動します。
    - 本番では `ALLOWED_HOSTS` の設定が必須です。未設定だとアプリは起動に失敗します。

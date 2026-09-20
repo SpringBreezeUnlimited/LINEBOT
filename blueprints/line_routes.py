@@ -24,6 +24,7 @@ from config import (
     WEBHOOK_ASYNC_WORKERS,
 )
 from database import (
+    claim_webhook_event,
     get_connection,
     is_accepting_new,
     is_user_request_rate_limited,
@@ -121,6 +122,10 @@ def should_ignore_reply_message(message: str) -> bool:
 
 
 def handle_message(event):
+    webhook_event_id = getattr(event, "webhook_event_id", None)
+    if not claim_webhook_event(webhook_event_id):
+        logger.info("Skipping duplicate LINE webhook event webhook_event_id=%s", webhook_event_id)
+        return
     user_message = event.message.text.strip()
     if should_ignore_reply_message(user_message):
         return
