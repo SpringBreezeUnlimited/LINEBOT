@@ -386,11 +386,23 @@ def process_queued_calls(now=None):
 
     ensure_database_schema()
     runtime_settings = get_runtime_settings()
-    auto_call_count = runtime_settings["auto_call_count"]
+    auto_call_configs = runtime_settings.get("auto_call_configs")
+    if auto_call_configs is None:
+        # テストや旧設定の互換用。通常は admin_accounts 由来の一覧を使う。
+        auto_call_configs = [
+            {
+                "owner_admin_id": None,
+                "auto_call_count": runtime_settings["auto_call_count"],
+            }
+        ]
     with get_connection() as conn:
         with conn.cursor() as cur:
             auto_rows = []
-            if auto_call_count > 0:
+            for auto_config in auto_call_configs:
+                owner_admin_id = auto_config["owner_admin_id"]
+                auto_call_count = auto_config["auto_call_count"]
+                if auto_call_count <= 0:
+                    continue
                 # 先に該当行をロックして状態を更新しておくことで、並行実行や手動呼出しとの競合で重複通知が送られるのを防ぐ
                 cur.execute(
                     """
@@ -399,6 +411,7 @@ def process_queued_calls(now=None):
                             FROM reservations r
                             JOIN reservation_types t ON r.type_id = t.id
                             WHERE r.status = %s
+                              AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
                             ORDER BY r.id ASC
                             FOR UPDATE SKIP LOCKED
                             LIMIT %s
@@ -412,10 +425,17 @@ def process_queued_calls(now=None):
                     RETURNING id, user_id, COALESCE(reservation_no, id),
                               (SELECT name FROM reservation_types WHERE id = reservations.type_id)
                     """,
-                    (STATUS_WAITING, auto_call_count, STATUS_CALLED, CALL_ORIGIN_AUTO, STATUS_WAITING),
+                    (
+                        STATUS_WAITING,
+                        owner_admin_id,
+                        auto_call_count,
+                        STATUS_CALLED,
+                        CALL_ORIGIN_AUTO,
+                        STATUS_WAITING,
+                    ),
                 )
-                auto_rows = cur.fetchall()
-                conn.commit()
+                auto_rows.extend(cur.fetchall())
+            conn.commit()
 
     sent_ids = []
     failed_ids = []
@@ -489,7 +509,7 @@ def process_queued_calls(now=None):
         "minute": minute_label,
         "timed_out_count": timed_out_count,
         "midnight_cancel_count": midnight_cancel_count,
-        "auto_call_count": auto_call_count,
+        "auto_call_count": sum(item["auto_call_count"] for item in auto_call_configs),
         "auto_selected_count": len(auto_rows),
         "sent_count": len(sent_ids),
         "failed_count": len(failed_ids),

@@ -474,6 +474,7 @@ def ensure_admin_accounts_table():
                         active BOOLEAN NOT NULL DEFAULT TRUE,
                         next_reservation_no INTEGER NOT NULL DEFAULT 1,
                         accepting_new BOOLEAN NOT NULL DEFAULT TRUE,
+                        auto_call_count INTEGER NOT NULL DEFAULT 0,
                         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
@@ -484,6 +485,10 @@ def ensure_admin_accounts_table():
             cur.execute("""
                 ALTER TABLE admin_accounts
                 ADD COLUMN IF NOT EXISTS accepting_new BOOLEAN NOT NULL DEFAULT TRUE
+            """)
+            cur.execute("""
+                ALTER TABLE admin_accounts
+                ADD COLUMN IF NOT EXISTS auto_call_count INTEGER NOT NULL DEFAULT 0
             """)
             cur.execute("""
                     CREATE INDEX IF NOT EXISTS idx_admin_accounts_role_active
@@ -597,11 +602,7 @@ def ensure_settings_table():
                 VALUES ('accepting_new', 'true')
                 ON CONFLICT (key) DO NOTHING
             """)
-            cur.execute("""
-                INSERT INTO app_settings (key, value)
-                VALUES ('auto_call_count', '0')
-                ON CONFLICT (key) DO NOTHING
-            """)
+            cur.execute("DELETE FROM app_settings WHERE key = 'auto_call_count'")
             for key, value in (
                 ("last_auto_call_run_at", ""),
                 ("last_auto_call_sent_count", "0"),
@@ -936,13 +937,14 @@ def set_accepting_new(flag: bool, admin_id: int | None = None):
             conn.commit()
 
 
-def get_auto_call_count() -> int:
-    raw = get_setting("auto_call_count", "0").strip()
-    return int(raw) if raw.isdigit() else 0
-
-
-def set_auto_call_count(count: int):
-    set_setting("auto_call_count", str(max(0, count)))
+def set_admin_auto_call_count(admin_id: int, count: int):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE admin_accounts SET auto_call_count = %s WHERE id = %s",
+                (max(0, count), admin_id),
+            )
+            conn.commit()
 
 
 def build_auto_call_summary(values, prefix: str):
@@ -997,6 +999,21 @@ def get_runtime_settings(admin_id: int | None = None):
             if admin_id is None:
                 cur.execute(
                     """
+                    SELECT id, auto_call_count
+                    FROM admin_accounts
+                    WHERE active = TRUE AND auto_call_count > 0
+                    ORDER BY id ASC
+                    """
+                )
+                auto_call_configs = [
+                    {
+                        "owner_admin_id": row[0],
+                        "auto_call_count": max(0, int(row[1] or 0)),
+                    }
+                    for row in cur.fetchall()
+                ]
+                cur.execute(
+                    """
                     SELECT EXISTS (
                         SELECT 1
                         FROM admin_accounts
@@ -1008,6 +1025,7 @@ def get_runtime_settings(admin_id: int | None = None):
                 accepting_new = (
                     bool(accepting_row[0]) if accepting_row is not None else False
                 )
+                auto_call_row = None
             else:
                 cur.execute(
                     """
@@ -1023,11 +1041,21 @@ def get_runtime_settings(admin_id: int | None = None):
                     if accepting_row is None
                     else bool(accepting_row[0]) and bool(accepting_row[1])
                 )
-    raw_auto_call_count = (values.get("auto_call_count") or "0").strip()
-    auto_call_count = int(raw_auto_call_count) if raw_auto_call_count.isdigit() else 0
+                cur.execute(
+                    "SELECT auto_call_count FROM admin_accounts WHERE id = %s",
+                    (admin_id,),
+                )
+                auto_call_row = cur.fetchone()
+                auto_call_configs = []
+    auto_call_count = (
+        max(0, int(auto_call_row[0] or 0))
+        if admin_id is not None and auto_call_row is not None
+        else sum(item["auto_call_count"] for item in auto_call_configs)
+    )
     return {
         "accepting_new": accepting_new,
         "auto_call_count": auto_call_count,
+        "auto_call_configs": auto_call_configs,
         "last_auto_call": get_last_auto_call_summary(values),
         "latest_auto_call": get_auto_call_summary("last", values),
         "latest_wait_time": get_latest_wait_time_summary(values),

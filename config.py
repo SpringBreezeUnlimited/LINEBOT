@@ -92,7 +92,7 @@ REDIS_ENTRA_ID_RESOURCE = (
     os.getenv("REDIS_ENTRA_ID_RESOURCE") or "https://redis.azure.com/"
 ).strip()
 
-APP_VERSION = "v1.0.209"
+APP_VERSION = "v1.0.210"
 APP_RELEASED_AT = "2026-09-15 00:00 JST"
 GLOBAL_RESERVATION_DELETE_ENABLED = parse_bool_env(
     "ENABLE_GLOBAL_RESERVATION_DELETE", False
@@ -195,7 +195,7 @@ WAIT_TIME_SETTING_KEYS = (
 ROLE_ADMIN = "admin"
 ROLE_AUDIT_ADMIN = "audit_admin"
 RUNTIME_SETTING_KEYS = (
-    ("accepting_new", "auto_call_count")
+    ("accepting_new",)
     + AUTO_CALL_SETTING_KEYS
     + WAIT_TIME_SETTING_KEYS
 )

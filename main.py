@@ -106,8 +106,6 @@ from database import (
     get_latest_wait_time_summary,
     is_accepting_new,
     set_accepting_new,
-    get_auto_call_count,
-    set_auto_call_count,
     build_auto_call_summary,
     get_auto_call_summary,
     get_last_auto_call_summary,

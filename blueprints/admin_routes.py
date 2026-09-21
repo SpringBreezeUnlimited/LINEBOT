@@ -52,7 +52,7 @@ from database import (
     create_connection,
     is_accepting_new,
     set_accepting_new,
-    set_auto_call_count,
+    set_admin_auto_call_count,
     get_runtime_settings,
     get_accepting_type_names,
     get_redis_status,
@@ -1243,12 +1243,17 @@ def admin_auto_call_count():
     if not is_admin_authenticated():
         return redirect(url_for("login"))
 
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
     raw_value = (request.form.get("auto_call_count") or "").strip()
     if raw_value.isdigit():
         count = min(int(raw_value), 50)
     else:
         count = 0
-    set_auto_call_count(count)
+    set_admin_auto_call_count(current_admin_account_id, count)
     return redirect(url_for("admin_page"))
 
 
