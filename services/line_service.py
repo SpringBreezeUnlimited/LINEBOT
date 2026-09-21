@@ -414,7 +414,11 @@ def save_type_image_upload(image_file) -> tuple[bytes, str, str]:
         return b"", "", ""
 
     try:
-        with Image.open(io.BytesIO(raw_data)) as source:
+        # 拡張子は攻撃者が自由に指定できるため、Pillow が対応する全形式を
+        # 内容から判別させず、アプリケーションで必要な形式だけに限定する。
+        with Image.open(
+            io.BytesIO(raw_data), formats=["JPEG", "PNG", "GIF", "WEBP"]
+        ) as source:
             source = ImageOps.exif_transpose(source)
             source.load()
             has_alpha = "A" in source.getbands()
