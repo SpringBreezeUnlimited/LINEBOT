@@ -2604,6 +2604,67 @@ def test_handle_message_keeps_processing_after_reservation_error(app_module, mon
     assert processed_messages == ["予約 相談", "待ち時間"]
 
 
+def test_handle_message_releases_claim_after_reservation_error(app_module, monkeypatch):
+    released = []
+
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "claim_webhook_event",
+        lambda event_id: True,
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "is_user_request_rate_limited",
+        lambda _user_id: False,
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "release_webhook_event",
+        lambda event_id: released.append(event_id),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "process_reservation",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("temporary failure")),
+    )
+
+    event = SimpleNamespace(
+        webhook_event_id="event-retry",
+        message=SimpleNamespace(text="予約 相談"),
+        source=SimpleNamespace(user_id="U-retry"),
+        reply_token="reply-token",
+    )
+
+    app_module.handle_message(event)
+
+    assert released == ["event-retry"]
+
+
+def test_handle_message_handles_claim_error(app_module, monkeypatch):
+    processed = []
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "claim_webhook_event",
+        lambda _event_id: (_ for _ in ()).throw(RuntimeError("database unavailable")),
+    )
+    monkeypatch.setattr(
+        app_module.line_routes,
+        "process_reservation",
+        lambda *args: processed.append(args),
+    )
+
+    event = SimpleNamespace(
+        webhook_event_id="event-claim-error",
+        message=SimpleNamespace(text="予約 相談"),
+        source=SimpleNamespace(user_id="U-claim-error"),
+        reply_token="reply-token",
+    )
+
+    app_module.handle_message(event)
+
+    assert processed == []
+
+
 def test_handle_message_blocks_rate_limited_user(app_module, monkeypatch):
     processed_messages = []
     replies = []

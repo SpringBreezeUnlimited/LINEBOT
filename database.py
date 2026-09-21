@@ -692,6 +692,19 @@ def claim_webhook_event(webhook_event_id: str | None) -> bool:
             return claimed
 
 
+def release_webhook_event(webhook_event_id: str | None) -> None:
+    """処理に失敗したイベントを解放し、LINEの再送を受け付けられるようにする。"""
+    if not webhook_event_id:
+        return
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM webhook_events WHERE webhook_event_id = %s",
+                (webhook_event_id,),
+            )
+            conn.commit()
+
+
 def migrate_legacy_queued_calls():
     with get_connection() as conn:
         with conn.cursor() as cur:

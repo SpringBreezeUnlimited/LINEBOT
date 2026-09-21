@@ -29,6 +29,7 @@ from database import (
     is_accepting_new,
     is_user_request_rate_limited,
     get_accepting_type_names,
+    release_webhook_event,
 )
 import services.line_service as line_service
 from services.line_service import build_type_image_url, send_flex_notice, send_reply_message
@@ -123,27 +124,38 @@ def should_ignore_reply_message(message: str) -> bool:
 
 def handle_message(event):
     webhook_event_id = getattr(event, "webhook_event_id", None)
-    if not claim_webhook_event(webhook_event_id):
-        logger.info("Skipping duplicate LINE webhook event webhook_event_id=%s", webhook_event_id)
-        return
-    user_message = event.message.text.strip()
-    if should_ignore_reply_message(user_message):
-        return
-    user_id = event.source.user_id
-    if is_user_request_rate_limited(user_id):
-        send_flex_notice(
-            event.reply_token,
-            "しばらくお待ちください",
-            "リクエストが集中しています。少し時間をおいて再度お試しください。",
-        )
-        return
+    claimed = False
     try:
+        if not claim_webhook_event(webhook_event_id):
+            logger.info("Skipping duplicate LINE webhook event webhook_event_id=%s", webhook_event_id)
+            return
+        claimed = True
+        user_message = event.message.text.strip()
+        if should_ignore_reply_message(user_message):
+            return
+        user_id = event.source.user_id
+        if is_user_request_rate_limited(user_id):
+            send_flex_notice(
+                event.reply_token,
+                "しばらくお待ちください",
+                "リクエストが集中しています。少し時間をおいて再度お試しください。",
+            )
+            return
         process_reservation(event, user_id, user_message)
     except Exception:
+        if claimed:
+            try:
+                release_webhook_event(webhook_event_id)
+            except Exception:
+                logger.exception(
+                    "Failed to release LINE webhook event webhook_event_id=%s",
+                    webhook_event_id,
+                )
         logger.exception(
-            "Failed to process LINE message user_id=%s message=%s",
-            user_id,
-            user_message,
+            "Failed to process LINE webhook event webhook_event_id=%s user_id=%s message=%s",
+            webhook_event_id,
+            getattr(getattr(event, "source", None), "user_id", None),
+            getattr(getattr(event, "message", None), "text", None),
         )
 
 
