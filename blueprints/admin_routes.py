@@ -55,6 +55,7 @@ from database import (
     set_auto_call_count,
     get_runtime_settings,
     get_accepting_type_names,
+    get_redis_status,
 )
 import auth
 from auth import (
@@ -121,6 +122,7 @@ def admin_login_logs_page():
         admin_refresh_interval_ms=ADMIN_REFRESH_INTERVAL_MS,
         csrf_token=get_csrf_token(),
         is_audit_admin=True,
+        redis_status=get_redis_status(),
     )
 
 

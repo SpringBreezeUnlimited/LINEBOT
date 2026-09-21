@@ -40,6 +40,24 @@
         <div class="hero-kicker">Accounts</div>
         <h1>ログイン履歴</h1>
     </div>
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+                <div>
+                    <h5 class="card-title mb-1">Redis状態</h5>
+                    <p class="text-muted mb-0">レート制限に使用するRedisの設定・接続状態です。</p>
+                </div>
+                {% if redis_status.connected %}
+                <span class="badge bg-success">{{ redis_status.label }}</span>
+                {% elif redis_status.configured %}
+                <span class="badge bg-danger">{{ redis_status.label }}</span>
+                {% else %}
+                <span class="badge bg-secondary">{{ redis_status.label }}</span>
+                {% endif %}
+            </div>
+            <p class="mb-0 mt-3">{{ redis_status.detail }}</p>
+        </div>
+    </div>
     <div class="card mb-4 admin-create-card">
         <div class="card-body">
             <div class="admin-create-header">

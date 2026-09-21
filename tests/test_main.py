@@ -1377,6 +1377,42 @@ def test_get_redis_client_logs_only_once_for_reused_client(
     assert caplog.text.count("Redis is enabled for rate limiting") == 1
 
 
+def test_get_redis_status_reports_unconfigured(app_module, monkeypatch):
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "")
+    assert app_module.database.get_redis_status() == {
+        "configured": False,
+        "connected": False,
+        "label": "未設定",
+        "detail": "REDIS_URL が設定されていません。",
+    }
+
+
+def test_get_redis_status_reports_connected(app_module, monkeypatch):
+    class FakeRedis:
+        def ping(self):
+            return True
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", FakeRedis())
+    status = app_module.database.get_redis_status()
+    assert status["configured"] is True
+    assert status["connected"] is True
+    assert status["label"] == "接続確認済み"
+
+
+def test_get_redis_status_reports_connection_failure(app_module, monkeypatch):
+    class FakeRedis:
+        def ping(self):
+            raise TimeoutError("timeout")
+
+    monkeypatch.setattr(app_module.database, "REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(app_module.database, "_REDIS_CLIENT", FakeRedis())
+    status = app_module.database.get_redis_status()
+    assert status["configured"] is True
+    assert status["connected"] is False
+    assert status["label"] == "接続失敗"
+
+
 def test_login_get_ok(client):
     response = client.get("/login")
     assert response.status_code == 200
@@ -2338,6 +2374,7 @@ def test_admin_login_logs_page_shows_account_creation_ui(client, app_module, mon
     assert "一括作成" in body
     assert "この内容で作成" in body
     assert "一括で作成" in body
+    assert "Redis状態" in body
 
 
 def test_admin_data_unauthorized(client):

@@ -97,6 +97,36 @@ def get_redis_client():
     return _REDIS_CLIENT
 
 
+def get_redis_status():
+    """Return a safe, operator-facing Redis configuration/connectivity status."""
+    if not REDIS_URL:
+        return {
+            "configured": False,
+            "connected": False,
+            "label": "未設定",
+            "detail": "REDIS_URL が設定されていません。",
+        }
+
+    try:
+        client = get_redis_client()
+        client.ping()
+    except Exception:
+        logger.warning("Redis status check failed", exc_info=True)
+        return {
+            "configured": True,
+            "connected": False,
+            "label": "接続失敗",
+            "detail": "Redisは設定されていますが、接続確認に失敗しました。",
+        }
+
+    return {
+        "configured": True,
+        "connected": True,
+        "label": "接続確認済み",
+        "detail": "Redisが設定され、接続確認に成功しました。",
+    }
+
+
 def get_connection_pool():
     global _CONNECTION_POOL
     if _CONNECTION_POOL is None:
