@@ -9,11 +9,13 @@ node_modules/
 package-lock.json
 
 # Tests / tooling
+.coverage
 .pytest_cache/
 .playwright-mcp/
 
 # Editor
 .vscode/
+settings.json
 .DS_Store
 
 # Logs
