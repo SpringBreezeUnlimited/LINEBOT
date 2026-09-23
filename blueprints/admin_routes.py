@@ -1144,6 +1144,122 @@ def admin_history_export():
     )
 
 
+def admin_status_page():
+    """現在の管理者が所有する予約の状態を編集する画面。"""
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    status_error = request.args.get("status_error")
+    status_success = request.args.get("status_success")
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT r.id, COALESCE(r.reservation_no, r.id), r.status,
+                           t.name, r.created_at, r.called_at, r.completed_at
+                    FROM reservations r
+                    LEFT JOIN reservation_types t ON r.type_id = t.id
+                    WHERE COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
+                    ORDER BY r.created_at DESC NULLS LAST, r.id DESC
+                    LIMIT 500
+                """,
+                (current_admin_account_id,),
+            )
+            rows = [
+                {
+                    "id": row[0],
+                    "display_no": fmt_no(row[1]) if isinstance(row[1], int) else row[1],
+                    "status": row[2],
+                    "type": row[3] or "-",
+                    "created_at": format_dt(row[4]),
+                    "called_at": format_dt(row[5]),
+                    "completed_at": format_dt(row[6]),
+                }
+                for row in cur.fetchall()
+            ]
+    return render_template(
+        "status_edit.html",
+        rows=rows,
+        status_error=status_error,
+        status_success=status_success,
+        csrf_token=get_csrf_token(),
+    )
+
+
+def admin_status_update(res_id):
+    """所有者チェック付きで予約状態を更新する（LINE通知は送信しない）。"""
+    if not is_admin_authenticated():
+        return redirect(url_for("login"))
+    current_admin_account_id = get_current_admin_account_id()
+    if not current_admin_account_id:
+        session.clear()
+        return redirect(url_for("login"))
+
+    new_status = (request.form.get("status") or "").strip()
+    allowed_statuses = {STATUS_WAITING, STATUS_CALLED, STATUS_DONE, STATUS_CANCELLED}
+    if new_status not in allowed_statuses:
+        return redirect(
+            url_for("admin_status_page", status_error="指定された状態は使用できません。")
+        )
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    UPDATE reservations r
+                    SET status = %s,
+                        called_at = CASE
+                            WHEN %s = %s THEN COALESCE(r.called_at, CURRENT_TIMESTAMP)
+                            WHEN %s = %s THEN NULL
+                            ELSE r.called_at
+                        END,
+                        completed_at = CASE
+                            WHEN %s IN (%s, %s) THEN COALESCE(r.completed_at, CURRENT_TIMESTAMP)
+                            ELSE NULL
+                        END,
+                        call_origin = CASE
+                            WHEN %s = %s THEN COALESCE(r.call_origin, %s)
+                            WHEN %s = %s THEN NULL
+                            ELSE r.call_origin
+                        END,
+                        owner_admin_id = COALESCE(r.owner_admin_id, %s)
+                    FROM reservation_types t
+                    WHERE r.id = %s
+                      AND r.type_id = t.id
+                      AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s
+                    RETURNING r.id
+                """,
+                (
+                    new_status,
+                    new_status,
+                    STATUS_CALLED,
+                    new_status,
+                    STATUS_WAITING,
+                    new_status,
+                    STATUS_DONE,
+                    STATUS_CANCELLED,
+                    new_status,
+                    STATUS_CALLED,
+                    CALL_ORIGIN_MANUAL,
+                    new_status,
+                    STATUS_WAITING,
+                    current_admin_account_id,
+                    res_id,
+                    current_admin_account_id,
+                ),
+            )
+            if not cur.fetchone():
+                abort(404)
+            conn.commit()
+    return redirect(
+        url_for("admin_status_page", status_success="予約の状態を更新しました。")
+    )
+
+
 def admin_call(res_id):
     if not is_admin_authenticated():
         return redirect(url_for("login"))

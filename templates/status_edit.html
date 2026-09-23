@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}予約状態編集{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/history.min.css') }}">
+{% endblock %}
+
+{% block body_class %}app-shell{% endblock %}
+
+{% block navbar %}
+<header class="global-nav">
+    <div class="container global-nav__inner">
+        <a class="brand-lockup" href="/admin" aria-label="管理画面">
+            <span class="brand-lockup__mark">LINEBOT</span>
+            <span class="brand-lockup__title">festival queue</span>
+        </a>
+        <nav class="nav-pills" aria-label="管理ページ">
+            <a class="nav-pill" href="/admin">受付</a>
+            <a class="nav-pill" href="/admin/types">種類</a>
+            <a class="nav-pill" href="/admin/history">ログ</a>
+            <a class="nav-pill is-active" href="/admin/status">状態編集</a>
+            <form method="POST" action="/logout" class="mb-0">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="nav-pill">ログアウト</button>
+            </form>
+        </nav>
+    </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="container page-stack">
+    <div class="hero-panel">
+        <div class="hero-kicker">Reservation status</div>
+        <h1>予約状態編集</h1>
+        <p class="mb-0">この管理者に紐づく予約だけを表示しています。状態変更ではLINE通知を送信しません。</p>
+    </div>
+    {% if status_error %}<div class="alert alert-warning">{{ status_error }}</div>{% endif %}
+    {% if status_success %}<div class="alert alert-success">{{ status_success }}</div>{% endif %}
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead>
+                    <tr><th>チケット番号</th><th>種類</th><th>受付時刻</th><th>現在の状態</th><th>変更</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>{{ row.display_no }}</td>
+                        <td>{{ row.type }}</td>
+                        <td>{{ row.created_at or '-' }}</td>
+                        <td>
+                            {% if row.status == 'waiting' %}待機中
+                            {% elif row.status == 'called' %}呼出中
+                            {% elif row.status == 'done' %}確認完了
+                            {% elif row.status == 'cancelled' %}キャンセル
+                            {% else %}{{ row.status }}{% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('admin_status_update', res_id=row.id) }}" class="d-flex gap-2">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                                <select name="status" class="form-select" aria-label="{{ row.display_no }}の状態">
+                                    <option value="waiting" {% if row.status == 'waiting' %}selected{% endif %}>待機中</option>
+                                    <option value="called" {% if row.status == 'called' %}selected{% endif %}>呼出中</option>
+                                    <option value="done" {% if row.status == 'done' %}selected{% endif %}>確認完了</option>
+                                    <option value="cancelled" {% if row.status == 'cancelled' %}selected{% endif %}>キャンセル</option>
+                                </select>
+                                <button type="submit" class="btn btn-primary">保存</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-center">予約はありません。</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
