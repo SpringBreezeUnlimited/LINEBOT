@@ -39,6 +39,7 @@ from config import (
     MAX_TYPE_PRICE,
     ALLOWED_TYPE_IMAGE_EXTENSIONS,
     ADMIN_REFRESH_INTERVAL_MS,
+    MAX_BROADCAST_MESSAGE_CHARS,
 )
 from blueprints.admin_helpers import (
     serialize_active_rows,
@@ -71,6 +72,7 @@ import services.line_service as line_service
 from services.line_service import (
     save_type_image_upload,
     send_push_message,
+    send_broadcast_message,
 )
 import services.queue_service as queue_service
 from services.queue_service import (
@@ -85,6 +87,55 @@ from validators import normalize_type_name, validate_type_name, validate_type_fl
 from formatting import format_dt, format_duration_from_seconds
 
 logger = logging.getLogger("admin_routes")
+
+
+def admin_broadcast_page():
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+    return render_template(
+        "broadcast.html",
+        csrf_token=get_csrf_token(),
+        broadcast_error=request.args.get("broadcast_error"),
+        broadcast_success=request.args.get("broadcast_success"),
+    )
+
+
+def admin_broadcast_send():
+    if not is_audit_admin_authenticated():
+        return redirect(url_for("login"))
+
+    message = (request.form.get("message") or "").strip()
+    confirmation = (request.form.get("confirmation") or "").strip()
+    if not message:
+        return redirect(url_for("admin_broadcast_page", broadcast_error="メッセージを入力してください。"))
+    if len(message) > MAX_BROADCAST_MESSAGE_CHARS:
+        return redirect(
+            url_for(
+                "admin_broadcast_page",
+                broadcast_error=f"メッセージは{MAX_BROADCAST_MESSAGE_CHARS}文字以内で入力してください。",
+            )
+        )
+    if confirmation != "緊急送信":
+        return redirect(
+            url_for("admin_broadcast_page", broadcast_error="確認欄に「緊急送信」と入力してください。")
+        )
+
+    try:
+        send_broadcast_message(message)
+    except Exception:
+        logger.exception("Failed to send emergency LINE broadcast message")
+        return redirect(
+            url_for("admin_broadcast_page", broadcast_error="ブロードキャスト送信に失敗しました。LINEの送信状態を確認してください。")
+        )
+
+    logger.warning(
+        "Emergency LINE broadcast accepted by admin_login_id=%s message_length=%s",
+        session.get("admin_login_id"),
+        len(message),
+    )
+    return redirect(
+        url_for("admin_broadcast_page", broadcast_success="ブロードキャスト送信を受け付けました。")
+    )
 
 def logout():
     session.clear()

@@ -12,6 +12,7 @@ from werkzeug.utils import secure_filename  # type: ignore
 
 from linebot.v3.messaging import (  # type: ignore
     ApiClient,
+    BroadcastRequest,
     Configuration,
     MessagingApi,
     PushMessageRequest,
@@ -331,6 +332,48 @@ def send_push_message(user_id: str, message: str | dict, retry_key: str | None =
             )
             logger.warning(
                 "Push failed (attempt %s/%s, status=%s). Retry after %ss retry_key=%s",
+                attempt,
+                LINE_PUSH_MAX_RETRIES,
+                status,
+                delay_seconds,
+                stable_retry_key,
+            )
+            time.sleep(delay_seconds)
+
+
+def send_broadcast_message(message: str, retry_key: str | None = None):
+    """LINE公式アカウントの友だち全員へテキストをブロードキャストする。"""
+    if LOAD_TEST_MODE:
+        logger.info("LOAD_TEST_MODE: broadcast message skipped message_length=%s", len(message))
+        return
+
+    stable_retry_key = retry_key or str(uuid.uuid4())
+    payload = BroadcastRequest(messages=[build_line_message(message)])
+    messaging_api = get_messaging_api()
+    for attempt in range(1, LINE_PUSH_MAX_RETRIES + 1):
+        try:
+            try:
+                return messaging_api.broadcast(payload, x_line_retry_key=stable_retry_key)
+            except TypeError as error:
+                if "x_line_retry_key" not in str(error):
+                    raise
+                logger.warning(
+                    "line-bot-sdk does not support x_line_retry_key argument for broadcast; fallback without retry key"
+                )
+                return messaging_api.broadcast(payload)
+        except Exception as error:
+            status = extract_http_status(error)
+            if status == 409:
+                logger.info("Broadcast already accepted (409) retry_key=%s", stable_retry_key)
+                return
+            if attempt >= LINE_PUSH_MAX_RETRIES or not is_retryable_push_error(error):
+                raise
+            delay_seconds = min(
+                LINE_PUSH_RETRY_MAX_SECONDS,
+                LINE_PUSH_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+            )
+            logger.warning(
+                "Broadcast failed (attempt %s/%s, status=%s). Retry after %ss retry_key=%s",
                 attempt,
                 LINE_PUSH_MAX_RETRIES,
                 status,

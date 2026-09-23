@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}緊急ブロードキャスト{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/history.min.css') }}">
+{% endblock %}
+
+{% block body_class %}app-shell{% endblock %}
+
+{% block navbar %}
+<header class="global-nav">
+    <div class="container global-nav__inner">
+        <a class="brand-lockup" href="/admin/login-logs" aria-label="管理画面">
+            <span class="brand-lockup__mark">LINEBOT</span>
+            <span class="brand-lockup__title">festival queue</span>
+        </a>
+        <nav class="nav-pills" aria-label="管理ページ">
+            <a class="nav-pill" href="/admin/login-logs">ログイン履歴</a>
+            <a class="nav-pill" href="/admin/backup">バックアップ</a>
+            <a class="nav-pill is-active" href="/admin/broadcast">緊急送信</a>
+            <form method="POST" action="/logout" class="d-inline mb-0">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="nav-pill">ログアウト</button>
+            </form>
+        </nav>
+    </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="container page-stack">
+    <div class="hero-panel">
+        <div class="hero-kicker">Emergency broadcast</div>
+        <h1>緊急ブロードキャスト</h1>
+        <p class="mb-0">LINE公式アカウントの友だち全員へ、緊急のお知らせを送信します。</p>
+    </div>
+
+    <div class="card border-danger">
+        <div class="card-body">
+            <div class="alert alert-danger">
+                <strong>注意：</strong>送信すると取り消せません。送信先は個別に選べず、友だち全員です。
+            </div>
+            {% if broadcast_error %}
+            <div class="alert alert-warning" role="alert">{{ broadcast_error }}</div>
+            {% endif %}
+            {% if broadcast_success %}
+            <div class="alert alert-success" role="status">{{ broadcast_success }}</div>
+            {% endif %}
+
+            <form method="POST" action="{{ url_for('admin_broadcast_send') }}" class="mt-4">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <div class="mb-3">
+                    <label for="message" class="form-label">送信メッセージ</label>
+                    <textarea id="message" name="message" class="form-control" rows="8" maxlength="5000"
+                        required placeholder="緊急のお知らせを入力してください。"></textarea>
+                    <div class="form-text">LINEのテキストメッセージとして最大5,000文字。</div>
+                </div>
+                <div class="mb-3">
+                    <label for="confirmation" class="form-label">確認入力</label>
+                    <input id="confirmation" name="confirmation" class="form-control" required autocomplete="off"
+                        placeholder="緊急送信 と入力してください">
+                </div>
+                <button type="submit" class="btn btn-danger btn-lg"
+                    data-inline-confirm="友だち全員へ緊急メッセージを送信します。送信後は取り消せません。実行しますか？">
+                    友だち全員へ送信
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

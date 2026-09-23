@@ -70,6 +70,8 @@ from blueprints.admin_routes import (
     admin_toggle_accepting,
     admin_auto_call_count,
     admin_management_no,
+    admin_broadcast_page,
+    admin_broadcast_send,
 )
 from blueprints.backup_routes import (
     admin_backup_page,
@@ -171,6 +173,8 @@ _ADMIN_ROUTES = [
     ("/admin/toggle-accepting", "admin_toggle_accepting", admin_toggle_accepting, ["POST"]),
     ("/admin/auto-call-count", "admin_auto_call_count", admin_auto_call_count, ["POST"]),
     ("/admin/management-no", "admin_management_no", admin_management_no, ["POST"]),
+    ("/admin/broadcast", "admin_broadcast_page", admin_broadcast_page, None),
+    ("/admin/broadcast/send", "admin_broadcast_send", admin_broadcast_send, ["POST"]),
 ]
 
 _BACKUP_ROUTES = [
