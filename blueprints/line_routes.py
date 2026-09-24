@@ -797,3 +797,4 @@ def process_reservation(event, user_id, user_message):
                     event.reply_token,
                     "ご案内",
                     "メッセージを受け付けました"
+                )
