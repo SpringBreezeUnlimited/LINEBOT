@@ -165,7 +165,7 @@ def process_reservation(event, user_id, user_message):
         send_flex_notice(
             event.reply_token,
             "ご案内",
-            "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。",
+            "メッセージを受け付けました",
         )
         return
     if len(normalized) > MAX_USER_MESSAGE_CHARS:
@@ -796,5 +796,4 @@ def process_reservation(event, user_id, user_message):
                 send_flex_notice(
                     event.reply_token,
                     "ご案内",
-                    "メッセージを受け付けました。予約は「予約」、キャンセルは「キャンセル」、待ち時間は「待ち時間」と送信してください。",
-                )
+                    "メッセージを受け付けました"
