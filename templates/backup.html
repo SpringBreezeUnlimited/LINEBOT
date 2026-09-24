@@ -14,6 +14,7 @@
         <nav class="nav-pills" aria-label="管理ページ">
             <a class="nav-pill" href="/admin/login-logs">ログイン履歴</a>
             <a class="nav-pill is-active" href="/admin/backup">バックアップ</a>
+            <a class="nav-pill" href="/admin/broadcast">緊急送信</a>
             <form method="POST" action="/logout" class="d-inline mb-0">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="nav-pill">ログアウト</button>
