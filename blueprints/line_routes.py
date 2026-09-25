@@ -750,7 +750,7 @@ def process_reservation(event, user_id, user_message):
                     send_flex_notice(
                         event.reply_token,
                         "待ち時間",
-                        "予約がありません",
+                        "待ち時間を確認できる予約がありません。",
                     )
                 else:
                     res_id = existing[0]

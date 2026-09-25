@@ -7,3 +7,4 @@ Flask-Compress==1.17.0
 Brotli==1.2.0
 redis==6.4.0
 redis-entraid==1.2.1
+tzdata==2025.2
