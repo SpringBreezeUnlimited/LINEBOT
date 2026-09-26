@@ -394,7 +394,7 @@ def admin_backup_export():
             export_data["tables"][table_name] = _export_table(table_name)
         except Exception:
             logger.exception("Failed to export table %s", table_name)
-            export_data["tables"][table_name] = {"columns": [], "rows": []}
+            return jsonify({"error": "backup export failed"}), 500
     filename = f"backup_full_{safe_login_id}_{now_str}.json"
 
     json_bytes = json.dumps(export_data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -481,6 +481,20 @@ def admin_backup_import():
     if not isinstance(tables, dict):
         return redirect(
             url_for("admin_backup_page", import_error="バックアップの形式が無効です。")
+        )
+    if backup_data.get("scope") not in (None, "full"):
+        return redirect(
+            url_for("admin_backup_page", import_error="全体バックアップのファイルを選択してください。")
+        )
+    if any(
+        not isinstance(tables.get(table_name), dict)
+        or not isinstance(tables[table_name].get("columns"), list)
+        or not tables[table_name]["columns"]
+        or not isinstance(tables[table_name].get("rows"), list)
+        for table_name in BACKUP_TABLES
+    ):
+        return redirect(
+            url_for("admin_backup_page", import_error="全体バックアップに必要なテーブルが不足しています。")
         )
 
     # 監査アカウント: DB 全体を復元

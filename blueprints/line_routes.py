@@ -273,7 +273,7 @@ def process_reservation(event, user_id, user_message):
                     )
                     type_rows = cur.fetchall()
                     owner_admin_ids = {
-                        row[6] for row in type_rows if len(row) > 6 and row[6] is not None
+                        row[7] for row in type_rows if len(row) > 7 and row[7] is not None
                     }
                     owner_login_ids = {}
                     owner_accepting_states = {}
@@ -304,7 +304,7 @@ def process_reservation(event, user_id, user_message):
                         price = type_row[6] if len(type_row) > 6 else 0
                         owner_admin_id = type_row[7] if len(type_row) > 7 else None
                         owner_login_id = owner_login_ids.get(owner_admin_id)
-                        owner_accepting = owner_accepting_states.get(owner_admin_id, True)
+                        owner_accepting = owner_accepting_states.get(owner_admin_id, False)
                         effective_accepting = accepting and owner_accepting
                         image_url = (
                             build_type_image_url(type_id, image_version)

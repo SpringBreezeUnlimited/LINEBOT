@@ -457,7 +457,7 @@ def test_admin_backup_export_success_includes_all_backup_tables(app_module, monk
         assert "attachment" in response.headers["Content-Disposition"]
 
 
-def test_admin_backup_export_continues_when_one_table_fails(app_module, monkeypatch):
+def test_admin_backup_export_fails_when_one_table_fails(app_module, monkeypatch):
     monkeypatch.setattr(app_module.backup_routes, "is_audit_admin_authenticated", lambda: True)
 
     def _flaky_export(table_name):
@@ -468,9 +468,8 @@ def test_admin_backup_export_continues_when_one_table_fails(app_module, monkeypa
     monkeypatch.setattr(app_module.backup_routes, "_export_table", _flaky_export)
     with app_module.app.test_request_context("/admin/backup/export"):
         response = app_module.backup_routes.admin_backup_export()
-        payload = json.loads(response.get_data(as_text=True))
-        # 失敗したテーブルも空データとして出力に含まれ、全体は失敗しない
-        assert payload["tables"]["reservations"] == {"columns": [], "rows": []}
+        assert response[1] == 500
+        assert response[0].get_json() == {"error": "backup export failed"}
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +528,45 @@ def test_admin_backup_import_rejects_missing_tables_key(app_module, monkeypatch)
         assert "import_error" in response.headers["Location"]
 
 
+@pytest.mark.parametrize(
+    "scope,missing_table,empty_columns",
+    [
+        ("account", None, False),
+        ("full", "reservations", False),
+        ("full", None, True),
+    ],
+)
+def test_admin_backup_import_rejects_unsafe_backup_before_database_access(
+    app_module, monkeypatch, scope, missing_table, empty_columns
+):
+    monkeypatch.setattr(app_module.backup_routes, "is_audit_admin_authenticated", lambda: True)
+    monkeypatch.setattr(
+        app_module.backup_routes,
+        "get_connection",
+        lambda: pytest.fail("invalid backup must not access the database"),
+    )
+    tables = {
+        name: {"columns": ["id"], "rows": []}
+        for name in app_module.backup_routes.BACKUP_TABLES
+    }
+    if scope == "account":
+        tables = {
+            name: tables[name] for name in ("reservation_types", "reservations")
+        }
+    if missing_table:
+        del tables[missing_table]
+    if empty_columns:
+        tables["reservations"]["columns"] = []
+    payload = json.dumps({"scope": scope, "tables": tables}).encode("utf-8")
+    data = {"backup_file": (BytesIO(payload), "backup.json")}
+    with app_module.app.test_request_context(
+        "/admin/backup/import", method="POST", data=data, content_type="multipart/form-data"
+    ):
+        response = app_module.backup_routes.admin_backup_import()
+        assert response.status_code == 302
+        assert "import_error" in response.headers["Location"]
+
+
 def test_admin_backup_import_success_resets_schema_and_clears_session(app_module, monkeypatch):
     monkeypatch.setattr(app_module.backup_routes, "is_audit_admin_authenticated", lambda: True)
 
@@ -565,7 +603,13 @@ def test_admin_backup_import_success_resets_schema_and_clears_session(app_module
         app_module.backup_routes.database, "reset_schema_cache", lambda: reset_calls.append(True)
     )
 
-    payload = json.dumps({"tables": {"app_settings": {"columns": [], "rows": []}}}).encode("utf-8")
+    payload = json.dumps({
+        "scope": "full",
+        "tables": {
+            name: {"columns": ["id"], "rows": []}
+            for name in app_module.backup_routes.BACKUP_TABLES
+        },
+    }).encode("utf-8")
     data = {"backup_file": (BytesIO(payload), "backup.json")}
     with app_module.app.test_request_context(
         "/admin/backup/import", method="POST", data=data, content_type="multipart/form-data"

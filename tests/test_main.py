@@ -3927,9 +3927,16 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
                         "個別相談を受け付けます。",
                         True,
                         "image/png",
+                        1,
+                        1000,
+                        7,
                     ),
-                    (2, "体験", "体験ブースへの案内です。", False, ""),
+                    (2, "体験", "体験ブースへの案内です。", False, "", 1, 2000, 8),
+                    (3, "受付停止", "管理者が受付停止中です。", True, "", 1, 3000, 9),
                 ]
+            if "FROM admin_accounts" in queries[-1][0]:
+                assert set(queries[-1][1][0]) == {7, 8, 9}
+                return [(7, "admin-7", True, True), (8, "admin-8", True, True), (9, "admin-9", False, True)]
             return []
 
     class FakeConnection:
@@ -3980,7 +3987,7 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     assert carousel["type"] == "carousel"
     
     bubbles = carousel["contents"]
-    assert len(bubbles) == 2
+    assert len(bubbles) == 3
     
     # First bubble (相談 - Accepting)
     bubble_1 = bubbles[0]
@@ -3997,6 +4004,11 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     assert bubble_2["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付停止中"
     assert bubble_2["body"]["contents"][2]["text"] == "体験ブースへの案内です。"
     assert bubble_2["footer"]["contents"][0]["contents"][0]["text"] == "現在受付停止中"
+
+    # 種類自体が受付中でも、所有者が停止中なら予約ボタンを表示しない。
+    bubble_3 = bubbles[2]
+    assert bubble_3["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付停止中"
+    assert bubble_3["footer"]["contents"][0]["contents"][0]["text"] == "現在受付停止中"
 
 
 def test_admin_types_registration_optional_price(app_module, monkeypatch):
