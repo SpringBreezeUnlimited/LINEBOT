@@ -31,6 +31,8 @@ let activeRowsSignature = buildRowsSignature(activeRowsCache);
 let typeCountsSignature = buildTypeCountsSignature(typeCountsCache);
 let lastUpdatedAt = null;
 let currentPage = Number(document.body?.dataset.adminCurrentPage || '1') || 1;
+let paginationSignature = '';
+let adminRefreshInFlight = null;
 
 function formatUpdatedAt(date) {
     return new Intl.DateTimeFormat('ja-JP', {
@@ -70,19 +72,12 @@ function updateAcceptingToggleState(acceptingNew) {
     const button = document.getElementById('accepting-toggle-button');
     if (!button) return;
     const form = button.closest('form');
-    if (acceptingNew) {
-        button.className = 'btn btn-success w-100';
-        button.textContent = '受付中（停止する）';
-        if (form) {
-            form.dataset.inlineConfirm = '新規受付を停止しますか？';
-        }
-        return;
-    }
-    button.className = 'btn btn-danger w-100';
-    button.textContent = '受付停止中（再開する）';
-    if (form) {
-        form.dataset.inlineConfirm = '新規受付を再開しますか？';
-    }
+    const nextClassName = acceptingNew ? 'btn btn-success w-100' : 'btn btn-danger w-100';
+    const nextText = acceptingNew ? '受付中（停止する）' : '受付停止中（再開する）';
+    const nextConfirm = acceptingNew ? '新規受付を停止しますか？' : '新規受付を再開しますか？';
+    if (button.className !== nextClassName) button.className = nextClassName;
+    if (button.textContent !== nextText) button.textContent = nextText;
+    if (form && form.dataset.inlineConfirm !== nextConfirm) form.dataset.inlineConfirm = nextConfirm;
 }
 
 function updateAutoCallCountInput(autoCallCount) {
@@ -286,10 +281,12 @@ function updateAdminRuntimeControls(meta = {}) {
 function renderActiveRows() {
     const cardList = document.getElementById('active-rows');
     if (!cardList) return;
-    cardList.textContent = '';
+    const fragment = document.createDocumentFragment();
     activeRowsCache.forEach((row) => {
-        cardList.appendChild(buildRow(row));
+        fragment.appendChild(buildRow(row));
     });
+    cardList.textContent = '';
+    cardList.appendChild(fragment);
 }
 
 function renderPagination(pagination = {}) {
@@ -300,7 +297,11 @@ function renderPagination(pagination = {}) {
     const totalRows = Number(pagination.total_rows || 0);
     const firstRow = totalRows ? (page - 1) * 10 + 1 : 0;
     const lastRow = Math.min(page * 10, totalRows);
+    const nextSignature = `${page}:${totalPages}:${totalRows}:${Boolean(pagination.has_prev)}:${Boolean(pagination.has_next)}`;
+    if (nextSignature === paginationSignature) return;
+    paginationSignature = nextSignature;
 
+    const fragment = document.createDocumentFragment();
     container.textContent = '';
     const indicator = document.createElement('span');
     indicator.className = 'history-page-indicator';
@@ -321,46 +322,53 @@ function renderPagination(pagination = {}) {
         next.textContent = '次へ';
         buttons.appendChild(next);
     }
-    container.appendChild(indicator);
-    container.appendChild(buttons);
+    fragment.appendChild(indicator);
+    fragment.appendChild(buttons);
+    container.appendChild(fragment);
 }
 
-async function refreshAdminData() {
-    if (document.hidden) return;
-    try {
-        const res = await fetch(`/admin/data${getQueryParams()}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const data = await res.json();
-        updateAdminRuntimeControls(data.meta || {});
-        const nextRows = data.rows || [];
-        const nextRowsSignature = buildRowsSignature(nextRows);
-        if (nextRowsSignature !== activeRowsSignature) {
-            activeRowsCache = nextRows;
-            activeRowsSignature = nextRowsSignature;
-            renderActiveRows();
-        }
+function refreshAdminData() {
+    if (document.hidden) return Promise.resolve();
+    if (adminRefreshInFlight) return adminRefreshInFlight;
+    adminRefreshInFlight = (async () => {
+        try {
+            const res = await fetch(`/admin/data${getQueryParams()}`, { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            updateAdminRuntimeControls(data.meta || {});
+            const nextRows = data.rows || [];
+            const nextRowsSignature = buildRowsSignature(nextRows);
+            if (nextRowsSignature !== activeRowsSignature) {
+                activeRowsCache = nextRows;
+                activeRowsSignature = nextRowsSignature;
+                renderActiveRows();
+            }
 
-        const pagination = data.meta?.pagination || {};
-        if (Number(pagination.page) && Number(pagination.page) !== currentPage) {
-            currentPage = Number(pagination.page);
-            window.history.replaceState({}, '', `/admin${getQueryParams()}`);
-        }
-        renderPagination(pagination);
+            const pagination = data.meta?.pagination || {};
+            if (Number(pagination.page) && Number(pagination.page) !== currentPage) {
+                currentPage = Number(pagination.page);
+                window.history.replaceState({}, '', `/admin${getQueryParams()}`);
+            }
+            renderPagination(pagination);
 
-        const nextTypeCounts = data.meta?.type_counts || [];
-        const nextTypeCountsSignature = buildTypeCountsSignature(nextTypeCounts);
-        if (nextTypeCountsSignature !== typeCountsSignature) {
-            typeCountsCache = nextTypeCounts;
-            typeCountsSignature = nextTypeCountsSignature;
-            renderTypeCounts(nextTypeCounts);
-        }
+            const nextTypeCounts = data.meta?.type_counts || [];
+            const nextTypeCountsSignature = buildTypeCountsSignature(nextTypeCounts);
+            if (nextTypeCountsSignature !== typeCountsSignature) {
+                typeCountsCache = nextTypeCounts;
+                typeCountsSignature = nextTypeCountsSignature;
+                renderTypeCounts(nextTypeCounts);
+            }
 
-        updateAutoCallSummary(data.meta?.last_auto_call);
-        showAutoCallNotification(data.meta?.latest_auto_call);
-        updateLastUpdated();
-    } catch (e) {
-        // no-op
-    }
+            updateAutoCallSummary(data.meta?.last_auto_call);
+            showAutoCallNotification(data.meta?.latest_auto_call);
+            updateLastUpdated();
+        } catch (e) {
+            // no-op
+        } finally {
+            adminRefreshInFlight = null;
+        }
+    })();
+    return adminRefreshInFlight;
 }
 
 function applyAdminFilters() {

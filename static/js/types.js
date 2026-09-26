@@ -1,28 +1,37 @@
 const globalAcceptingBadge = document.getElementById('global-accepting-badge');
 const typesRefreshIntervalMs = 15000;
+let acceptingStateRefreshInFlight = null;
 
 function updateGlobalAcceptingBadge(acceptingNew) {
     if (!globalAcceptingBadge) return;
+    const nextValue = acceptingNew ? 'true' : 'false';
+    if (globalAcceptingBadge.dataset.acceptingNew === nextValue) return;
     globalAcceptingBadge.className = acceptingNew ? 'badge bg-success' : 'badge bg-danger';
     globalAcceptingBadge.textContent = acceptingNew ? '受付中' : '停止中';
-    globalAcceptingBadge.dataset.acceptingNew = acceptingNew ? 'true' : 'false';
+    globalAcceptingBadge.dataset.acceptingNew = nextValue;
 }
 
-async function refreshGlobalAcceptingState() {
-    if (document.hidden) return;
-    try {
-        const response = await fetch('/admin/data', {
-            cache: 'no-store',
-            credentials: 'same-origin',
-        });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (typeof data?.meta?.accepting_new === 'boolean') {
-            updateGlobalAcceptingBadge(data.meta.accepting_new);
+function refreshGlobalAcceptingState() {
+    if (document.hidden) return Promise.resolve();
+    if (acceptingStateRefreshInFlight) return acceptingStateRefreshInFlight;
+    acceptingStateRefreshInFlight = (async () => {
+        try {
+            const response = await fetch('/admin/data', {
+                cache: 'no-store',
+                credentials: 'same-origin',
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            if (typeof data?.meta?.accepting_new === 'boolean') {
+                updateGlobalAcceptingBadge(data.meta.accepting_new);
+            }
+        } catch (error) {
+            // no-op
+        } finally {
+            acceptingStateRefreshInFlight = null;
         }
-    } catch (error) {
-        // no-op
-    }
+    })();
+    return acceptingStateRefreshInFlight;
 }
 
 async function submitAjaxForm(form) {

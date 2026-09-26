@@ -2,6 +2,15 @@ const configuredLoginLogsRefreshIntervalMs = Number(document.body?.dataset.admin
 const loginLogsRefreshIntervalMs = Number.isFinite(configuredLoginLogsRefreshIntervalMs)
     ? Math.min(300000, Math.max(1000, Math.trunc(configuredLoginLogsRefreshIntervalMs)))
     : 15000;
+let loginLogsSignature = '';
+let loginLogsRefreshInFlight = null;
+
+function buildLoginLogsSignature(rows) {
+    return rows.map((row) => [
+        row.id || '', row.login_result || '', row.admin_role || '', row.admin_login_id || '',
+        row.ip_address || '', row.user_agent || '', row.logged_in_at || '',
+    ].join(':')).join('|');
+}
 
 function buildLoginResultBadge(loginResult) {
     const span = document.createElement('span');
@@ -66,6 +75,7 @@ function renderLoginLogRows(rows) {
     const tbody = document.getElementById('login-log-rows');
     if (!tbody) return;
 
+    const fragment = document.createDocumentFragment();
     tbody.textContent = '';
     if (!Array.isArray(rows) || rows.length === 0) {
         const tr = document.createElement('tr');
@@ -74,33 +84,46 @@ function renderLoginLogRows(rows) {
         td.className = 'text-center';
         td.textContent = 'ログイン履歴はまだありません。';
         tr.appendChild(td);
-        tbody.appendChild(tr);
+        fragment.appendChild(tr);
+        tbody.appendChild(fragment);
         return;
     }
 
     rows.forEach((row) => {
-        tbody.appendChild(createLoginLogRow(row));
+        fragment.appendChild(createLoginLogRow(row));
     });
+    tbody.appendChild(fragment);
 }
 
-async function refreshLoginLogs() {
-    if (document.hidden) return;
-    try {
-        const response = await fetch('/admin/login-logs/data', {
-            cache: 'no-store',
-            credentials: 'same-origin',
-        });
-        const url = new URL(response.url);
-        if (url.pathname === '/login') {
-            window.location.assign(response.url);
-            return;
+function refreshLoginLogs() {
+    if (document.hidden) return Promise.resolve();
+    if (loginLogsRefreshInFlight) return loginLogsRefreshInFlight;
+    loginLogsRefreshInFlight = (async () => {
+        try {
+            const response = await fetch('/admin/login-logs/data', {
+                cache: 'no-store',
+                credentials: 'same-origin',
+            });
+            const url = new URL(response.url);
+            if (url.pathname === '/login') {
+                window.location.assign(response.url);
+                return;
+            }
+            if (!response.ok) return;
+            const data = await response.json();
+            const rows = Array.isArray(data?.rows) ? data.rows : [];
+            const nextSignature = buildLoginLogsSignature(rows);
+            if (nextSignature !== loginLogsSignature) {
+                loginLogsSignature = nextSignature;
+                renderLoginLogRows(rows);
+            }
+        } catch (error) {
+            // 自動更新は失敗しても画面操作を止めない
+        } finally {
+            loginLogsRefreshInFlight = null;
         }
-        if (!response.ok) return;
-        const data = await response.json();
-        renderLoginLogRows(Array.isArray(data?.rows) ? data.rows : []);
-    } catch (error) {
-        // 自動更新は失敗しても画面操作を止めない
-    }
+    })();
+    return loginLogsRefreshInFlight;
 }
 
 document.addEventListener('visibilitychange', () => {
