@@ -1507,6 +1507,9 @@ def test_admin_page_shows_version_badge(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(
+        app_module.admin_routes, "count_active_rows", lambda *args, **kwargs: 0
+    )
+    monkeypatch.setattr(
         app_module,
         "get_runtime_settings",
         lambda *args, **kwargs: {
@@ -2387,7 +2390,12 @@ def test_admin_data_includes_runtime_controls(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module.admin_routes, "is_admin_authenticated", lambda: True)
     monkeypatch.setattr(app_module, "get_current_admin_account_id", lambda: 1)
     monkeypatch.setattr(app_module.admin_routes, "get_current_admin_account_id", lambda: 1)
-    monkeypatch.setattr(app_module.admin_routes, "get_active_rows", lambda _cur, owner_admin_id=None: [])
+    monkeypatch.setattr(
+        app_module.admin_routes, "get_active_rows", lambda *args, **kwargs: []
+    )
+    monkeypatch.setattr(
+        app_module.admin_routes, "count_active_rows", lambda *args, **kwargs: 0
+    )
     monkeypatch.setattr(
         app_module.admin_routes,
         "fetch_type_counts",
@@ -2444,6 +2452,13 @@ def test_admin_data_includes_runtime_controls(client, app_module, monkeypatch):
     assert body["meta"]["auto_call_count"] == 7
     assert body["meta"]["last_auto_call"]["message"] == "last"
     assert body["meta"]["latest_auto_call"]["message"] == "latest"
+    assert body["meta"]["pagination"] == {
+        "page": 1,
+        "total_pages": 1,
+        "total_rows": 0,
+        "has_prev": False,
+        "has_next": False,
+    }
 
 
 def test_process_call_queue_task_without_token_returns_503(client, app_module):

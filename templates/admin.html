@@ -8,7 +8,7 @@
 
 {% block body_class %}app-shell{% endblock %}
 
-{% block body_attrs %}data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}"{% endblock %}
+{% block body_attrs %}data-admin-refresh-interval-ms="{{ admin_refresh_interval_ms }}" data-admin-current-page="{{ page }}"{% endblock %}
 
 {% block navbar %}
 <header class="global-nav">
@@ -188,6 +188,17 @@
                 </article>
                 {% endfor %}
             </div>
+        </div>
+    </div>
+    <div id="active-pagination" class="d-flex gap-2 justify-content-between align-items-center mt-4">
+        <span class="history-page-indicator">{{ total_rows }}件中 {{ (page - 1) * 10 + 1 if total_rows else 0 }}〜{{ [page * 10, total_rows]|min }}件（ページ {{ page }} / {{ total_pages }}）</span>
+        <div class="d-flex gap-2">
+            {% if has_prev %}
+            <a href="{{ url_for('admin_page', page=page - 1, type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-secondary">前へ</a>
+            {% endif %}
+            {% if has_next %}
+            <a href="{{ url_for('admin_page', page=page + 1, type_id=current_type_id or '', sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-secondary">次へ</a>
+            {% endif %}
         </div>
     </div>
 </div>

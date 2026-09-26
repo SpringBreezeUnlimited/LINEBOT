@@ -39,6 +39,7 @@ from config import (
     MAX_TYPE_PRICE,
     ALLOWED_TYPE_IMAGE_EXTENSIONS,
     ADMIN_REFRESH_INTERVAL_MS,
+    ADMIN_PAGE_SIZE,
     MAX_BROADCAST_MESSAGE_CHARS,
 )
 from blueprints.admin_helpers import (
@@ -47,6 +48,7 @@ from blueprints.admin_helpers import (
     serialize_type_counts,
     get_admin_login_log_rows,
     get_active_rows,
+    count_active_rows,
 )
 from database import (
     get_connection,
@@ -509,15 +511,24 @@ def admin_page():
         sort_by = "id"
     if sort_order not in ("asc", "desc"):
         sort_order = "asc"
+    page_raw = request.args.get("page", "1").strip()
+    page = int(page_raw) if page_raw.isdigit() and int(page_raw) > 0 else 1
     runtime_settings = get_runtime_settings(current_admin_account_id)
     with get_connection() as conn:
         with conn.cursor() as cur:
+            total_rows = count_active_rows(
+                cur, current_admin_account_id, current_type_id
+            )
+            total_pages = max(1, (total_rows + ADMIN_PAGE_SIZE - 1) // ADMIN_PAGE_SIZE)
+            page = min(page, total_pages)
             rows = get_active_rows(
                 cur,
                 owner_admin_id=current_admin_account_id,
                 current_type_id=current_type_id,
                 sort_by=sort_by,
                 sort_order=sort_order,
+                limit=ADMIN_PAGE_SIZE,
+                offset=(page - 1) * ADMIN_PAGE_SIZE,
             )
             active_rows = serialize_active_rows(rows)
             cur.execute(
@@ -538,6 +549,11 @@ def admin_page():
         type_counts=type_counts,
         sort_by=sort_by,
         sort_order=sort_order,
+        page=page,
+        total_rows=total_rows,
+        total_pages=total_pages,
+        has_prev=page > 1,
+        has_next=page < total_pages,
         accepting_new=runtime_settings["accepting_new"],
         auto_call_count=runtime_settings["auto_call_count"],
         management_no=get_management_no(current_admin_account_id),
@@ -555,9 +571,31 @@ def admin_data():
     if not current_admin_account_id:
         return jsonify({"error": "unauthorized"}), 401
 
+    type_id = request.args.get("type_id", "").strip()
+    current_type_id = int(type_id) if type_id.isdigit() else None
+    sort_by = request.args.get("sort_by", "id").strip()
+    sort_order = request.args.get("sort_order", "asc").strip().lower()
+    if sort_by not in ("id", "status", "type"):
+        sort_by = "id"
+    if sort_order not in ("asc", "desc"):
+        sort_order = "asc"
+    page_raw = request.args.get("page", "1").strip()
+    page = int(page_raw) if page_raw.isdigit() and int(page_raw) > 0 else 1
+
     with get_connection() as conn:
         with conn.cursor() as cur:
-            rows = get_active_rows(cur, owner_admin_id=current_admin_account_id)
+            total_rows = count_active_rows(cur, current_admin_account_id, current_type_id)
+            total_pages = max(1, (total_rows + ADMIN_PAGE_SIZE - 1) // ADMIN_PAGE_SIZE)
+            page = min(page, total_pages)
+            rows = get_active_rows(
+                cur,
+                owner_admin_id=current_admin_account_id,
+                current_type_id=current_type_id,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=ADMIN_PAGE_SIZE,
+                offset=(page - 1) * ADMIN_PAGE_SIZE,
+            )
             type_counts = serialize_type_counts(
                 fetch_type_counts(cur, current_admin_account_id)
             )
@@ -571,6 +609,13 @@ def admin_data():
                 "last_auto_call": runtime_settings["last_auto_call"],
                 "latest_auto_call": runtime_settings["latest_auto_call"],
                 "type_counts": type_counts,
+                "pagination": {
+                    "page": page,
+                    "total_pages": total_pages,
+                    "total_rows": total_rows,
+                    "has_prev": page > 1,
+                    "has_next": page < total_pages,
+                },
             },
         }
     )

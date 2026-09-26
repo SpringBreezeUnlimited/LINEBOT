@@ -30,6 +30,7 @@ let typeCountsCache = [];
 let activeRowsSignature = buildRowsSignature(activeRowsCache);
 let typeCountsSignature = buildTypeCountsSignature(typeCountsCache);
 let lastUpdatedAt = null;
+let currentPage = Number(document.body?.dataset.adminCurrentPage || '1') || 1;
 
 function formatUpdatedAt(date) {
     return new Intl.DateTimeFormat('ja-JP', {
@@ -90,47 +91,19 @@ function updateAutoCallCountInput(autoCallCount) {
     input.value = String(Number.isFinite(autoCallCount) ? autoCallCount : 0);
 }
 
-function getQueryParams() {
-    const params = new URLSearchParams();
+function getQueryParams(page = currentPage) {
+    const params = new URLSearchParams(window.location.search);
     const select = document.getElementById('type-filter');
-    if (select && select.value) params.set('type_id', select.value);
+    if (select && select.value) {
+        params.set('type_id', select.value);
+    } else {
+        params.delete('type_id');
+    }
     const sortBy = document.getElementById('sort-by');
     if (sortBy && sortBy.value) params.set('sort_by', sortBy.value);
+    params.set('page', String(page));
     const q = params.toString();
     return q ? `?${q}` : '';
-}
-
-function getActiveFilters() {
-    return {
-        typeId: document.getElementById('type-filter')?.value || '',
-        sortBy: document.getElementById('sort-by')?.value || 'id',
-    };
-}
-
-function compareValues(left, right) {
-    if (left < right) return -1;
-    if (left > right) return 1;
-    return 0;
-}
-
-function applyClientFilters(rows) {
-    const { typeId, sortBy } = getActiveFilters();
-    const filtered = rows.filter((row) => {
-        if (!typeId) return true;
-        return String(row.type_id || '') === typeId;
-    });
-
-    filtered.sort((left, right) => {
-        if (sortBy === 'status') {
-            return compareValues(left.status || '', right.status || '') || compareValues(left.id, right.id);
-        }
-        if (sortBy === 'type') {
-            return compareValues(left.type || '', right.type || '') || compareValues(left.id, right.id);
-        }
-        return compareValues(left.display_no || left.id, right.display_no || right.id) || compareValues(left.id, right.id);
-    });
-
-    return filtered;
 }
 
 function createCsrfInput() {
@@ -314,16 +287,48 @@ function renderActiveRows() {
     const cardList = document.getElementById('active-rows');
     if (!cardList) return;
     cardList.textContent = '';
-    applyClientFilters(activeRowsCache).forEach((row) => {
+    activeRowsCache.forEach((row) => {
         cardList.appendChild(buildRow(row));
     });
-    window.history.replaceState({}, '', '/admin' + getQueryParams());
+}
+
+function renderPagination(pagination = {}) {
+    const container = document.getElementById('active-pagination');
+    if (!container) return;
+    const page = Number(pagination.page || currentPage || 1);
+    const totalPages = Number(pagination.total_pages || 1);
+    const totalRows = Number(pagination.total_rows || 0);
+    const firstRow = totalRows ? (page - 1) * 10 + 1 : 0;
+    const lastRow = Math.min(page * 10, totalRows);
+
+    container.textContent = '';
+    const indicator = document.createElement('span');
+    indicator.className = 'history-page-indicator';
+    indicator.textContent = `${totalRows}件中 ${firstRow}〜${lastRow}件（ページ ${page} / ${totalPages}）`;
+    const buttons = document.createElement('div');
+    buttons.className = 'd-flex gap-2';
+    if (pagination.has_prev) {
+        const previous = document.createElement('a');
+        previous.className = 'btn btn-secondary';
+        previous.href = `/admin${getQueryParams(page - 1)}`;
+        previous.textContent = '前へ';
+        buttons.appendChild(previous);
+    }
+    if (pagination.has_next) {
+        const next = document.createElement('a');
+        next.className = 'btn btn-secondary';
+        next.href = `/admin${getQueryParams(page + 1)}`;
+        next.textContent = '次へ';
+        buttons.appendChild(next);
+    }
+    container.appendChild(indicator);
+    container.appendChild(buttons);
 }
 
 async function refreshAdminData() {
     if (document.hidden) return;
     try {
-        const res = await fetch('/admin/data', { cache: 'no-store' });
+        const res = await fetch(`/admin/data${getQueryParams()}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         updateAdminRuntimeControls(data.meta || {});
@@ -334,6 +339,13 @@ async function refreshAdminData() {
             activeRowsSignature = nextRowsSignature;
             renderActiveRows();
         }
+
+        const pagination = data.meta?.pagination || {};
+        if (Number(pagination.page) && Number(pagination.page) !== currentPage) {
+            currentPage = Number(pagination.page);
+            window.history.replaceState({}, '', `/admin${getQueryParams()}`);
+        }
+        renderPagination(pagination);
 
         const nextTypeCounts = data.meta?.type_counts || [];
         const nextTypeCountsSignature = buildTypeCountsSignature(nextTypeCounts);
@@ -352,7 +364,8 @@ async function refreshAdminData() {
 }
 
 function applyAdminFilters() {
-    renderActiveRows();
+    currentPage = 1;
+    window.location.assign(`/admin${getQueryParams(1)}`);
 }
 
 function isLoginRedirect(response) {

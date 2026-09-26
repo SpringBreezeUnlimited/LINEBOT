@@ -69,7 +69,8 @@ def get_admin_login_log_rows(cur, limit: int = 500):
 
 
 def get_active_rows(
-    cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc"
+    cur, owner_admin_id: int, current_type_id=None, sort_by="id", sort_order="asc",
+    limit=None, offset=0,
 ):
     params = [STATUS_WAITING, STATUS_CALLED]
     where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
@@ -83,14 +84,33 @@ def get_active_rows(
         "type": "t.name",
     }
     order_by = order_map[sort_by]
-    cur.execute(
-        f"""
+    query = f"""
             SELECT r.id, COALESCE(r.reservation_no, r.id), r.status, t.id, t.name, r.created_at, r.call_origin
             FROM reservations r
             LEFT JOIN reservation_types t ON r.type_id = t.id
             {where}
             ORDER BY {order_by} {sort_order.upper()}, r.id ASC
+        """
+    if limit is not None:
+        query += " LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+    cur.execute(query, params)
+    return cur.fetchall()
+
+
+def count_active_rows(cur, owner_admin_id: int, current_type_id=None):
+    params = [STATUS_WAITING, STATUS_CALLED, owner_admin_id]
+    where = "WHERE r.status IN (%s, %s) AND COALESCE(r.owner_admin_id, t.owner_admin_id) = %s"
+    if current_type_id is not None:
+        where += " AND r.type_id = %s"
+        params.append(current_type_id)
+    cur.execute(
+        f"""
+            SELECT COUNT(*)
+            FROM reservations r
+            LEFT JOIN reservation_types t ON r.type_id = t.id
+            {where}
         """,
         params,
     )
-    return cur.fetchall()
+    return cur.fetchone()[0]
