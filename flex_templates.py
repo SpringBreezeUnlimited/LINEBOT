@@ -9,7 +9,7 @@ def build_hero_image(url: str | None) -> Optional[Dict]:
         "url": url,
         "size": "full",
         "aspectRatio": "16:9",
-        "aspectMode": "cover",
+        "aspectMode": "fit",
     }
 
 
@@ -20,7 +20,7 @@ def bubble_from_title_and_text(title: str, text: str, hero_url: str | None = Non
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": title, "weight": "bold", "size": "lg"}
+                {"type": "text", "text": title, "weight": "bold", "size": "lg", "wrap": True}
             ],
         },
         "body": {
@@ -46,13 +46,13 @@ def ticket_status_card(
     hero_url: str | None = None,
 ) -> Dict:
     contents = [
-        {"type": "text", "text": title, "align": "center", "weight": "bold", "size": "lg", "color": "#444444"}
+        {"type": "text", "text": title, "align": "center", "weight": "bold", "size": "lg", "color": "#444444", "wrap": True}
     ]
     if reservation_no:
         no_str = f"{reservation_no:04d}" if isinstance(reservation_no, int) else str(reservation_no)
         contents.extend([
             {"type": "text", "text": "チケット番号", "align": "center", "weight": "bold", "size": "md", "color": "#444444", "margin": "lg"},
-            {"type": "text", "text": no_str, "align": "center", "weight": "bold", "size": "4xl", "color": "#00A900", "margin": "sm"},
+            {"type": "text", "text": no_str, "align": "center", "weight": "bold", "size": "4xl", "color": "#00A900", "margin": "sm", "wrap": True},
             {"type": "separator", "margin": "lg"},
         ])
     if lines:
@@ -113,6 +113,7 @@ def call_notification(
                     "type": "text",
                     "text": no_str,
                     "align": "center",
+                    "wrap": True,
                     "weight": "bold",
                     "size": "4xl",
                     "color": "#00A900",
@@ -123,11 +124,11 @@ def call_notification(
                     "type": "text",
                     "text": shop_name or "admin",
                     "align": "center",
+                    "wrap": True,
                     "weight": "bold",
                     "size": "lg",
                     "color": "#444444",
                     "margin": "lg",
-                    "maxLines": 1,
                     },
                 *(
                     [
@@ -135,11 +136,11 @@ def call_notification(
                             "type": "text",
                             "text": type_name,
                             "align": "center",
+                            "wrap": True,
                             "weight": "bold",
                             "size": "lg",
                             "color": "#444444",
                             "margin": "none",
-                            "maxLines": 1,
                         }
                     ]
                     if type_name

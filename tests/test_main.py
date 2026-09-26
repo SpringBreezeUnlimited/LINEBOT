@@ -3993,8 +3993,10 @@ def test_process_reservation_replies_with_carousel_when_no_type_specified(
     bubble_1 = bubbles[0]
     assert bubble_1["header"]["contents"][0]["text"] == "相談"
     assert bubble_1["hero"]["url"].endswith("/reservation-type-images/1?v=1")
+    assert bubble_1["hero"]["aspectMode"] == "fit"
     assert bubble_1["body"]["contents"][0]["contents"][0]["contents"][0]["text"] == "受付中"
     assert bubble_1["body"]["contents"][2]["text"] == "個別相談を受け付けます。"
+    assert bubble_1["body"]["contents"][3]["contents"][1]["wrap"] is True
     assert bubble_1["footer"]["contents"][0]["type"] == "button"
     assert bubble_1["footer"]["contents"][0]["action"]["text"] == "予約 相談"
     

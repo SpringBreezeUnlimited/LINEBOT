@@ -402,6 +402,7 @@ def process_reservation(event, user_id, user_message):
                                             "type": "text",
                                             "text": f"{price:,}円",
                                             "size": "sm",
+                                            "wrap": True,
                                             "color": "#0f172a",
                                             "weight": "bold",
                                             "align": "end",
@@ -477,7 +478,7 @@ def process_reservation(event, user_id, user_message):
                                 "url": image_url,
                                 "size": "full",
                                 "aspectRatio": "16:9",
-                                "aspectMode": "cover",
+                                "aspectMode": "fit",
                             }
                         carousel_bubbles.append(bubble)
                     
