@@ -988,7 +988,7 @@ def admin_history():
         session.clear()
         return redirect(url_for("login"))
 
-    history_page_size = 200
+    history_page_size = 10
     with get_connection() as conn:
         with conn.cursor() as cur:
             page_raw = request.args.get("page", "1").strip()
@@ -1069,6 +1069,30 @@ def admin_history():
             types = cur.fetchall()
     has_next = len(rows) > history_page_size
     rows = rows[:history_page_size]
+    if request.args.get("format") == "json":
+        return jsonify(
+            {
+                "rows": [
+                    {
+                        "id": row[0],
+                        "display_no": row[1],
+                        "status": row[2],
+                        "type": row[3],
+                        "type_id": row[4],
+                        "created_at": row[5],
+                        "call_origin": row[6],
+                        "completed_at": row[8],
+                        "service_duration": row[9] or 0,
+                        "service_duration_label": format_duration_from_seconds(
+                            row[9]
+                        )
+                        or "-",
+                    }
+                    for row in rows
+                ],
+                "meta": {"page": page, "has_next": has_next},
+            }
+        )
     return render_template(
         "history.html",
         rows=rows,

@@ -9,6 +9,9 @@ const historyRowsCache = Array.from(document.querySelectorAll('#history-rows .hi
     service_duration: Number(row.dataset.serviceDuration || '0'),
     service_duration_label: row.dataset.serviceDurationLabel || '-',
 }));
+let historyPage = Number(document.body?.dataset.historyPage || '1') || 1;
+let historyHasNext = document.body?.dataset.historyHasNext === 'true';
+let historyLoadInFlight = null;
 
 function getHistoryFilters() {
     return {
@@ -29,13 +32,6 @@ function getHistoryQueryParams() {
     params.set('sort_by', sortBy);
     params.set('sort_order', sortOrder);
     return params;
-}
-
-function compareHistoryValues(left, right, sortOrder) {
-    const multiplier = sortOrder === 'desc' ? -1 : 1;
-    if (left < right) return -1 * multiplier;
-    if (left > right) return 1 * multiplier;
-    return 0;
 }
 
 function getHistoryStatusMarkup(status) {
@@ -115,45 +111,51 @@ function createHistoryCard(row) {
     return card;
 }
 
-function applyHistoryFilters(rows) {
-    const { typeId, sortBy, sortOrder } = getHistoryFilters();
-    const filtered = rows.filter((row) => {
-        if (!typeId) return true;
-        return String(row.type_id || '') === typeId;
-    });
-
-    filtered.sort((left, right) => {
-        if (sortBy === 'status') {
-            return compareHistoryValues(left.status || '', right.status || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
-        }
-        if (sortBy === 'created_at') {
-            return compareHistoryValues(left.created_at || '', right.created_at || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
-        }
-        if (sortBy === 'type') {
-            return compareHistoryValues(left.type || '', right.type || '', sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
-        }
-        if (sortBy === 'service_duration') {
-            return compareHistoryValues(left.service_duration || 0, right.service_duration || 0, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
-        }
-        return compareHistoryValues(left.display_no || left.id, right.display_no || right.id, sortOrder) || compareHistoryValues(left.id, right.id, 'desc');
-    });
-
-    return filtered;
-}
-
-function renderHistoryRows() {
-    const cardList = document.getElementById('history-rows');
-    if (!cardList) return;
-    cardList.textContent = '';
-
-    applyHistoryFilters(historyRowsCache).forEach((row) => {
-        cardList.appendChild(createHistoryCard(row));
-    });
-
+function applyHistoryFilters() {
     const params = getHistoryQueryParams();
-    window.history.replaceState({}, '', `/admin/history?${params.toString()}`);
+    params.set('page', '1');
+    window.location.assign(`/admin/history?${params.toString()}`);
 }
 
-document.getElementById('history-type-filter')?.addEventListener('change', renderHistoryRows);
-document.getElementById('history-sort-by')?.addEventListener('change', renderHistoryRows);
-document.getElementById('history-sort-order')?.addEventListener('change', renderHistoryRows);
+async function loadMoreHistoryRows() {
+    if (document.hidden || !historyHasNext || historyLoadInFlight) return historyLoadInFlight;
+    historyLoadInFlight = (async () => {
+        try {
+            const params = getHistoryQueryParams();
+            params.set('page', String(historyPage + 1));
+            params.set('format', 'json');
+            const response = await fetch(`/admin/history?${params.toString()}`, {
+                cache: 'no-store',
+                credentials: 'same-origin',
+            });
+            if (!response.ok) throw new Error(`Unexpected response: ${response.status}`);
+            const data = await response.json();
+            if (Number(data.meta?.page) !== historyPage + 1) return;
+
+            const cardList = document.getElementById('history-rows');
+            data.rows.forEach((row) => {
+                historyRowsCache.push(row);
+                cardList.appendChild(createHistoryCard(row));
+            });
+            historyPage = Number(data.meta.page);
+            historyHasNext = Boolean(data.meta.has_next);
+            const status = document.getElementById('history-pagination-status');
+            status.textContent = `${historyRowsCache.length}件を表示${historyHasNext ? '・右端までスクロールすると次の10件を読み込みます' : ''}`;
+        } catch (error) {
+            console.error('Failed to load more history rows', error);
+        } finally {
+            historyLoadInFlight = null;
+        }
+    })();
+    return historyLoadInFlight;
+}
+
+document.getElementById('history-type-filter')?.addEventListener('change', applyHistoryFilters);
+document.getElementById('history-sort-by')?.addEventListener('change', applyHistoryFilters);
+document.getElementById('history-sort-order')?.addEventListener('change', applyHistoryFilters);
+document.querySelector('.history-scroll')?.addEventListener('scroll', (event) => {
+    const scrollArea = event.currentTarget;
+    if (scrollArea.scrollLeft + scrollArea.clientWidth >= scrollArea.scrollWidth - 8) {
+        loadMoreHistoryRows();
+    }
+}, { passive: true });
