@@ -31,8 +31,13 @@ let activeRowsSignature = buildRowsSignature(activeRowsCache);
 let typeCountsSignature = buildTypeCountsSignature(typeCountsCache);
 let lastUpdatedAt = null;
 let currentPage = Number(document.body?.dataset.adminCurrentPage || '1') || 1;
+let firstLoadedPage = currentPage;
+let lastLoadedPage = currentPage;
+let loadedPages = new Map([[currentPage, activeRowsCache]]);
+let hasMoreRows = document.body?.dataset.adminHasNext === 'true';
 let paginationSignature = '';
 let adminRefreshInFlight = null;
+let loadMoreInFlight = null;
 
 function formatUpdatedAt(date) {
     return new Intl.DateTimeFormat('ja-JP', {
@@ -292,39 +297,62 @@ function renderActiveRows() {
 function renderPagination(pagination = {}) {
     const container = document.getElementById('active-pagination');
     if (!container) return;
-    const page = Number(pagination.page || currentPage || 1);
-    const totalPages = Number(pagination.total_pages || 1);
     const totalRows = Number(pagination.total_rows || 0);
-    const firstRow = totalRows ? (page - 1) * 10 + 1 : 0;
-    const lastRow = Math.min(page * 10, totalRows);
-    const nextSignature = `${page}:${totalPages}:${totalRows}:${Boolean(pagination.has_prev)}:${Boolean(pagination.has_next)}`;
+    const displayedRows = activeRowsCache.length;
+    const nextSignature = `${totalRows}:${displayedRows}:${hasMoreRows}`;
     if (nextSignature === paginationSignature) return;
     paginationSignature = nextSignature;
 
-    const fragment = document.createDocumentFragment();
     container.textContent = '';
     const indicator = document.createElement('span');
     indicator.className = 'history-page-indicator';
-    indicator.textContent = `${totalRows}件中 ${firstRow}〜${lastRow}件（ページ ${page} / ${totalPages}）`;
-    const buttons = document.createElement('div');
-    buttons.className = 'd-flex gap-2';
-    if (pagination.has_prev) {
-        const previous = document.createElement('a');
-        previous.className = 'btn btn-secondary';
-        previous.href = `/admin${getQueryParams(page - 1)}`;
-        previous.textContent = '前へ';
-        buttons.appendChild(previous);
+    indicator.textContent = `${totalRows}件中 ${displayedRows}件を表示`;
+    container.appendChild(indicator);
+
+    if (hasMoreRows) {
+        const hint = document.createElement('span');
+        hint.className = 'text-muted small';
+        hint.textContent = '右端までスクロールすると次の10件を読み込みます';
+        container.appendChild(hint);
     }
-    if (pagination.has_next) {
-        const next = document.createElement('a');
-        next.className = 'btn btn-secondary';
-        next.href = `/admin${getQueryParams(page + 1)}`;
-        next.textContent = '次へ';
-        buttons.appendChild(next);
-    }
-    fragment.appendChild(indicator);
-    fragment.appendChild(buttons);
-    container.appendChild(fragment);
+}
+
+function setLoadedPage(page, rows) {
+    loadedPages.set(page, rows);
+    activeRowsCache = Array.from({ length: lastLoadedPage - firstLoadedPage + 1 }, (_, index) => (
+        loadedPages.get(firstLoadedPage + index) || []
+    )).flat();
+    activeRowsSignature = buildRowsSignature(activeRowsCache);
+}
+
+async function fetchAdminDataPage(page) {
+    const response = await fetch(`/admin/data${getQueryParams(page)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Unexpected response: ${response.status}`);
+    return response.json();
+}
+
+async function loadMoreRows() {
+    if (document.hidden || loadMoreInFlight || !hasMoreRows) return loadMoreInFlight;
+
+    loadMoreInFlight = (async () => {
+        try {
+            const nextPage = lastLoadedPage + 1;
+            const data = await fetchAdminDataPage(nextPage);
+            const pagination = data.meta?.pagination || {};
+            if (Number(pagination.page) !== nextPage) return;
+            lastLoadedPage = nextPage;
+            hasMoreRows = Boolean(pagination.has_next);
+            setLoadedPage(nextPage, data.rows || []);
+            renderActiveRows();
+            renderPagination(pagination);
+            updateLastUpdated();
+        } catch (error) {
+            console.error('Failed to load more reservations', error);
+        } finally {
+            loadMoreInFlight = null;
+        }
+    })();
+    return loadMoreInFlight;
 }
 
 function refreshAdminData() {
@@ -332,24 +360,35 @@ function refreshAdminData() {
     if (adminRefreshInFlight) return adminRefreshInFlight;
     adminRefreshInFlight = (async () => {
         try {
-            const res = await fetch(`/admin/data${getQueryParams()}`, { cache: 'no-store' });
-            if (!res.ok) return;
-            const data = await res.json();
+            const data = await fetchAdminDataPage(firstLoadedPage);
             updateAdminRuntimeControls(data.meta || {});
-            const nextRows = data.rows || [];
-            const nextRowsSignature = buildRowsSignature(nextRows);
-            if (nextRowsSignature !== activeRowsSignature) {
-                activeRowsCache = nextRows;
-                activeRowsSignature = nextRowsSignature;
-                renderActiveRows();
-            }
 
             const pagination = data.meta?.pagination || {};
-            if (Number(pagination.page) && Number(pagination.page) !== currentPage) {
-                currentPage = Number(pagination.page);
-                window.history.replaceState({}, '', `/admin${getQueryParams()}`);
+            const returnedPage = Number(pagination.page);
+            if (returnedPage && returnedPage !== firstLoadedPage) {
+                firstLoadedPage = returnedPage;
+                lastLoadedPage = returnedPage;
+                currentPage = returnedPage;
+                loadedPages = new Map();
+                window.history.replaceState({}, '', `/admin${getQueryParams(returnedPage)}`);
             }
-            renderPagination(pagination);
+            const pagesToRefresh = Array.from(
+                { length: Math.max(0, lastLoadedPage - firstLoadedPage) },
+                (_, index) => firstLoadedPage + index + 1,
+            );
+            const additionalPages = await Promise.all(pagesToRefresh.map(fetchAdminDataPage));
+            const refreshedPages = [data, ...additionalPages];
+            const lastPageData = refreshedPages.at(-1);
+            lastLoadedPage = Number(lastPageData.meta?.pagination?.page || firstLoadedPage);
+            hasMoreRows = Boolean(lastPageData.meta?.pagination?.has_next);
+            loadedPages = new Map();
+            refreshedPages.forEach((pageData) => {
+                const pageNumber = Number(pageData.meta?.pagination?.page);
+                if (pageNumber) loadedPages.set(pageNumber, pageData.rows || []);
+            });
+            setLoadedPage(firstLoadedPage, loadedPages.get(firstLoadedPage) || []);
+            renderActiveRows();
+            renderPagination(lastPageData.meta?.pagination || pagination);
 
             const nextTypeCounts = data.meta?.type_counts || [];
             const nextTypeCountsSignature = buildTypeCountsSignature(nextTypeCounts);
@@ -415,6 +454,12 @@ async function submitAdminAjaxForm(form) {
 
 document.getElementById('type-filter')?.addEventListener('change', applyAdminFilters);
 document.getElementById('sort-by')?.addEventListener('change', applyAdminFilters);
+document.querySelector('.admin-scroll')?.addEventListener('scroll', (event) => {
+    const scrollArea = event.currentTarget;
+    if (scrollArea.scrollLeft + scrollArea.clientWidth >= scrollArea.scrollWidth - 8) {
+        loadMoreRows();
+    }
+}, { passive: true });
 document.addEventListener('submit', (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
